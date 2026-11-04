@@ -55,7 +55,9 @@ def main(argv=None) -> int:
         return 0
 
     store = open_store(a.store)
-    store.put_json(f"arms/{spec['arm']}.lock.json", specs.lock(spec))
+    if a.cmd != "show":
+        # only commands that run sessions record the arm's lock; show must work on a read-only store
+        store.put_json(f"arms/{spec['arm']}.lock.json", specs.lock(spec))
     if a.cmd in ("fresh", "smoke"):
         root = episode.fresh(store, spec, os.path.join(a.work, "fresh-" + spec["arm"]))
         print(json.dumps({"root": root.id, "tick": root.tick, "cell": root.key}))

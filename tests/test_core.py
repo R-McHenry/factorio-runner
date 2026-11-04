@@ -141,3 +141,32 @@ class StatusTest(unittest.TestCase):
             site = os.path.join(d, "site")
             status.write_site(s, site)
             self.assertTrue(os.path.exists(os.path.join(site, "index.html")))
+
+
+class ReadOnlyTest(unittest.TestCase):
+    def test_show_does_not_write(self):
+        """show must work with a read-only store (computah's role), so it writes nothing."""
+        import io
+        import contextlib
+        from runner import __main__ as cli
+        from runner.store import LocalStore
+
+        class ReadOnly(LocalStore):
+            def put(self, key, data):
+                raise PermissionError(f"read-only: {key}")
+
+            def put_if(self, key, data, version):
+                raise PermissionError(f"read-only: {key}")
+
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with tempfile.TemporaryDirectory() as d:
+            ro = ReadOnly(d)
+            orig = cli.open_store
+            cli.open_store = lambda url: ro
+            try:
+                with contextlib.redirect_stdout(io.StringIO()) as out:
+                    rc = cli.main(["show", os.path.join(root, "arms", "test-scripted.toml"), "--store", d])
+            finally:
+                cli.open_store = orig
+            self.assertEqual(rc, 0)
+            self.assertIn("test-scripted: 0 cells", out.getvalue())
