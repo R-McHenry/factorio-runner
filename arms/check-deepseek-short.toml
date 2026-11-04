@@ -17,7 +17,8 @@ base_url = "https://api.deepseek.com"
 model = "deepseek-flash"   # the API lists deepseek-flash and deepseek-v4-pro (2026-11-04)
 api_key_env = "DEEPSEEK_API_KEY"
 temperature = 0.7
-max_tokens = 4096
+max_tokens = 16384
+max_tokens_ceiling = 65536
 # $ per million tokens; third-party snapshot 2026-11 (off-peak flash), check before trusting
 price = { in_hit = 0.003, in_miss = 0.15, out = 0.60 }
 

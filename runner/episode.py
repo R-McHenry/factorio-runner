@@ -425,9 +425,14 @@ class Session:
             calls = r.message.get("tool_calls") or []
             self._record(role="assistant", turn=self.turns, content=r.message.get("content"),
                          calls=[(c["function"]["name"], c["function"]["arguments"]) for c in calls],
-                         usage=r.usage, usd=r.usd)
+                         usage=r.usage, usd=r.usd, finish=r.finish, retried=r.retried)
             if not calls:
-                self.messages.append({"role": "user", "content": "Use the tools to act; call finish to end the episode."})
+                if r.finish == "length" and not (r.message.get("content") or "").strip():
+                    nudge = ("Your reply ran out of output tokens while thinking, before you called a tool. "
+                             "Take a smaller step: decide one thing and call one tool now.")
+                else:
+                    nudge = "Use the tools to act; call finish to end the episode."
+                self.messages.append({"role": "user", "content": nudge})
                 continue
             for c in calls:
                 try:

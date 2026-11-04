@@ -196,3 +196,45 @@ class MapsTest(unittest.TestCase):
         cx, cy, size = maps._window(rows)                                      # spans 300 m -> 512
         self.assertEqual(size, 512)
         self.assertEqual(cx % 64, 0)
+
+
+class LengthRetryTest(unittest.TestCase):
+    def test_cut_off_turn_is_retried_and_paid_for(self):
+        """A reasoning model that spends max_tokens thinking returns nothing (finish 'length');
+        the client asks again with 4x the limit and adds both calls' usage."""
+        from runner.agent.llm import OpenAICompat
+        calls = []
+
+        class Fake(OpenAICompat):
+            def _post(self, url, body):
+                calls.append(body["max_tokens"])
+                if body["max_tokens"] < 64:
+                    return {"choices": [{"finish_reason": "length", "message": {"role": "assistant", "content": ""}}],
+                            "usage": {"prompt_tokens": 100, "completion_tokens": body["max_tokens"],
+                                      "completion_tokens_details": {"reasoning_tokens": body["max_tokens"]}}}
+                return {"choices": [{"finish_reason": "tool_calls", "message": {"role": "assistant", "content": "",
+                        "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "evaluate", "arguments": "{}"}}]}}],
+                        "usage": {"prompt_tokens": 100, "completion_tokens": 40}}
+
+        c = Fake("http://x", "m", max_tokens=16, max_tokens_ceiling=256, price={"in_miss": 1e6, "out": 1e6})
+        r = c.complete([{"role": "user", "content": "go"}])
+        self.assertEqual(calls, [16, 64])
+        self.assertEqual(r.retried, 1)
+        self.assertEqual(r.finish, "tool_calls")
+        self.assertEqual(r.usage["out"], 16 + 40)
+        self.assertEqual(r.usage["reasoning"], 16)
+        self.assertEqual(r.usd, 200 + 56)        # both calls paid for
+
+    def test_gives_up_at_the_ceiling(self):
+        from runner.agent.llm import OpenAICompat
+        calls = []
+
+        class Fake(OpenAICompat):
+            def _post(self, url, body):
+                calls.append(body["max_tokens"])
+                return {"choices": [{"finish_reason": "length", "message": {"role": "assistant", "content": None}}],
+                        "usage": {"prompt_tokens": 1, "completion_tokens": body["max_tokens"]}}
+
+        r = Fake("http://x", "m", max_tokens=16, max_tokens_ceiling=100).complete([])
+        self.assertEqual(calls, [16, 64, 100])
+        self.assertEqual(r.finish, "length")
