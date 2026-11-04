@@ -57,9 +57,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Claude Code CLI (Opus arms)
-        if: ${{ contains(inputs.arm, 'opus') }}
-        run: npm install -g @anthropic-ai/claude-code
       - run: pip install boto3
       - uses: actions/cache@v4
         with:
@@ -83,7 +80,6 @@ jobs:
       - name: Run
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           if [ -n "${{ vars.STORE_BUCKET }}" ] && [ "${{ inputs.cmd }}" != ping ] && [ "${{ inputs.store }}" != local ]; then STORE="s3://${{ vars.STORE_BUCKET }}/${{ inputs.prefix }}"; else STORE=./store; fi
           FACTORIO_BIN=$(cat factorio-bin) python -m runner ${{ inputs.cmd }} ${{ inputs.arm }} \
