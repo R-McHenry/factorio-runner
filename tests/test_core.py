@@ -271,3 +271,25 @@ class MapsV2Test(unittest.TestCase):
         self.assertEqual(pal["default_enemy_color"], [255, 26, 26])
         self.assertEqual(pal["by_type"]["ammo-turret"], [202, 167, 24])      # already 0-255
         self.assertEqual(pal["by_name"], {"roboport": [230, 230, 128]})       # tiles left out
+
+
+class TrimTest(unittest.TestCase):
+    def test_old_tool_results_shortened_in_one_pass(self):
+        from runner.episode import Session
+        ses = object.__new__(Session)
+        ses.ses = {"trim_at": 1000, "trim_keep": 2}
+        ses.steps = []
+        ses.ep_state = {}
+        ses.messages = [{"role": "system", "content": "s"}]
+        for i in range(5):
+            ses.messages += [{"role": "assistant", "content": ""}, {"role": "tool", "tool_call_id": str(i), "content": "x" * 2000}]
+        ses.prompt_tokens = 500
+        self.assertEqual(ses._trim(), 0)                     # under the threshold: nothing
+        ses.prompt_tokens = 5000
+        self.assertEqual(ses._trim(), 3)                     # all but the last 2 tool results
+        tools = [m["content"] for m in ses.messages if m["role"] == "tool"]
+        self.assertTrue(all(t.startswith("[shortened") for t in tools[:3]))
+        self.assertEqual(tools[3:], ["x" * 2000] * 2)
+        self.assertEqual(ses.prompt_tokens, 0)
+        ses.prompt_tokens = 5000
+        self.assertEqual(ses._trim(), 0)                     # already shortened: no second change

@@ -23,6 +23,8 @@ no player character: robots from the logistic network build everything you place
   different saved game. What you learned carries over in this conversation.
 - You start where a previous player stopped. NOTES.md in your work dir is what they left; keep it
   current for whoever continues from where you stop.
+- When the conversation gets long, old tool results are shortened. Anything you'll need again
+  (positions, recipes, what worked) belongs in NOTES.md.
 
 ## Lua (Factorio 2.0 API, run as /sc; output only through rcon.print)
 

@@ -336,6 +336,25 @@ class Session:
         except Exception as e:  # a map is a nicety too
             self.log(f"  map capture failed: {e}")
 
+    def _trim(self):
+        """Keep long sessions going: once the prompt passes `session.trim_at` tokens (60k), shorten
+        every tool result older than the last `session.trim_keep` (8) to 300 characters, all in one
+        pass, so the conversation's cached prefix only changes once per pass."""
+        if self.prompt_tokens < int(self.ses.get("trim_at", 60000)):
+            return 0
+        keep = int(self.ses.get("trim_keep", 8))
+        tools_at = [i for i, m in enumerate(self.messages) if m.get("role") == "tool"]
+        n = 0
+        for i in tools_at[:-keep] if keep else tools_at:
+            c = self.messages[i].get("content") or ""
+            if len(c) > 400 and not c.startswith("[shortened"):
+                self.messages[i] = dict(self.messages[i], content="[shortened to save context] " + c[:300] + " …")
+                n += 1
+        if n:
+            self._record(role="trim", shortened=n, prompt_tokens=self.prompt_tokens)
+            self.prompt_tokens = 0     # measured again by the next reply
+        return n
+
     def _ask(self, messages, tools=None):
         r = self.client.complete(messages, tools)
         self.usd += r.usd
@@ -483,6 +502,7 @@ class Session:
                 wrap = True
                 self.messages.append({"role": "user", "content": "Out of turns for this episode: bring "
                                       "NOTES.md up to date for whoever continues from here, then finish."})
+            self._trim()
             r = self._ask(self.messages, tools)
             turns += 1
             self.turns += 1
