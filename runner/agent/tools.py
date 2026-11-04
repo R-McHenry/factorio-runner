@@ -18,7 +18,12 @@ import re
 from .. import cell as cells
 from ..node import read_state
 
-#: Lua the referee refuses in a measured episode: (pattern, why)
+#: An assignment of a literal (true, false, a number): `t.researched = true` sets the game, while
+#: `out.researched = {}` or `out.energy = e.energy` only fill the script's own table. The referee is a
+#: text check, so it trades a little cover against deliberate cheats for no false alarms on reads.
+_LIT = r"\s*=(?!=)\s*(?:true\b|false\b|-?\d|math\.huge)"
+
+#: Lua that makes the run stop counting: (pattern, why)
 FORBIDDEN = [
     (r"\.create_entity\s*\{(?![^}]*['\"](entity|tile)-ghost['\"])", "create_entity of anything but a ghost (use name = 'entity-ghost')"),
     (r"\.revive\s*\(", "revive builds a ghost for free"),
@@ -30,9 +35,9 @@ FORBIDDEN = [
     (r"\.mine\s*\{|\.mine\s*\(", "mines by script"),
     (r"\.set_tiles\s*\(", "sets tiles by script (tile ghosts are fine)"),
     (r"\.teleport\s*\(", "moves entities by script"),
-    (r"researched\s*=(?!=)|research_progress\s*=(?!=)|\.research_all_technologies|\.enable_all", "sets research directly (use force.add_research or the research tool)"),
-    (r"game\.speed\s*=(?!=)|ticks_to_run\s*=(?!=)|tick_paused\s*=(?!=)", "the clock belongs to the runner (use evaluate)"),
-    (r"\.amount\s*=(?!=)|\.energy\s*=(?!=)|\.temperature\s*=(?!=)|\.health\s*=(?!=)|\.fluidbox\s*\[[^\]]*\]\s*=(?!=)", "sets entity state directly"),
+    (r"\.(researched|research_progress|enabled)" + _LIT + r"|\.research_all_technologies|\.enable_all", "sets research or recipes directly (use force.add_research or the research tool)"),
+    (r"game\.(speed|ticks_to_run|tick_paused)\s*=(?!=)", "the clock belongs to the runner (use evaluate)"),
+    (r"\.(amount|energy|temperature|health)" + _LIT + r"|\.fluidbox\s*\[[^\]]*\]\s*=(?!=)", "sets entity state directly"),
     (r"server_save|game\.reload|helpers\.write_file|game\.write_file", "server and file operations"),
     (r"\.create_inventory\s*\(", "script inventories"),
 ]

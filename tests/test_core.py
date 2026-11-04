@@ -70,12 +70,20 @@ class RefereeTest(unittest.TestCase):
               "game.forces.player.add_research('automation')",
               "local t = {} table.insert(t, 1) rcon.print(#t)",
               "for n, t in pairs(game.forces.player.technologies) do if t.researched == false then end end",
-              "rcon.print(game.speed)", "if e.amount == 0 then end"]
+              "rcon.print(game.speed)", "if e.amount == 0 then end",
+              # DeepSeek's real read-only queries that an earlier referee flagged
+              "local out = {} out.researched = {} for name, t in pairs(game.forces.player.technologies) do "
+              "if t.researched then table.insert(out.researched, name) end end",
+              "local out = {} local e = game.surfaces[1].find_entity('roboport', {8, 8}) out.energy = e.energy "
+              "out.health = e.health rcon.print(helpers.table_to_json(out))"]
         bad = ["chest.insert{name = 'iron-plate', count = 5}",
                "game.surfaces[1].create_entity{name = 'inserter', position = {1, 1}, force = 'player'}",
                "for _, g in pairs(gs) do g.revive() end",
                "game.forces.player.technologies['automation'].researched = true",
-               "game.speed = 10", "e.destroy()"]
+               "game.speed = 10", "e.destroy()",
+               "game.forces.player.recipes['assembling-machine-2'].enabled = true",
+               "game.surfaces[1].find_entities_filtered{type = 'resource'}[1].amount = 1000000",
+               "e.energy = 5e6", "game.tick_paused = false"]
         for c in ok:
             self.assertIsNone(referee(c), c)
         for c in bad:
