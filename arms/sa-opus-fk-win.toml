@@ -21,7 +21,7 @@ codebase = "../game/space-age-early/codebase"
 [agent]
 provider = "claude"
 provider_name = "claude"
-model = "opus"
+model = "claude-opus-5-5"
 binary = "claude"
 billing = "subscription"
 timeout = 1200
