@@ -1,0 +1,37 @@
+# Space Age map (Rory's main-game settings), kickoff kit, DeepSeek on the bare tool profile.
+arm = "sa-deepseek-bare-v0"
+
+[game]
+factorio = "2.0.77"
+mods = "../game/space-age/mods"
+map_gen = "../game/space-age/map-gen-settings.json"
+map_settings = "../game/space-age/map-settings.json"
+seed = 1
+kit = "kickoff-v1"
+
+[agent]
+provider = "openai"
+provider_name = "deepseek"
+base_url = "https://api.deepseek.com"
+model = "deepseek-chat"
+api_key_env = "DEEPSEEK_API_KEY"
+temperature = 0.7
+max_tokens = 4096
+# $ per million tokens; third-party snapshot 2026-11 (off-peak flash), check before trusting
+price = { in_hit = 0.003, in_miss = 0.15, out = 0.60 }
+
+[toolkit]
+profile = "bare"
+
+[prompt]
+layers = ["l0-lab-bare"]
+facts_p = 0.5
+
+[episode]
+max_turns = 60
+max_usd = 0.25
+max_ticks = 216000
+goal_dist = 3
+
+[budget]
+monthly_usd = 10.0

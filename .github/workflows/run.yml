@@ -1,0 +1,83 @@
+# Dispatch from a cloud session or the Actions tab. With repo variables AWS_ROLE_ARN and
+# STORE_BUCKET set, the store is S3 and `jobs` episodes run in parallel; without them the store is
+# local to one job and uploaded as an artifact (a smoke run).
+name: run
+on:
+  workflow_dispatch:
+    inputs:
+      cmd:
+        description: "fresh | episode | show | ping"
+        required: true
+        default: episode
+      arm:
+        description: "arm spec path"
+        required: true
+        default: arms/sa-deepseek-bare.toml
+      jobs:
+        description: "parallel jobs (episode, S3 only)"
+        default: "1"
+      n:
+        description: "episodes per job"
+        default: "1"
+      prefix:
+        description: "store prefix inside the bucket"
+        default: "v0"
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: run-${{ inputs.arm }}-${{ inputs.cmd }}
+  cancel-in-progress: false
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - id: m
+        run: |
+          J=${{ inputs.jobs }}
+          if [ -z "${{ vars.STORE_BUCKET }}" ] || [ "${{ inputs.cmd }}" != episode ]; then J=1; fi
+          echo "matrix=$(python3 -c "import json; print(json.dumps(list(range(int('$J')))))")" >> "$GITHUB_OUTPUT"
+  run:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        job: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install boto3
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/factorio
+          key: factorio-2.0.77-headless
+      - name: Fetch Factorio
+        run: python -c "import os; from runner.server import ensure_factorio as e; print(e('2.0.77', os.path.expanduser('~/.cache/factorio')))" | tee factorio-bin
+      - name: AWS (OIDC)
+        if: ${{ vars.AWS_ROLE_ARN != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-2' }}
+      - name: Run
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          if [ -n "${{ vars.STORE_BUCKET }}" ]; then STORE="s3://${{ vars.STORE_BUCKET }}/${{ inputs.prefix }}"; else STORE=./store; fi
+          FACTORIO_BIN=$(cat factorio-bin) python -m runner ${{ inputs.cmd }} ${{ inputs.arm }} \
+            --store "$STORE" -n ${{ inputs.n }}
+      - name: Upload the local store (no S3 yet)
+        if: ${{ always() && vars.STORE_BUCKET == '' && inputs.cmd != 'ping' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-${{ github.run_id }}-${{ matrix.job }}
+          path: store
+          retention-days: 14

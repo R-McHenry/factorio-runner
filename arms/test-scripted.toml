@@ -1,0 +1,23 @@
+# The whole loop with no model: a scripted agent (tests and smoke runs).
+arm = "test-scripted"
+
+[game]
+factorio = "2.0.77"
+mods = "../game/space-age/mods"
+map_gen = "../game/space-age/map-gen-settings.json"
+map_settings = "../game/space-age/map-settings.json"
+seed = 1
+
+[agent]
+provider = "scripted"
+provider_name = "scripted"
+script = "arms/test-script.json"
+
+[episode]
+max_turns = 12
+max_ticks = 36000
+goal_dist = 2
+snapshot_every = 1800
+
+[budget]
+monthly_usd = 0

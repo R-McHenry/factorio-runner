@@ -1,0 +1,24 @@
+name: test
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Factorio headless (cached)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/factorio
+          key: factorio-2.0.77-headless
+      - name: Fetch Factorio
+        run: python -c "import os; from runner.server import ensure_factorio as e; print(e('2.0.77', os.path.expanduser('~/.cache/factorio')))" | tee factorio-bin
+      - name: Tests (unit + the scripted loop against a real server)
+        run: FACTORIO_BIN=$(cat factorio-bin) python -m unittest discover -s tests -t . -v
