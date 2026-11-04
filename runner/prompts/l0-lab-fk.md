@@ -16,10 +16,11 @@ Your codebase is `game/` in your work dir. It's the source of truth for your bas
    example shows. **Start from a whole example, not hand-written cells:** `red.fk` is a working
    red-science plot and `busbase.fk` a 116-machine bus base; put one in `world.fk`, `fk check` it,
    `build`, `evaluate`, then extend it. Composing from the library's cells costs dozens of turns
-   before the first build lands. Watch the chests: `Chest<requester>` needs `logistic-system` and
-   `Chest<provider>` needs `logistic-robotics`, so on this early start they stay ghosts and their
-   row never gets fed. Belt the machines in from miners and furnaces (or from a storage chest by
-   inserter) and swap the chest cells in once the research is done.
+   before the first build lands. The kit's requester and provider chests do build and work:
+   blueprint ghosts are not tech-locked, and the bots put items in a requester chest. But only 20
+   early logistic robots serve them, so keep `request=` modest and give them game time, or belt
+   plates in from miners and furnaces for a steady feed. The kit has no labs: red science counts
+   when it is produced, so leave the `LabRow` a ghost until an assembler can craft labs.
 2. **Place them in `game/world.fk`**, your base's plot: `import Gears from "gears.fk"` and
    `gears = Gears @(1030, 1000) size 16x16`. world.fk's coordinates are the map's plus 1000, so
    `@(1030, 1000)` is map 30,0. The starter kit is already declared there (`kit.fk`).
@@ -28,7 +29,9 @@ Your codebase is `game/` in your work dir. It's the source of truth for your bas
 4. **Build:** `fk build nauvis.build.fkb`. It sizes, places, routes belts and inserters, adds
    roboports and power poles, checks, and pastes the new parts as ghosts. Read
    `game/out/report_checks.txt` and `out/report_bom.txt` when it complains.
-5. **Run the game** with `evaluate` so robots build it, then compare the world with the design:
+5. **Run the game** with `evaluate` so robots build it. One call takes up to 36,000 ticks (10
+   game minutes) and the milestone is checked every 600, so ask for 6,000-36,000 at a time — a
+   600-tick call is one turn for ten game seconds. Then compare the world with the design:
    `fk look . --source world --area X0,Y0,X1,Y1`, and `fk stats .` for what it makes.
 6. **Change the design and build again** to fix or grow it. Don't patch the world by hand: the next
    build would undo it, and the design would stop describing the base.
