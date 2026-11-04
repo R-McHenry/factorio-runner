@@ -1,0 +1,16 @@
+[
+ {"tool": "fk", "args": {"args": "help"}},
+ {"tool": "fk", "args": {"args": "research ."}},
+ {"tool": "fk", "args": {"args": "wait . built"}},
+ {"tool": "fk", "args": {"args": "lua . rcon.print('quotes ' .. \"kept\")"}},
+ {"tool": "save_state", "args": {"name": "code-a"}},
+ {"tool": "write_file", "args": {"path": "game/marker.fk", "content": "# written after code-a\n"}},
+ {"tool": "load_state", "args": {"name": "code-a"}},
+ {"tool": "list_files", "args": {}},
+ {"tool": "fk", "args": {"args": "lua . game.surfaces[1].find_entities_filtered{name='storage-chest'}[1].insert{name='iron-plate', count=5}"}},
+ {"tool": "load_state", "args": {"name": "last-valid-1"}},
+ {"tool": "fk", "args": {"args": "build nauvis.build.fkb"}},
+ {"tool": "evaluate", "args": {"ticks": 600}},
+ {"tool": "fk", "args": {"args": "look . --source world --area -5,-5,30,30"}},
+ {"tool": "finish", "args": {"summary": "fk scripted test"}}
+]

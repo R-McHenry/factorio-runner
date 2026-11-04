@@ -1,0 +1,6 @@
+# kit.fk: the starter kit put down before your first build: the early roboport with its robots,
+# six solar panels, two accumulators and the poles that power them, and six storage chests holding
+# your supplies. kit.json lists exactly those entities (the runner writes it from the kit it puts
+# down), and declaring them here makes them the plot's own: the build keeps them, and no tile
+# inside the plot belongs to anything else.
+kit = Literal<file="kit.json", box="0,0,30,30"> @(0, 0)

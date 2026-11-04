@@ -1,0 +1,6 @@
+# nauvis.fk: the world design. One plot: your base, 2000x2000 tiles, from map -1000,-1000 to
+# 999,999. The starter kit stands inside it (world.fk declares it), so nothing else owns a tile:
+# build anywhere, and grow the base out from the kit.
+import World from "world.fk"
+
+world = World @(-1000, -1000) size 2000x2000

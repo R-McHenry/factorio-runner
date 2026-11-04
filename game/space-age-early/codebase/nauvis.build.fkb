@@ -1,0 +1,37 @@
+# the default flow (CORE-V1.md §7); keep it or tweak it. One contained tool per line; each reads
+# what the steps before it left and writes out/<step>.txt, and a layout step out/<step>/*.fkp.
+read_surface    nauvis                    # surface file: factories, plots, claims, mode, policy
+read_terrain    map                       # the bare world: ore, water, cliffs (map.terrain.json)
+run_models      --stale                   # model scripts: derive and pin parameters
+elaborate                                 # templates -> logical netlist + its checks
+size                                      # n=auto rows: the fewest machines for the targets, asserts and consumers (out/size.txt)
+report_rates                              # nominal rate model, asserts, surface targets
+place           --keep pinned             # fragments by their @(x, y) hints; Literals stay
+# how the router treats what stands; change any of these:
+#   --only stale             keep every route that still fits and route the rest (--only all: every net again)
+#   --retry-failed changed   a net that failed last build is searched again only when its ground changed
+#                            (always: every build; never: only when --again NET or fk route NET asks)
+#   --failed keep            a net that fails keeps the route that stood, so the paste goes on (drop: lose it)
+#   --area X0,Y0,X1,Y1       (add it to rework one area) only the nets there are routed; every other route stands
+route           --only stale --retry-failed changed --failed keep --effort normal --hand any   # direct insertion: the lowest hand the network can build (out/avail.json, which falls back to the lowest it can make)
+hands           minimize                  # every short hand: that lowest rung, raised only where the routed flow needs more (out/hands.txt; "hands maximize" takes the top rung everywhere)
+tier            minimize --allow yellow   # belt tier per lane: --allow yellow,red for red where yellow is too thin; --red N caps it
+cover robots    --roboport fk-early-roboport   # roboports over the logistic chests (before power): the early one,
+                                          # which needs no research; --roboport roboport once that is researched
+cover power     --pole any                # medium poles where the network can build them, else small: the coverage step picks (no ghost the network cannot build)
+floorplan                                 # the plot composed: one surface, one owner of every tile
+report_checks                             # invariants + warnings, connectivity of every net
+diff            --scope stale             # what stands there now, against the design (the game)
+report_bom      --stock live              # still to build vs the network's stock and research (short-stock, needs-research)
+write_layout                              # write the .fkp files: the design the next build keeps to (--to diff writes nothing)
+apply           --scope stale             # the paste: ghosts, robots build them (the game)
+stop_on         malformed                 # the default: only malformed data stops the run
+stop_on         no-destination            # and no paste with a maker whose product reaches no sink
+                                          # (a net that doesn't route is pasted without its new belt and fixed after;
+                                          #  add `stop_on no-route` to hold the paste until every net routes)
+stop_on         cannot-carry              # or a machine on a net whose items it takes none of (it would be left off the route)
+stop_on         by-hand                   # or a paste that would replace, remove or reset something changed in the game
+                                          # (out/diff.txt lists each one: adopt it into the design, or fk build --yes)
+
+later:                                    # off the critical path: after the paste, reports only, never stops the build
+report_rates                              # again, routed: the lanes and inserters as laid (too-thin)

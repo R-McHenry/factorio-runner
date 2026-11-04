@@ -1,0 +1,57 @@
+# blue6.fk: blue science as a stack of 6-row cells (2.0.49). A cell is two 3-row units, each an
+# engine assembler and an advanced circuit assembler handing straight into a blue science one,
+# and one pinned pole between them on the sulfur|packs belt, which tunnels under it: the one pole
+# powers the inserters beside both blue science assemblers, where no other tile is free.
+module BlueCell6 size 18x6 {
+  port a_in  : in  steel-plate | iron-gear-wheel @s0
+  port a_out : out steel-plate | iron-gear-wheel @n0
+  port b_in  : in  pipe @s1
+  port b_out : out pipe @n1
+  port t_in  : in  sulfur | chemical-science-pack @s11
+  port t_out : out sulfur | chemical-science-pack @n11
+  port c_in  : in  electronic-circuit | plastic-bar @s16
+  port c_out : out electronic-circuit | plastic-bar @n16
+  port d_in  : in  copper-cable @s17
+  port d_out : out copper-cable @n17
+  stack a_in -> a_out, b_in -> b_out, t_in -> t_out, c_in -> c_out, d_in -> d_out
+  engine0 = Assembler<recipe=engine-unit, machine=assembling-machine-2>            @(3, 0)
+  blue0   = Assembler<recipe=chemical-science-pack, machine=assembling-machine-2> @(7, 0)
+  adv0    = Assembler<recipe=advanced-circuit, machine=assembling-machine-2>      @(12, 0)
+  engine1 = Assembler<recipe=engine-unit, machine=assembling-machine-2>            @(3, 3)
+  blue1   = Assembler<recipe=chemical-science-pack, machine=assembling-machine-2> @(7, 3)
+  adv1    = Assembler<recipe=advanced-circuit, machine=assembling-machine-2>      @(12, 3)
+  pole    = Pole @(11, 2)
+  net a:   a_in -> engine0, engine1, a_out
+  net b:   b_in -> engine0, engine1, b_out
+  net ts:  t_in -> blue0, blue1, t_out
+  net tp:  t_in, blue0, blue1 -> t_out
+  lanes ts | tp
+  net c:   c_in -> adv0, adv1, c_out
+  net d:   d_in -> adv0, adv1, d_out
+  net en0: engine0 -> blue0
+  net en1: engine1 -> blue1
+  net ad0: adv0 -> blue0
+  net ad1: adv1 -> blue1
+}
+
+steel = Chest<requester, item=steel-plate, rate=1/s>        @(2, 20)
+gear  = Chest<requester, item=iron-gear-wheel, rate=1/s>    @(2, 30)
+pipe  = Chest<requester, item=pipe, rate=1/s>               @(15, 32)
+sulf  = Chest<requester, item=sulfur, rate=1/s>             @(27, 18)
+circ  = Chest<requester, item=electronic-circuit, rate=2/s> @(40, 22)
+plas  = Chest<requester, item=plastic-bar, rate=2/s>        @(40, 28)
+cab   = Chest<requester, item=copper-cable, rate=4/s>       @(34, 34)
+packs = Chest<provider, limit=8>                            @(25, 2)
+blue  = Stack<cell=BlueCell6, n=2> @(14, 6)
+
+net fe_a: steel -> blue.a_in
+net ge_a: gear -> blue.a_in
+lanes fe_a | ge_a
+net pi:   pipe -> blue.b_in
+net su:   sulf -> blue.t_in
+net ci:   circ -> blue.c_in
+net pl:   plas -> blue.c_in
+lanes ci | pl
+net ca:   cab -> blue.d_in
+net out:  blue.t_out -> packs
+set packs.in: filter=chemical-science-pack

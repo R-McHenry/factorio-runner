@@ -42,7 +42,7 @@ def load(path: str) -> dict:
         spec[k] = {**v, **spec.get(k, {})}
     base = os.path.dirname(os.path.abspath(path))
     paths = {}
-    for k in ("mods", "map_gen", "map_settings"):
+    for k in ("mods", "map_gen", "map_settings", "codebase"):
         p = spec["game"].get(k)
         paths[k] = os.path.normpath(os.path.join(base, p)) if p else None
     spec["_paths"] = paths

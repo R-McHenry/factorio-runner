@@ -1,0 +1,10 @@
+# shared-belt.fk: ore and coal on the two lanes of one belt into a smelter row
+ore   = MinerRow<n=4, resource=iron-ore>   @(10, 2, rot 2)
+coal  = MinerRow<n=2, resource=coal>       @(18, 2, rot 2)
+smelt = SmelterRow<n=8, recipe=iron-plate> @(10, 12)
+box   = Chest<provider, limit=4>           @(4, 22)
+
+net ore_:   ore -> smelt
+net fuel:   coal -> smelt
+net plates: smelt -> box
+lanes ore_ | fuel

@@ -1,0 +1,30 @@
+# bus4ribs.fk: one iron bus, four sealed ribs (PLAN-MODULES phase 6, 2.0.38)
+# A rib is a module with ports: gear plates in at its west port, gears out at its east one. The bus
+# takes the ribs' inputs by taps, in list order, and the toolkit writes each rib's contract:
+#   fk contract bus4ribs.fk
+#     rib0: in iron-plate 2.0/s via bus tap n7 (got 2.0) | out iron-gear-wheel 1.0/s via box0/c0
+# A rib is sealed: its internal net routes inside its 16x10 frame and crosses only at its ports.
+module GearRib size 16x10 {
+  port iron : in iron-plate @w
+  port gear : out iron-gear-wheel @e
+  g = AsmRow<n=1, recipe=iron-gear-wheel> @(2, 1)
+  net fe: iron -> g
+  net g: g -> gear
+}
+
+feed = Chest<requester, item=iron-plate, rate=16> @(0, 20)
+bus  = Bus<belts=4, item=iron-plate>(in1: feed, r0: rib0.iron, r1: rib1.iron,
+                                     r2: rib2.iron, r3: rib3.iron) @(10, 20)
+rib0 = GearRib @(2, 5)
+rib1 = GearRib @(22, 5)
+rib2 = GearRib @(42, 5)
+rib3 = GearRib @(62, 5)
+box0 = Chest<provider, limit=8> @(19, 10)
+box1 = Chest<provider, limit=8> @(39, 10)
+box2 = Chest<provider, limit=8> @(59, 10)
+box3 = Chest<provider, limit=8> @(79, 10)
+
+net g0: rib0.gear -> box0
+net g1: rib1.gear -> box1
+net g2: rib2.gear -> box2
+net g3: rib3.gear -> box3

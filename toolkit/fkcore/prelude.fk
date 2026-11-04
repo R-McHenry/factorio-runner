@@ -1,0 +1,49 @@
+# prelude.fk: the everyday kinds every .fk file gets without an import (toolkit 2.1).
+#
+# A run's own game/prelude.fk is used in place of this one, and a file's own kind or module of
+# the same name wins over a kind here (its own tiers line too). `kind NAME = KIND<params>` names a
+# kind with some of its parameters set; an instance's own parameters override them:
+#   a = Assembler<recipe=iron-gear-wheel, machine=assembling-machine-2>
+# `machine=` and `entity=` are one parameter of a Machine.
+
+kind Assembler = Machine<entity=assembling-machine-1>
+kind Furnace   = Machine<entity=stone-furnace, fuel=coal>
+kind ChemPlant = Machine<entity=chemical-plant>
+kind Refinery  = Machine<entity=oil-refinery, recipe=basic-oil-processing>
+# a buffer (2.1): one net fills it, another drains it; Buffer<chest=iron-chest, bar=20>
+kind Buffer    = Chest<plain, hold, chest=steel-chest>
+
+# Buildings the toolkit has no kind of, set up with raw settings (2.1): `cb.FIELD=` is a field of
+# the building's control behaviour and `bp.FIELD=` any other blueprint field, as the game names
+# them. Wire one to what it reads (wire low red: box -> spk) and give it a condition:
+#   spk = Alarm<bp.alert_parameters={show_alert: true, show_on_map: true,
+#                                    icon_signal_id: iron-plate, alert_message: "Iron low"}>
+#   set spk: cb.circuit_condition="iron-plate<50"
+# RobotCounter puts its robots on its wire: signal-X/Y logistic (free/total), signal-Z/T
+# construction, signal-R roboports. ColourLamp takes its colour from signal-red/green/blue.
+kind RobotCounter = Entity<name=roboport, cb.read_items_mode=0, cb.read_robot_stats=true>
+kind ColourLamp   = Entity<name=small-lamp, cb.use_colors=true, cb.color_mode=1>
+kind Alarm        = Entity<name=programmable-speaker,
+                           bp.parameters={playback_volume: 1, playback_mode: "global",
+                                          allow_polyphony: false},
+                           bp.alert_parameters={show_alert: true, show_on_map: true,
+                                                icon_signal_id: signal-alert, alert_message: "Alert"},
+                           cb.circuit_parameters={signal_value_is_pitch: false, instrument_id: 0,
+                                                  note_id: 6}>
+kind Display      = Entity<name=display-panel, bp.always_show=true, bp.show_in_chart=true>
+
+# Power domains (2.1): a power switch joins two domains while its `when` holds; wire its sides
+# with copper lines (copper feed: main -> sw.left, copper load: sw.right -> labs). An accumulator
+# with read=SIGNAL puts its charge (0-100) on its wire (its cb.output_signal).
+kind PowerSwitch  = Entity<name=power-switch>
+kind Accumulator  = Entity<name=accumulator>
+
+# What `machine=auto` may pick (the size step chooses), by kind: one tier line is one footprint,
+# one energy and one set of fluid boxes, so a cell laid for one fits them all. A kind built on one
+# of these (kind Gears = Assembler<...>) picks from its line.
+tiers Assembler:    assembling-machine-1, assembling-machine-2, assembling-machine-3
+tiers Furnace:      stone-furnace, steel-furnace
+tiers AsmRow:       assembling-machine-1, assembling-machine-2, assembling-machine-3
+tiers CircuitStack: assembling-machine-1, assembling-machine-2, assembling-machine-3
+tiers SmelterRow:   stone-furnace, steel-furnace
+tiers SmelterArray: stone-furnace, steel-furnace

@@ -1,0 +1,13 @@
+# sized.fk: red science the build counts (n=auto), from plates the robots bring
+iron   = Chest<requester, item=iron-plate, rate=2/s>    @(2, 2)
+copper = Chest<requester, item=copper-plate, rate=1/s>  @(2, 12)
+gears  = AsmRow<n=auto, recipe=iron-gear-wheel>         @(8, 2)
+red    = AsmRow<n=auto, recipe=automation-science-pack> @(8, 12)
+labs   = LabRow<n=auto, rate=6/min>                     @(8, 23)
+
+net plates: iron -> gears
+net copp:   copper -> red
+net gear:   gears -> red
+net packs:  red -> labs
+
+assert red.rate >= 60/min

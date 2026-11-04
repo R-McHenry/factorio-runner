@@ -96,7 +96,14 @@ BARE = [
         {"summary": {"type": "string"}}, ["summary"]),
 ]
 
-PROFILES = {"bare": BARE}
+FK_TOOL = _fn(
+    "fk", "Run an fk toolkit command in your game codebase (the work dir's game/, so GAME_DIR is "
+    "'.'), e.g. `build nauvis.build.fkb`, `stats . --items iron-plate`, `research .`, "
+    "`look . --source world --area -20,-20,40,40`, `rates world.fk`, `plan iron-plate 30`. "
+    "`help` lists every command. Builds paste ghosts that robots build: run evaluate to let them.",
+    {"args": {"type": "string", "description": "the command line after `fk`"}}, ["args"])
+
+PROFILES = {"bare": BARE, "fk": BARE[:-1] + [FK_TOOL, BARE[-1]]}
 
 LUA_PASTE = """
 local s = game.surfaces[1]
@@ -173,6 +180,9 @@ class Toolbox:
 
     def t_research(self, tech: str) -> str:
         return self.ctx.server.lua(LUA_RESEARCH % json.dumps(tech))
+
+    def t_fk(self, args: str) -> str:
+        return self.ctx.fk(str(args))
 
     def t_evaluate(self, ticks: int) -> str:
         return self.ctx.evaluate(int(ticks))

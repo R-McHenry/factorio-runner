@@ -1,0 +1,15 @@
+# steam.fk: a steam power plant, 3.6 MW. Water from the lake, two boilers burning coal, four
+# steam engines. Place its plot so the pump stands on the shore with water west of it (rot 3 faces
+# west). The coal comes from a requester chest here; a belt from coal drills works the same way.
+pump = OffshorePump<rate=1200/s>               @(0, 17, rot 3)
+b1   = Boiler<fuel=coal>                       @(2, 13)
+b2   = Boiler<fuel=coal>                       @(10, 13)
+e1   = SteamEngine                             @(2, 0)
+e2   = SteamEngine                             @(2, 5)
+e3   = SteamEngine                             @(10, 0)
+e4   = SteamEngine                             @(10, 5)
+coal = Chest<requester, item=coal, rate=1/s>   @(6, 22)
+
+net water: pump -> b1, b2
+net steam: b1, b2 -> e1, e2, e3, e4
+net fuel:  coal -> b1, b2

@@ -1,0 +1,8 @@
+# gears.fk: plates from a requester chest into two gear assemblers, the gears into a provider
+# chest. Plot: 16x16. The robots bring the plates; the chests are this factory's link to the rest.
+inbox = Chest<requester, item=iron-plate, rate=1.25/s> @(2, 2)
+gears = AsmRow<n=2, recipe=iron-gear-wheel>           @(6, 2)
+box   = Chest<provider, limit=4>                      @(2, 12)
+
+net plates_in: inbox -> gears
+net gear:      gears -> box

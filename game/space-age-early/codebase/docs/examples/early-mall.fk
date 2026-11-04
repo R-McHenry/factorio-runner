@@ -1,0 +1,91 @@
+# early-mall.fk: an early-tier mall: yellow and red belts, undergrounds and splitters, inserters,
+# assemblers, drills, pipes. Every machine stands within 3 tiles of what it feeds, so every product
+# link is one inserter (a long-handed one across a 3-tile gap); belts only bring iron, copper and
+# a few intermediates.
+
+# the belt family: each yellow item beside its red one, 3-tile gaps (one inserter each way)
+yu      = Assembler<recipe=underground-belt>                 @(10, 3)
+ru      = Assembler<recipe=fast-underground-belt>            @(16, 3)
+yb      = Assembler<recipe=transport-belt>                   @(10, 9)
+rb      = Assembler<recipe=fast-transport-belt>              @(16, 9)
+ys      = Assembler<recipe=splitter>                         @(10, 15)
+rs      = Assembler<recipe=fast-splitter>                    @(16, 15)
+yu_c    = Chest<provider, limit=2>                           @(11, 1)
+ru_c    = Chest<provider, limit=2>                           @(17, 1)
+yb_c    = Chest<provider, limit=2>                           @(10, 7)
+rb_c    = Chest<provider, limit=2>                           @(16, 7)
+ys_c    = Chest<provider, limit=2>                           @(12, 19)
+rs_c    = Chest<provider, limit=2>                           @(18, 19)
+
+# gears beside what takes them
+gy      = Assembler<recipe=iron-gear-wheel>                  @(4, 9)
+gr1     = Assembler<recipe=iron-gear-wheel>                  @(22, 3)
+gr2     = Assembler<recipe=iron-gear-wheel>                  @(22, 9)
+gr3     = Assembler<recipe=iron-gear-wheel>                  @(21, 17)
+gi      = Assembler<recipe=iron-gear-wheel>                  @(34, 9)
+gl      = Assembler<recipe=iron-gear-wheel>                  @(28, 21)
+
+# circuits beside the splitters and the machines, cable beside each circuit maker (two for ci, which feeds four)
+cy      = Assembler<recipe=electronic-circuit>               @(9, 19)
+cr      = Assembler<recipe=electronic-circuit>               @(16, 21)
+ci      = Assembler<recipe=electronic-circuit>               @(40, 9)
+ky      = Assembler<recipe=copper-cable>                     @(4, 21)
+kr      = Assembler<recipe=copper-cable>                     @(22, 21)
+ki      = Assembler<recipe=copper-cable>                     @(46, 9)
+ki2     = Assembler<recipe=copper-cable>                     @(41, 13)
+
+# inserters, assemblers, drills
+fins    = Assembler<recipe=fast-inserter>                    @(28, 3)
+ins     = Assembler<recipe=inserter>                         @(28, 9)
+lins    = Assembler<recipe=long-handed-inserter>             @(28, 15)
+asm     = Assembler<recipe=assembling-machine-1>             @(34, 3)
+drill   = Assembler<recipe=electric-mining-drill>            @(34, 15)
+fins_c  = Chest<provider, limit=2>                           @(29, 1)
+ins_c   = Chest<provider, limit=2>                           @(32, 10)
+lins_c  = Chest<provider, limit=2>                           @(30, 19)
+asm_c   = Chest<provider, limit=2>                           @(35, 1)
+drill_c = Chest<provider, limit=2>                           @(35, 19)
+
+# pipes
+pipe    = Assembler<recipe=pipe>                             @(0, 3)
+ptg     = Assembler<recipe=pipe-to-ground>                   @(4, 3)
+pipe_c  = Chest<provider, limit=2>                           @(1, 1)
+ptg_c   = Chest<provider, limit=2>                           @(5, 1)
+
+# iron in three places and copper in two, each requester between two of its machines
+few     = Chest<requester, item=iron-plate, rate=2/s>        @(8, 9)
+fem     = Chest<requester, item=iron-plate, rate=2/s>        @(26, 10)
+fee     = Chest<requester, item=iron-plate, rate=2/s>        @(38, 10)
+cuin    = Chest<requester, item=copper-plate, rate=1.5/s>    @(8, 22)
+cue     = Chest<requester, item=copper-plate, rate=1/s>      @(45, 10)
+
+net few: few -> pipe, ptg, gy, yb, yu, ys, cy
+net fem: fem -> gr1, gr2, gr3, cr, gl, ins, fins, lins
+net fee: fee -> gi, ci, asm, drill
+net cu: cuin -> ky, kr
+net cue: cue -> ki, ki2
+net caby: ky -> cy
+net cabr: kr -> cr
+net cabi: ki, ki2 -> ci
+net gyo: gy -> yb
+net gr1o: gr1 -> ru
+net gr2o: gr2 -> rb
+net gr3o: gr3 -> rs
+net gio: gi -> ins, asm, drill
+net glo: gl -> lins
+net cyo: cy -> ys
+net cro: cr -> rs
+net cio: ci -> ins, fins, asm, drill
+net ybo: yb -> yu, ys, rb, yb_c
+net yuo: yu -> ru, yu_c
+net yso: ys -> rs, ys_c
+net rbo: rb -> rb_c
+net ruo: ru -> ru_c
+net rso: rs -> rs_c
+net inso: ins -> fins, lins, ins_c
+net finso: fins -> fins_c
+net linso: lins -> lins_c
+net asmo: asm -> asm_c
+net drillo: drill -> drill_c
+net pipeo: pipe -> ptg, pipe_c
+net ptgo: ptg -> ptg_c

@@ -1,0 +1,22 @@
+# mall.fk: a small mall of single assemblers, placed by hand and mixed with a row. The router lays
+# the belts between them; a chest one tile from its machine gets one inserter (direct insertion).
+fein  = Chest<requester, item=iron-plate, rate=2/s>   @(0, 11)
+cuin  = Chest<requester, item=copper-plate, rate=1/s> @(0, 26)
+gear  = Assembler<recipe=iron-gear-wheel>             @(6, 2)
+belt  = Assembler<recipe=transport-belt>              @(13, 2)
+ins   = Assembler<recipe=inserter>                    @(20, 10)
+cable = Assembler<recipe=copper-cable>                @(6, 25)
+circ  = Assembler<recipe=electronic-circuit>          @(13, 18)
+pipe  = AsmRow<n=2, recipe=pipe>                      @(6, 33)
+bbox  = Chest<provider, limit=4>                      @(18, 3)
+ibox  = Chest<provider, limit=4>                      @(25, 11)
+pbox  = Chest<provider, limit=4>                      @(14, 34)
+
+net fe:    fein -> gear, circ, belt, ins, pipe
+net cu:    cuin -> cable
+net gears: gear -> belt, ins
+net cab:   cable -> circ
+net circs: circ -> ins
+net belts: belt -> bbox
+net inss:  ins -> ibox
+net pipes: pipe -> pbox

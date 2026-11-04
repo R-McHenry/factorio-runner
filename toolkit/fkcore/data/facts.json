@@ -1,0 +1,9843 @@
+{
+ "version": "2.0.77",
+ "mods": {
+  "base": "2.0.77",
+  "elevated-rails": "2.0.77",
+  "quality": "2.0.77",
+  "space-age": "2.0.77"
+ },
+ "source": "read from the game over RCON on a laptop server (tools/read_facts.py, Factorio 2.0.77, base + Space Age): prototypes.entity, .item, .fluid, .recipe, .virtual_signal, .quality; wire connectors and signals from entities created on a surface of the reader's own",
+ "notes": {
+  "energy_w": "W: energy_usage (or get_max_energy_usage) x 60 ticks",
+  "steam_per_s": "a boiler: energy_w / ((target - water's default temperature) x steam's heat capacity); an engine or turbine: fluid_usage_per_tick x 60",
+  "heat_w": "a reactor's energy use, and a heat-fed boiler's (heat exchanger)",
+  "signals": "what a constant combinator takes and puts on its wire, by signal type",
+  "never_transmit": "taken by a constant combinator, never on its wire",
+  "refused": "how many prototypes of each type a combinator would not take"
+ },
+ "entities": {
+  "accumulator": {
+   "type": "accumulator",
+   "energy_source": "electric",
+   "energy_w": 300000,
+   "drain_w": 0,
+   "priority": "managed-accumulator",
+   "buffer_j": 5000000
+  },
+  "active-provider-chest": {
+   "type": "logistic-container"
+  },
+  "agricultural-tower": {
+   "type": "agricultural-tower",
+   "energy_source": "electric",
+   "energy_w": 100000,
+   "drain_w": 0,
+   "priority": "secondary-input"
+  },
+  "arithmetic-combinator": {
+   "type": "arithmetic-combinator",
+   "energy_source": "electric",
+   "energy_w": 1000,
+   "drain_w": 0,
+   "priority": "primary-input"
+  },
+  "artillery-turret": {
+   "type": "artillery-turret"
+  },
+  "artillery-wagon": {
+   "type": "artillery-wagon"
+  },
+  "assembling-machine-1": {
+   "type": "assembling-machine",
+   "energy_source": "electric",
+   "energy_w": 75000,
+   "drain_w": 2500,
+   "priority": "secondary-input",
+   "crafting_speed": 0.5,
+   "crafting_categories": [
+    "advanced-crafting",
+    "basic-crafting",
+    "crafting",
+    "electronics",
+    "parameters",
+    "pressing"
+   ]
+  },
+  "assembling-machine-2": {
+   "type": "assembling-machine",
+   "energy_source": "electric",
+   "energy_w": 150000,
+   "drain_w": 5000,
+   "priority": "secondary-input",
+   "crafting_speed": 0.75,
+   "crafting_categories": [
+    "advanced-crafting",
+    "basic-crafting",
+    "crafting",
+    "crafting-with-fluid",
+    "crafting-with-fluid-or-metallurgy",
+    "cryogenics-or-assembling",
+    "electronics",
+    "electronics-or-assembling",
+    "electronics-with-fluid",
+    "metallurgy-or-assembling",
+    "organic-or-assembling",
+    "organic-or-hand-crafting",
+    "parameters",
+    "pressing"
+   ],
+   "module_slots": 2,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ]
+  },
+  "assembling-machine-3": {
+   "type": "assembling-machine",
+   "energy_source": "electric",
+   "energy_w": 375000,
+   "drain_w": 12500,
+   "priority": "secondary-input",
+   "crafting_speed": 1.25,
+   "crafting_categories": [
+    "advanced-crafting",
+    "basic-crafting",
+    "crafting",
+    "crafting-with-fluid",
+    "crafting-with-fluid-or-metallurgy",
+    "cryogenics-or-assembling",
+    "electronics",
+    "electronics-or-assembling",
+    "electronics-with-fluid",
+    "metallurgy-or-assembling",
+    "organic-or-assembling",
+    "organic-or-hand-crafting",
+    "parameters",
+    "pressing"
+   ],
+   "module_slots": 4,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ]
+  },
+  "asteroid-collector": {
+   "type": "asteroid-collector",
+   "energy_source": "electric",
+   "energy_w": 72000,
+   "drain_w": 0,
+   "priority": "secondary-input"
+  },
+  "beacon": {
+   "type": "beacon",
+   "energy_source": "electric",
+   "energy_w": 480000,
+   "drain_w": 480000,
+   "priority": "secondary-input",
+   "module_slots": 2,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ]
+  },
+  "big-electric-pole": {
+   "type": "electric-pole"
+  },
+  "big-mining-drill": {
+   "type": "mining-drill",
+   "energy_source": "electric",
+   "energy_w": 300000,
+   "drain_w": 0,
+   "priority": "secondary-input",
+   "mining_speed": 2.5,
+   "mining_drill_radius": 6.49,
+   "resource_categories": [
+    "basic-solid",
+    "hard-solid"
+   ],
+   "module_slots": 4,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ]
+  },
+  "biochamber": {
+   "type": "assembling-machine",
+   "energy_source": "burner",
+   "energy_w": 500000,
+   "burner": true,
+   "fuel_categories": [
+    "nutrients"
+   ],
+   "effectivity": 1,
+   "crafting_speed": 2,
+   "crafting_categories": [
+    "organic",
+    "organic-or-assembling",
+    "organic-or-chemistry",
+    "organic-or-hand-crafting",
+    "parameters"
+   ],
+   "module_slots": 4,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ]
+  },
+  "biolab": {
+   "type": "lab",
+   "energy_source": "electric",
+   "energy_w": 300000,
+   "drain_w": 0,
+   "priority": "secondary-input",
+   "module_slots": 4,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "speed"
+   ]
+  },
+  "boiler": {
+   "type": "boiler",
+   "energy_source": "burner",
+   "energy_w": 1800000,
+   "burner": true,
+   "fuel_categories": [
+    "chemical"
+   ],
+   "effectivity": 1,
+   "target_temperature": 165
+  },
+  "bottomless-chest": {
+   "type": "container"
+  },
+  "buffer-chest": {
+   "type": "logistic-container"
+  },
+  "bulk-inserter": {
+   "type": "inserter",
+   "energy_source": "electric",
+   "energy_w": 168000,
+   "drain_w": 1000,
+   "priority": "secondary-input"
+  },
+  "burner-generator": {
+   "type": "burner-generator",
+   "energy_source": "burner",
+   "energy_w": 1000000,
+   "burner": true,
+   "fuel_categories": [
+    "chemical"
+   ],
+   "effectivity": 0.5,
+   "power_output_w": 1000000
+  },
+  "burner-inserter": {
+   "type": "inserter",
+   "energy_source": "burner",
+   "energy_w": 144000,
+   "burner": true,
+   "fuel_categories": [
+    "chemical"
+   ],
+   "effectivity": 1
+  },
+  "burner-mining-drill": {
+   "type": "mining-drill",
+   "energy_source": "burner",
+   "energy_w": 150000,
+   "burner": true,
+   "fuel_categories": [
+    "chemical"
+   ],
+   "effectivity": 1,
+   "mining_speed": 0.25,
+   "mining_drill_radius": 0.99,
+   "resource_categories": [
+    "basic-solid"
+   ]
+  },
+  "captive-biter-spawner": {
+   "type": "assembling-machine",
+   "energy_source": "burner",
+   "energy_w": 100000,
+   "burner": true,
+   "fuel_categories": [
+    "food"
+   ],
+   "effectivity": 1,
+   "crafting_speed": 1,
+   "crafting_categories": [
+    "captive-spawner-process",
+    "parameters"
+   ]
+  },
+  "car": {
+   "type": "car",
+   "energy_source": "burner",
+   "energy_w": 150000,
+   "burner": true,
+   "fuel_categories": [
+    "chemical"
+   ],
+   "effectivity": 1
+  },
+  "cargo-bay": {
+   "type": "cargo-bay"
+  },
+  "cargo-landing-pad": {
+   "type": "cargo-landing-pad"
+  },
+  "cargo-wagon": {
+   "type": "cargo-wagon"
+  },
+  "centrifuge": {
+   "type": "assembling-machine",
+   "energy_source": "electric",
+   "energy_w": 350000,
+   "drain_w": 11666.667,
+   "priority": "secondary-input",
+   "crafting_speed": 1,
+   "crafting_categories": [
+    "centrifuging",
+    "parameters"
+   ],
+   "module_slots": 2,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ]
+  },
+  "chemical-plant": {
+   "type": "assembling-machine",
+   "energy_source": "electric",
+   "energy_w": 210000,
+   "drain_w": 7000,
+   "priority": "secondary-input",
+   "crafting_speed": 1,
+   "crafting_categories": [
+    "chemistry",
+    "chemistry-or-cryogenics",
+    "organic-or-chemistry",
+    "parameters"
+   ],
+   "module_slots": 3,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ]
+  },
+  "constant-combinator": {
+   "type": "constant-combinator"
+  },
+  "construction-robot": {
+   "type": "construction-robot",
+   "energy_w": 21000
+  },
+  "crusher": {
+   "type": "assembling-machine",
+   "energy_source": "electric",
+   "energy_w": 540000,
+   "drain_w": 18000,
+   "priority": "secondary-input",
+   "crafting_speed": 1,
+   "crafting_categories": [
+    "crushing",
+    "parameters"
+   ],
+   "module_slots": 2,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ]
+  },
+  "cryogenic-plant": {
+   "type": "assembling-machine",
+   "energy_source": "electric",
+   "energy_w": 1500000,
+   "drain_w": 50000,
+   "priority": "secondary-input",
+   "crafting_speed": 2,
+   "crafting_categories": [
+    "chemistry-or-cryogenics",
+    "cryogenics",
+    "cryogenics-or-assembling",
+    "parameters"
+   ],
+   "module_slots": 8,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ]
+  },
+  "curved-rail-a": {
+   "type": "curved-rail-a"
+  },
+  "curved-rail-b": {
+   "type": "curved-rail-b"
+  },
+  "decider-combinator": {
+   "type": "decider-combinator",
+   "energy_source": "electric",
+   "energy_w": 1000,
+   "drain_w": 0,
+   "priority": "primary-input"
+  },
+  "display-panel": {
+   "type": "display-panel"
+  },
+  "electric-energy-interface": {
+   "type": "electric-energy-interface",
+   "energy_source": "electric",
+   "energy_w": null,
+   "drain_w": 0,
+   "priority": "tertiary",
+   "buffer_j": 10000000000
+  },
+  "electric-furnace": {
+   "type": "furnace",
+   "energy_source": "electric",
+   "energy_w": 180000,
+   "drain_w": 6000,
+   "priority": "secondary-input",
+   "crafting_speed": 2,
+   "crafting_categories": [
+    "smelting"
+   ],
+   "module_slots": 2,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ]
+  },
+  "electric-mining-drill": {
+   "type": "mining-drill",
+   "energy_source": "electric",
+   "energy_w": 90000,
+   "drain_w": 0,
+   "priority": "secondary-input",
+   "mining_speed": 0.5,
+   "mining_drill_radius": 2.49,
+   "resource_categories": [
+    "basic-solid"
+   ],
+   "module_slots": 3,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ]
+  },
+  "electromagnetic-plant": {
+   "type": "assembling-machine",
+   "energy_source": "electric",
+   "energy_w": 2000000,
+   "drain_w": 66666.667,
+   "priority": "secondary-input",
+   "crafting_speed": 2,
+   "crafting_categories": [
+    "electromagnetics",
+    "electronics",
+    "electronics-or-assembling",
+    "electronics-with-fluid",
+    "parameters"
+   ],
+   "module_slots": 5,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ]
+  },
+  "elevated-curved-rail-a": {
+   "type": "elevated-curved-rail-a"
+  },
+  "elevated-curved-rail-b": {
+   "type": "elevated-curved-rail-b"
+  },
+  "elevated-half-diagonal-rail": {
+   "type": "elevated-half-diagonal-rail"
+  },
+  "elevated-straight-rail": {
+   "type": "elevated-straight-rail"
+  },
+  "express-loader": {
+   "type": "loader",
+   "energy_source": "void"
+  },
+  "express-splitter": {
+   "type": "splitter"
+  },
+  "express-transport-belt": {
+   "type": "transport-belt"
+  },
+  "express-underground-belt": {
+   "type": "underground-belt"
+  },
+  "fast-inserter": {
+   "type": "inserter",
+   "energy_source": "electric",
+   "energy_w": 58800,
+   "drain_w": 500,
+   "priority": "secondary-input"
+  },
+  "fast-loader": {
+   "type": "loader",
+   "energy_source": "void"
+  },
+  "fast-splitter": {
+   "type": "splitter"
+  },
+  "fast-transport-belt": {
+   "type": "transport-belt"
+  },
+  "fast-underground-belt": {
+   "type": "underground-belt"
+  },
+  "flamethrower-turret": {
+   "type": "fluid-turret"
+  },
+  "fluid-wagon": {
+   "type": "fluid-wagon"
+  },
+  "foundry": {
+   "type": "assembling-machine",
+   "energy_source": "electric",
+   "energy_w": 2500000,
+   "drain_w": 83333.333,
+   "priority": "secondary-input",
+   "crafting_speed": 4,
+   "crafting_categories": [
+    "crafting-with-fluid-or-metallurgy",
+    "metallurgy",
+    "metallurgy-or-assembling",
+    "parameters",
+    "pressing"
+   ],
+   "module_slots": 4,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ]
+  },
+  "fusion-generator": {
+   "type": "fusion-generator",
+   "energy_source": "electric",
+   "drain_w": 0,
+   "priority": "secondary-output"
+  },
+  "fusion-reactor": {
+   "type": "fusion-reactor",
+   "energy_source": "burner",
+   "energy_w": 10000000,
+   "burner": true,
+   "fuel_categories": [
+    "fusion"
+   ],
+   "effectivity": 1,
+   "neighbour_bonus": 1
+  },
+  "gate": {
+   "type": "gate"
+  },
+  "gun-turret": {
+   "type": "ammo-turret"
+  },
+  "half-diagonal-rail": {
+   "type": "half-diagonal-rail"
+  },
+  "heat-exchanger": {
+   "type": "boiler",
+   "energy_source": "heat",
+   "energy_w": 10000000,
+   "target_temperature": 500
+  },
+  "heat-interface": {
+   "type": "heat-interface"
+  },
+  "heat-pipe": {
+   "type": "heat-pipe"
+  },
+  "heating-tower": {
+   "type": "reactor",
+   "energy_source": "burner",
+   "energy_w": 40000000,
+   "burner": true,
+   "fuel_categories": [
+    "chemical"
+   ],
+   "effectivity": 2.5,
+   "neighbour_bonus": 0
+  },
+  "infinity-cargo-wagon": {
+   "type": "infinity-cargo-wagon"
+  },
+  "infinity-chest": {
+   "type": "infinity-container"
+  },
+  "infinity-pipe": {
+   "type": "infinity-pipe"
+  },
+  "inserter": {
+   "type": "inserter",
+   "energy_source": "electric",
+   "energy_w": 14700,
+   "drain_w": 400,
+   "priority": "secondary-input"
+  },
+  "iron-chest": {
+   "type": "container"
+  },
+  "jellystem": {
+   "type": "plant"
+  },
+  "lab": {
+   "type": "lab",
+   "energy_source": "electric",
+   "energy_w": 60000,
+   "drain_w": 0,
+   "priority": "secondary-input",
+   "module_slots": 2,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "speed"
+   ]
+  },
+  "land-mine": {
+   "type": "land-mine"
+  },
+  "lane-splitter": {
+   "type": "lane-splitter"
+  },
+  "laser-turret": {
+   "type": "electric-turret",
+   "energy_source": "electric",
+   "energy_w": 1200000,
+   "drain_w": 24000,
+   "priority": "primary-input",
+   "buffer_j": 801000
+  },
+  "legacy-curved-rail": {
+   "type": "legacy-curved-rail"
+  },
+  "legacy-straight-rail": {
+   "type": "legacy-straight-rail"
+  },
+  "lightning-collector": {
+   "type": "lightning-attractor",
+   "energy_source": "electric",
+   "drain_w": 150000000,
+   "priority": "primary-output",
+   "buffer_j": 1000000000
+  },
+  "lightning-rod": {
+   "type": "lightning-attractor",
+   "energy_source": "electric",
+   "drain_w": 150000000,
+   "priority": "primary-output",
+   "buffer_j": 500000000
+  },
+  "linked-belt": {
+   "type": "linked-belt"
+  },
+  "linked-chest": {
+   "type": "linked-container"
+  },
+  "loader": {
+   "type": "loader",
+   "energy_source": "void"
+  },
+  "locomotive": {
+   "type": "locomotive",
+   "energy_source": "burner",
+   "energy_w": 600000,
+   "burner": true,
+   "fuel_categories": [
+    "chemical"
+   ],
+   "effectivity": 1
+  },
+  "logistic-robot": {
+   "type": "logistic-robot",
+   "energy_w": 18000
+  },
+  "long-handed-inserter": {
+   "type": "inserter",
+   "energy_source": "electric",
+   "energy_w": 21000,
+   "drain_w": 400,
+   "priority": "secondary-input"
+  },
+  "medium-electric-pole": {
+   "type": "electric-pole"
+  },
+  "nuclear-reactor": {
+   "type": "reactor",
+   "energy_source": "burner",
+   "energy_w": 40000000,
+   "burner": true,
+   "fuel_categories": [
+    "nuclear"
+   ],
+   "effectivity": 1,
+   "neighbour_bonus": 1
+  },
+  "offshore-pump": {
+   "type": "offshore-pump",
+   "energy_source": "void",
+   "energy_w": 60000
+  },
+  "oil-refinery": {
+   "type": "assembling-machine",
+   "energy_source": "electric",
+   "energy_w": 420000,
+   "drain_w": 14000,
+   "priority": "secondary-input",
+   "crafting_speed": 1,
+   "crafting_categories": [
+    "oil-processing",
+    "parameters"
+   ],
+   "module_slots": 3,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "speed"
+   ]
+  },
+  "one-way-valve": {
+   "type": "valve"
+  },
+  "overflow-valve": {
+   "type": "valve"
+  },
+  "passive-provider-chest": {
+   "type": "logistic-container"
+  },
+  "pipe": {
+   "type": "pipe"
+  },
+  "pipe-to-ground": {
+   "type": "pipe-to-ground"
+  },
+  "power-switch": {
+   "type": "power-switch"
+  },
+  "programmable-speaker": {
+   "type": "programmable-speaker",
+   "energy_source": "electric",
+   "energy_w": 2000,
+   "drain_w": 0,
+   "priority": "secondary-input"
+  },
+  "proxy-container": {
+   "type": "proxy-container"
+  },
+  "pump": {
+   "type": "pump",
+   "energy_source": "electric",
+   "energy_w": 29000,
+   "drain_w": 1000,
+   "priority": "secondary-input"
+  },
+  "pumpjack": {
+   "type": "mining-drill",
+   "energy_source": "electric",
+   "energy_w": 90000,
+   "drain_w": 0,
+   "priority": "secondary-input",
+   "mining_speed": 1,
+   "mining_drill_radius": 0.49,
+   "resource_categories": [
+    "basic-fluid"
+   ],
+   "module_slots": 2,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "speed"
+   ]
+  },
+  "radar": {
+   "type": "radar",
+   "energy_source": "electric",
+   "energy_w": 300000,
+   "drain_w": 0,
+   "priority": "secondary-input"
+  },
+  "rail-chain-signal": {
+   "type": "rail-chain-signal"
+  },
+  "rail-ramp": {
+   "type": "rail-ramp"
+  },
+  "rail-signal": {
+   "type": "rail-signal"
+  },
+  "rail-support": {
+   "type": "rail-support"
+  },
+  "railgun-turret": {
+   "type": "ammo-turret",
+   "energy_source": "electric",
+   "energy_w": 10000000,
+   "drain_w": 0,
+   "priority": "primary-input",
+   "buffer_j": 10000000
+  },
+  "recycler": {
+   "type": "furnace",
+   "energy_source": "electric",
+   "energy_w": 180000,
+   "drain_w": 6000,
+   "priority": "secondary-input",
+   "crafting_speed": 0.5,
+   "crafting_categories": [
+    "recycling",
+    "recycling-or-hand-crafting"
+   ],
+   "module_slots": 4,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ]
+  },
+  "requester-chest": {
+   "type": "logistic-container"
+  },
+  "roboport": {
+   "type": "roboport",
+   "energy_source": "electric",
+   "energy_w": 50000,
+   "drain_w": 50000,
+   "priority": "secondary-input",
+   "buffer_j": 100000000
+  },
+  "rocket-silo": {
+   "type": "rocket-silo",
+   "energy_source": "electric",
+   "energy_w": 250000,
+   "drain_w": 8333.333,
+   "priority": "primary-input",
+   "crafting_speed": 1,
+   "crafting_categories": [
+    "parameters",
+    "rocket-building"
+   ],
+   "module_slots": 4,
+   "allowed_effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "speed"
+   ]
+  },
+  "rocket-turret": {
+   "type": "ammo-turret"
+  },
+  "selector-combinator": {
+   "type": "selector-combinator",
+   "energy_source": "electric",
+   "energy_w": 1000,
+   "drain_w": 0,
+   "priority": "primary-input"
+  },
+  "simple-entity-with-force": {
+   "type": "simple-entity-with-force"
+  },
+  "simple-entity-with-owner": {
+   "type": "simple-entity-with-owner"
+  },
+  "small-electric-pole": {
+   "type": "electric-pole"
+  },
+  "small-lamp": {
+   "type": "lamp",
+   "energy_source": "electric",
+   "energy_w": 5000,
+   "drain_w": 0,
+   "priority": "lamp"
+  },
+  "solar-panel": {
+   "type": "solar-panel",
+   "energy_source": "electric",
+   "drain_w": 0,
+   "priority": "solar"
+  },
+  "space-platform-hub": {
+   "type": "space-platform-hub"
+  },
+  "spidertron": {
+   "type": "spider-vehicle",
+   "energy_source": "void",
+   "energy_w": 250000
+  },
+  "splitter": {
+   "type": "splitter"
+  },
+  "stack-inserter": {
+   "type": "inserter",
+   "energy_source": "electric",
+   "energy_w": 336000,
+   "drain_w": 1000,
+   "priority": "secondary-input"
+  },
+  "steam-engine": {
+   "type": "generator",
+   "energy_source": "electric",
+   "drain_w": 0,
+   "priority": "secondary-output",
+   "power_output_w": 900000,
+   "maximum_temperature": 165,
+   "fluid_per_s": 30
+  },
+  "steam-turbine": {
+   "type": "generator",
+   "energy_source": "electric",
+   "drain_w": 0,
+   "priority": "secondary-output",
+   "power_output_w": 5820000,
+   "maximum_temperature": 500,
+   "fluid_per_s": 60
+  },
+  "steel-chest": {
+   "type": "container"
+  },
+  "steel-furnace": {
+   "type": "furnace",
+   "energy_source": "burner",
+   "energy_w": 90000,
+   "burner": true,
+   "fuel_categories": [
+    "chemical"
+   ],
+   "effectivity": 1,
+   "crafting_speed": 2,
+   "crafting_categories": [
+    "smelting"
+   ]
+  },
+  "stone-furnace": {
+   "type": "furnace",
+   "energy_source": "burner",
+   "energy_w": 90000,
+   "burner": true,
+   "fuel_categories": [
+    "chemical"
+   ],
+   "effectivity": 1,
+   "crafting_speed": 1,
+   "crafting_categories": [
+    "smelting"
+   ]
+  },
+  "stone-wall": {
+   "type": "wall"
+  },
+  "storage-chest": {
+   "type": "logistic-container"
+  },
+  "storage-tank": {
+   "type": "storage-tank"
+  },
+  "straight-rail": {
+   "type": "straight-rail"
+  },
+  "substation": {
+   "type": "electric-pole"
+  },
+  "tank": {
+   "type": "car",
+   "energy_source": "burner",
+   "energy_w": 600000,
+   "burner": true,
+   "fuel_categories": [
+    "chemical"
+   ],
+   "effectivity": 1
+  },
+  "tesla-turret": {
+   "type": "electric-turret",
+   "energy_source": "electric",
+   "energy_w": 6000000,
+   "drain_w": 1000000,
+   "priority": "primary-input",
+   "buffer_j": 15000000
+  },
+  "thruster": {
+   "type": "thruster"
+  },
+  "top-up-valve": {
+   "type": "valve"
+  },
+  "train-stop": {
+   "type": "train-stop"
+  },
+  "transport-belt": {
+   "type": "transport-belt"
+  },
+  "tree-plant": {
+   "type": "plant"
+  },
+  "turbo-loader": {
+   "type": "loader",
+   "energy_source": "void"
+  },
+  "turbo-splitter": {
+   "type": "splitter"
+  },
+  "turbo-transport-belt": {
+   "type": "transport-belt"
+  },
+  "turbo-underground-belt": {
+   "type": "underground-belt"
+  },
+  "underground-belt": {
+   "type": "underground-belt"
+  },
+  "wooden-chest": {
+   "type": "container"
+  },
+  "yumako-tree": {
+   "type": "plant"
+  }
+ },
+ "resources": {
+  "crude-oil": {
+   "mining_time": 1,
+   "category": "basic-fluid",
+   "results": [
+    "crude-oil"
+   ],
+   "fluid_results": true,
+   "infinite": true
+  },
+  "calcite": {
+   "mining_time": 1,
+   "category": "basic-solid",
+   "results": [
+    "calcite"
+   ],
+   "fluid_results": false
+  },
+  "coal": {
+   "mining_time": 1,
+   "category": "basic-solid",
+   "results": [
+    "coal"
+   ],
+   "fluid_results": false
+  },
+  "copper-ore": {
+   "mining_time": 1,
+   "category": "basic-solid",
+   "results": [
+    "copper-ore"
+   ],
+   "fluid_results": false
+  },
+  "iron-ore": {
+   "mining_time": 1,
+   "category": "basic-solid",
+   "results": [
+    "iron-ore"
+   ],
+   "fluid_results": false
+  },
+  "stone": {
+   "mining_time": 1,
+   "category": "basic-solid",
+   "results": [
+    "stone"
+   ],
+   "fluid_results": false
+  },
+  "tungsten-ore": {
+   "mining_time": 5,
+   "category": "hard-solid",
+   "results": [
+    "tungsten-ore"
+   ],
+   "fluid_results": false
+  },
+  "scrap": {
+   "mining_time": 0.5,
+   "category": "basic-solid",
+   "results": [
+    "scrap"
+   ],
+   "fluid_results": false
+  },
+  "uranium-ore": {
+   "mining_time": 2,
+   "category": "basic-solid",
+   "results": [
+    "uranium-ore"
+   ],
+   "fluid_results": false,
+   "required_fluid": "sulfuric-acid",
+   "fluid_amount": 10
+  },
+  "sulfuric-acid-geyser": {
+   "mining_time": 1,
+   "category": "basic-fluid",
+   "results": [
+    "sulfuric-acid"
+   ],
+   "fluid_results": true,
+   "infinite": true
+  },
+  "lithium-brine": {
+   "mining_time": 1,
+   "category": "basic-fluid",
+   "results": [
+    "lithium-brine"
+   ],
+   "fluid_results": true
+  },
+  "fluorine-vent": {
+   "mining_time": 1,
+   "category": "basic-fluid",
+   "results": [
+    "fluorine"
+   ],
+   "fluid_results": true,
+   "infinite": true
+  }
+ },
+ "fuels": {
+  "bioflux": {
+   "fuel_value_j": 6000000,
+   "category": "food"
+  },
+  "biter-egg": {
+   "fuel_value_j": 6000000,
+   "category": "chemical"
+  },
+  "carbon": {
+   "fuel_value_j": 2000000,
+   "category": "chemical"
+  },
+  "coal": {
+   "fuel_value_j": 4000000,
+   "category": "chemical"
+  },
+  "fusion-power-cell": {
+   "fuel_value_j": 40000000000,
+   "category": "fusion"
+  },
+  "jelly": {
+   "fuel_value_j": 1000000,
+   "category": "chemical"
+  },
+  "jellynut": {
+   "fuel_value_j": 10000000,
+   "category": "chemical"
+  },
+  "jellynut-seed": {
+   "fuel_value_j": 4000000,
+   "category": "chemical"
+  },
+  "nuclear-fuel": {
+   "fuel_value_j": 1210000000,
+   "category": "chemical"
+  },
+  "nutrients": {
+   "fuel_value_j": 2000000,
+   "category": "nutrients"
+  },
+  "pentapod-egg": {
+   "fuel_value_j": 5000000,
+   "category": "chemical"
+  },
+  "rocket-fuel": {
+   "fuel_value_j": 100000000,
+   "category": "chemical"
+  },
+  "solid-fuel": {
+   "fuel_value_j": 12000000,
+   "category": "chemical"
+  },
+  "spoilage": {
+   "fuel_value_j": 250000,
+   "category": "chemical"
+  },
+  "tree-seed": {
+   "fuel_value_j": 100000,
+   "category": "chemical"
+  },
+  "uranium-fuel-cell": {
+   "fuel_value_j": 8000000000,
+   "category": "nuclear",
+   "burnt_result": "depleted-uranium-fuel-cell"
+  },
+  "wood": {
+   "fuel_value_j": 2000000,
+   "category": "chemical"
+  },
+  "yumako": {
+   "fuel_value_j": 2000000,
+   "category": "chemical"
+  },
+  "yumako-mash": {
+   "fuel_value_j": 1000000,
+   "category": "chemical"
+  },
+  "yumako-seed": {
+   "fuel_value_j": 4000000,
+   "category": "chemical"
+  }
+ },
+ "modules": {
+  "speed-module": {
+   "category": "speed",
+   "tier": 1,
+   "effects": {
+    "consumption": 0.5,
+    "quality": -0.1,
+    "speed": 0.2
+   }
+  },
+  "speed-module-2": {
+   "category": "speed",
+   "tier": 2,
+   "effects": {
+    "consumption": 0.6,
+    "quality": -0.15,
+    "speed": 0.3
+   }
+  },
+  "speed-module-3": {
+   "category": "speed",
+   "tier": 3,
+   "effects": {
+    "consumption": 0.7,
+    "quality": -0.25,
+    "speed": 0.5
+   }
+  },
+  "efficiency-module": {
+   "category": "efficiency",
+   "tier": 1,
+   "effects": {
+    "consumption": -0.3
+   }
+  },
+  "efficiency-module-2": {
+   "category": "efficiency",
+   "tier": 2,
+   "effects": {
+    "consumption": -0.4
+   }
+  },
+  "efficiency-module-3": {
+   "category": "efficiency",
+   "tier": 3,
+   "effects": {
+    "consumption": -0.5
+   }
+  },
+  "productivity-module": {
+   "category": "productivity",
+   "tier": 1,
+   "effects": {
+    "consumption": 0.4,
+    "pollution": 0.05,
+    "productivity": 0.04,
+    "speed": -0.05
+   }
+  },
+  "productivity-module-2": {
+   "category": "productivity",
+   "tier": 2,
+   "effects": {
+    "consumption": 0.6,
+    "pollution": 0.07,
+    "productivity": 0.06,
+    "speed": -0.1
+   }
+  },
+  "productivity-module-3": {
+   "category": "productivity",
+   "tier": 3,
+   "effects": {
+    "consumption": 0.8,
+    "pollution": 0.1,
+    "productivity": 0.1,
+    "speed": -0.15
+   }
+  },
+  "quality-module": {
+   "category": "quality",
+   "tier": 1,
+   "effects": {
+    "quality": 0.1,
+    "speed": -0.05
+   }
+  },
+  "quality-module-2": {
+   "category": "quality",
+   "tier": 2,
+   "effects": {
+    "quality": 0.2,
+    "speed": -0.05
+   }
+  },
+  "quality-module-3": {
+   "category": "quality",
+   "tier": 3,
+   "effects": {
+    "quality": 0.25,
+    "speed": -0.05
+   }
+  }
+ },
+ "fluids": {
+  "ammonia": {
+   "heat_capacity_j": 200,
+   "default_temperature": -35,
+   "max_temperature": -33
+  },
+  "ammoniacal-solution": {
+   "heat_capacity_j": 200,
+   "default_temperature": -50,
+   "max_temperature": 100
+  },
+  "crude-oil": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "electrolyte": {
+   "heat_capacity_j": 10,
+   "default_temperature": 15,
+   "max_temperature": 500
+  },
+  "fluid-unknown": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 0,
+   "max_temperature": 0
+  },
+  "fluorine": {
+   "heat_capacity_j": 100,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "fluoroketone-cold": {
+   "heat_capacity_j": 1000,
+   "default_temperature": -150,
+   "max_temperature": 180
+  },
+  "fluoroketone-hot": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 180,
+   "max_temperature": 180
+  },
+  "fusion-plasma": {
+   "heat_capacity_j": 25,
+   "default_temperature": 1000000,
+   "max_temperature": 10000000
+  },
+  "heavy-oil": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "holmium-solution": {
+   "heat_capacity_j": 10,
+   "default_temperature": 15,
+   "max_temperature": 2000
+  },
+  "lava": {
+   "heat_capacity_j": 10,
+   "default_temperature": 1500,
+   "max_temperature": 2000
+  },
+  "light-oil": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "lithium-brine": {
+   "heat_capacity_j": 100,
+   "default_temperature": 15,
+   "max_temperature": 15
+  },
+  "lubricant": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "molten-copper": {
+   "heat_capacity_j": 10,
+   "default_temperature": 1100,
+   "max_temperature": 2000
+  },
+  "molten-iron": {
+   "heat_capacity_j": 10,
+   "default_temperature": 1500,
+   "max_temperature": 2000
+  },
+  "parameter-0": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "parameter-1": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "parameter-2": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "parameter-3": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "parameter-4": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "parameter-5": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "parameter-6": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "parameter-7": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "parameter-8": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "parameter-9": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "petroleum-gas": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "steam": {
+   "heat_capacity_j": 200,
+   "default_temperature": 15,
+   "max_temperature": 5000
+  },
+  "sulfuric-acid": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25
+  },
+  "thruster-fuel": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25,
+   "fuel_value_j": 50000
+  },
+  "thruster-oxidizer": {
+   "heat_capacity_j": 1000,
+   "default_temperature": 25,
+   "max_temperature": 25,
+   "fuel_value_j": 50000
+  },
+  "water": {
+   "heat_capacity_j": 2000,
+   "default_temperature": 15,
+   "max_temperature": 100
+  }
+ },
+ "recipes": {
+  "accumulator": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "accumulator-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "acid-neutralisation": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "active-provider-chest": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "active-provider-chest-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "advanced-carbonic-asteroid-crushing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "advanced-circuit": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "advanced-circuit-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "advanced-metallic-asteroid-crushing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "advanced-oil-processing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "advanced-oxide-asteroid-crushing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "advanced-thruster-fuel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "advanced-thruster-oxidizer": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "agricultural-science-pack": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "agricultural-science-pack-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "agricultural-tower": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "agricultural-tower-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "ammonia-rocket-fuel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "ammoniacal-solution-separation": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "arithmetic-combinator": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "arithmetic-combinator-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "artificial-jellynut-soil": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "artificial-jellynut-soil-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "artificial-yumako-soil": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "artificial-yumako-soil-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "artillery-shell": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "artillery-shell-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "artillery-turret": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "artillery-turret-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "artillery-wagon": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "artillery-wagon-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "assembling-machine-1": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "assembling-machine-1-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "assembling-machine-2": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "assembling-machine-2-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "assembling-machine-3": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "assembling-machine-3-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "asteroid-collector": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "asteroid-collector-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "atomic-bomb": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "atomic-bomb-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "automation-science-pack": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "automation-science-pack-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "barrel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "basic-oil-processing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "battery": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "battery-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "battery-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "battery-mk2-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "battery-mk2-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "battery-mk3-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "battery-mk3-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "battery-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "beacon": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "beacon-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "belt-immunity-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "belt-immunity-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "big-electric-pole": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "big-electric-pole-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "big-mining-drill": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "big-mining-drill-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "biochamber": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "biochamber-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "bioflux": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "bioflux-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "biolab": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "biolab-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "biolubricant": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "bioplastic": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "biosulfur": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "biter-egg": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "biter-egg-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "blueprint-book-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "blueprint-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "boiler": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "boiler-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "bottomless-chest-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "buffer-chest": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "buffer-chest-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "bulk-inserter": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "bulk-inserter-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "burner-generator-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "burner-inserter": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "burner-inserter-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "burner-mining-drill": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "burner-mining-drill-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "burnt-spoilage": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "calcite-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cannon-shell": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cannon-shell-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "captive-biter-spawner": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "captive-biter-spawner-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "capture-robot-rocket": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "capture-robot-rocket-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "car": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "car-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "carbon": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "carbon-fiber": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "carbon-fiber-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "carbon-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "carbonic-asteroid-chunk-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "carbonic-asteroid-crushing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "carbonic-asteroid-reprocessing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cargo-bay": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cargo-bay-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cargo-landing-pad": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cargo-landing-pad-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cargo-wagon": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cargo-wagon-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "casting-copper": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "casting-copper-cable": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "casting-iron": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "casting-iron-gear-wheel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "casting-iron-stick": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "casting-low-density-structure": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "casting-pipe": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "casting-pipe-to-ground": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "casting-steel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "centrifuge": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "centrifuge-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "chemical-plant": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "chemical-plant-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "chemical-science-pack": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "chemical-science-pack-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cliff-explosives": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cliff-explosives-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cluster-grenade": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cluster-grenade-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "coal-liquefaction": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "coal-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "coal-synthesis": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "coin-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "combat-shotgun": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "combat-shotgun-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "concrete": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "concrete-from-molten-iron": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "concrete-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "constant-combinator": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "constant-combinator-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "construction-robot": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "construction-robot-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "copper-bacteria": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "copper-bacteria-cultivation": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "copper-bacteria-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "copper-cable": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "copper-cable-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "copper-ore-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "copper-plate": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "copper-plate-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "crude-oil-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "crude-oil-barrel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "crusher": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "crusher-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cryogenic-plant": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cryogenic-plant-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cryogenic-science-pack": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "cryogenic-science-pack-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "decider-combinator": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "decider-combinator-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "deconstruction-planner-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "defender-capsule": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "defender-capsule-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "depleted-uranium-fuel-cell-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "destroyer-capsule": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "destroyer-capsule-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "discharge-defense-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "discharge-defense-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "display-panel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "display-panel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "distractor-capsule": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "distractor-capsule-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "efficiency-module": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "efficiency-module-2": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "efficiency-module-2-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "efficiency-module-3": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "efficiency-module-3-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "efficiency-module-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "electric-energy-interface-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "electric-engine-unit": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "electric-engine-unit-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "electric-furnace": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "electric-furnace-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "electric-mining-drill": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "electric-mining-drill-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "electrolyte": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "electromagnetic-plant": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "electromagnetic-plant-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "electromagnetic-science-pack": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "electromagnetic-science-pack-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "electronic-circuit": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "electronic-circuit-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "empty-crude-oil-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "empty-fluoroketone-cold-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "empty-fluoroketone-hot-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "empty-heavy-oil-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "empty-light-oil-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "empty-lubricant-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "empty-module-slot-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "empty-petroleum-gas-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "empty-sulfuric-acid-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "empty-water-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "energy-shield-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "energy-shield-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "energy-shield-mk2-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "energy-shield-mk2-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "engine-unit": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "engine-unit-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "exoskeleton-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "exoskeleton-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "explosive-cannon-shell": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "explosive-cannon-shell-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "explosive-rocket": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "explosive-rocket-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "explosive-uranium-cannon-shell": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "explosive-uranium-cannon-shell-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "explosives": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "explosives-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "express-loader": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "express-loader-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "express-splitter": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "express-splitter-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "express-transport-belt": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "express-transport-belt-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "express-underground-belt": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "express-underground-belt-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fast-inserter": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fast-inserter-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fast-loader": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fast-loader-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fast-splitter": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fast-splitter-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fast-transport-belt": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fast-transport-belt-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fast-underground-belt": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fast-underground-belt-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "firearm-magazine": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "firearm-magazine-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fish-breeding": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fission-reactor-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fission-reactor-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "flamethrower": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "flamethrower-ammo": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "flamethrower-ammo-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "flamethrower-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "flamethrower-turret": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "flamethrower-turret-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fluid-wagon": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fluid-wagon-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fluoroketone": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fluoroketone-cold-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fluoroketone-cold-barrel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fluoroketone-cooling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fluoroketone-hot-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fluoroketone-hot-barrel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "flying-robot-frame": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "flying-robot-frame-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "foundation": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "foundation-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "foundry": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "foundry-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fusion-generator": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fusion-generator-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fusion-power-cell": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fusion-power-cell-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fusion-reactor": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fusion-reactor-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fusion-reactor-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "fusion-reactor-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "gate": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "gate-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "grenade": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "grenade-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "gun-turret": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "gun-turret-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "hazard-concrete": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "hazard-concrete-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "heat-exchanger": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "heat-exchanger-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "heat-interface": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "heat-interface-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "heat-pipe": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "heat-pipe-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "heating-tower": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "heating-tower-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "heavy-armor": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "heavy-armor-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "heavy-oil-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "heavy-oil-barrel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "heavy-oil-cracking": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "holmium-ore-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "holmium-plate": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "holmium-plate-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "holmium-solution": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "ice-melting": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "ice-platform": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "ice-platform-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "ice-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "infinity-cargo-wagon-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "infinity-chest": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "infinity-chest-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "infinity-pipe": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "infinity-pipe-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "inserter": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "inserter-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "iron-bacteria": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "iron-bacteria-cultivation": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "iron-bacteria-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "iron-chest": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "iron-chest-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "iron-gear-wheel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "iron-gear-wheel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "iron-ore-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "iron-plate": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "iron-plate-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "iron-stick": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "iron-stick-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "item-unknown-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "jelly-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "jellynut-processing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "jellynut-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "jellynut-seed-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "kovarex-enrichment-process": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "lab": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "lab-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "land-mine": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "land-mine-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "landfill": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "landfill-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "lane-splitter-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "laser-turret": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "laser-turret-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "light-armor": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "light-armor-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "light-oil-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "light-oil-barrel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "light-oil-cracking": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "lightning-collector": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "lightning-collector-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "lightning-rod": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "lightning-rod-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "linked-belt-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "linked-chest-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "lithium": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "lithium-plate": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "lithium-plate-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "lithium-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "loader": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "loader-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "locomotive": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "locomotive-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "logistic-robot": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "logistic-robot-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "logistic-science-pack": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "logistic-science-pack-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "long-handed-inserter": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "long-handed-inserter-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "low-density-structure": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "low-density-structure-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "lubricant": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "lubricant-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "lubricant-barrel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "mech-armor": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "mech-armor-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "medium-electric-pole": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "medium-electric-pole-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "metallic-asteroid-chunk-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "metallic-asteroid-crushing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "metallic-asteroid-reprocessing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "metallurgic-science-pack": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "metallurgic-science-pack-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "military-science-pack": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "military-science-pack-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "modular-armor": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "modular-armor-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "molten-copper": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "molten-copper-from-lava": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "molten-iron": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "molten-iron-from-lava": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "night-vision-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "night-vision-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "nuclear-fuel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "nuclear-fuel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "nuclear-fuel-reprocessing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "nuclear-reactor": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "nuclear-reactor-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "nutrients-from-bioflux": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "nutrients-from-biter-egg": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "nutrients-from-fish": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "nutrients-from-spoilage": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "nutrients-from-yumako-mash": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "nutrients-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "offshore-pump": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "offshore-pump-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "oil-refinery": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "oil-refinery-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "one-way-valve-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "overflow-valve-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "overgrowth-jellynut-soil": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "overgrowth-jellynut-soil-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "overgrowth-yumako-soil": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "overgrowth-yumako-soil-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "oxide-asteroid-chunk-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "oxide-asteroid-crushing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "oxide-asteroid-reprocessing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "parameter-0": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "parameter-1": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "parameter-2": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "parameter-3": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "parameter-4": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "parameter-5": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "parameter-6": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "parameter-7": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "parameter-8": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "parameter-9": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "passive-provider-chest": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "passive-provider-chest-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "pentapod-egg": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "pentapod-egg-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "personal-laser-defense-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "personal-laser-defense-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "personal-roboport-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "personal-roboport-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "personal-roboport-mk2-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "personal-roboport-mk2-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "petroleum-gas-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "petroleum-gas-barrel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "piercing-rounds-magazine": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "piercing-rounds-magazine-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "piercing-shotgun-shell": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "piercing-shotgun-shell-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "pipe": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "pipe-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "pipe-to-ground": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "pipe-to-ground-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "pistol": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "pistol-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "plastic-bar": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "plastic-bar-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "poison-capsule": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "poison-capsule-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "power-armor": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "power-armor-mk2": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "power-armor-mk2-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "power-armor-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "power-switch": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "power-switch-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "processing-unit": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "processing-unit-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "production-science-pack": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "production-science-pack-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "productivity-module": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "productivity-module-2": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "productivity-module-2-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "productivity-module-3": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "productivity-module-3-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "productivity-module-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "programmable-speaker": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "programmable-speaker-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "promethium-asteroid-chunk-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "promethium-science-pack": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "promethium-science-pack-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "proxy-container-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "pump": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "pump-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "pumpjack": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "pumpjack-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "quality-module": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "quality-module-2": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "quality-module-2-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "quality-module-3": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "quality-module-3-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "quality-module-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "quantum-processor": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "quantum-processor-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "radar": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "radar-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rail": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rail-chain-signal": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rail-chain-signal-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rail-ramp": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rail-ramp-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rail-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rail-signal": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rail-signal-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rail-support": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rail-support-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "railgun": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "railgun-ammo": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "railgun-ammo-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "railgun-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "railgun-turret": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "railgun-turret-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "raw-fish-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "recipe-unknown": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "recycler": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "recycler-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "refined-concrete": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "refined-concrete-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "refined-hazard-concrete": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "refined-hazard-concrete-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "repair-pack": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "repair-pack-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "requester-chest": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "requester-chest-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "roboport": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "roboport-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rocket": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rocket-fuel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rocket-fuel-from-jelly": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rocket-fuel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rocket-launcher": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rocket-launcher-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rocket-part": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rocket-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rocket-silo": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rocket-silo-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rocket-turret": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "rocket-turret-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "science-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "scrap-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "selection-tool-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "selector-combinator": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "selector-combinator-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "shotgun": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "shotgun-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "shotgun-shell": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "shotgun-shell-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "simple-coal-liquefaction": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "simple-entity-with-force-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "simple-entity-with-owner-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "slowdown-capsule": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "slowdown-capsule-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "small-electric-pole": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "small-electric-pole-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "small-lamp": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "small-lamp-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "solar-panel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "solar-panel-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "solar-panel-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "solar-panel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "solid-fuel-from-ammonia": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "solid-fuel-from-heavy-oil": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "solid-fuel-from-light-oil": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "solid-fuel-from-petroleum-gas": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "solid-fuel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "space-platform-foundation": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "space-platform-foundation-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "space-platform-hub-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "space-platform-starter-pack": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "space-platform-starter-pack-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "space-science-pack": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "space-science-pack-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "speed-module": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "speed-module-2": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "speed-module-2-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "speed-module-3": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "speed-module-3-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "speed-module-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "spidertron": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "spidertron-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "splitter": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "splitter-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "spoilage-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "stack-inserter": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "stack-inserter-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "steam-condensation": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "steam-engine": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "steam-engine-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "steam-turbine": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "steam-turbine-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "steel-chest": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "steel-chest-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "steel-furnace": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "steel-furnace-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "steel-plate": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "steel-plate-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "stone-brick": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "stone-brick-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "stone-furnace": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "stone-furnace-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "stone-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "stone-wall": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "stone-wall-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "storage-chest": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "storage-chest-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "storage-tank": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "storage-tank-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "submachine-gun": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "submachine-gun-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "substation": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "substation-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "sulfur": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "sulfur-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "sulfuric-acid": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "sulfuric-acid-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "sulfuric-acid-barrel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "supercapacitor": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "supercapacitor-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "superconductor": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "superconductor-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "tank": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "tank-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "tesla-ammo": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "tesla-ammo-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "tesla-turret": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "tesla-turret-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "teslagun": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "teslagun-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "thruster": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "thruster-fuel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "thruster-oxidizer": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "thruster-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "toolbelt-equipment": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "toolbelt-equipment-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "top-up-valve-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "train-stop": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "train-stop-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "transport-belt": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "transport-belt-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "tree-seed-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "tungsten-carbide": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "tungsten-carbide-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "tungsten-ore-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "tungsten-plate": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "tungsten-plate-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "turbo-loader": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "turbo-loader-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "turbo-splitter": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "turbo-splitter-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "turbo-transport-belt": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "turbo-transport-belt-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "turbo-underground-belt": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "turbo-underground-belt-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "underground-belt": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "underground-belt-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "upgrade-planner-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "uranium-235-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "uranium-238-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "uranium-cannon-shell": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "uranium-cannon-shell-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "uranium-fuel-cell": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "uranium-fuel-cell-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "uranium-ore-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "uranium-processing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "uranium-rounds-magazine": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "uranium-rounds-magazine-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "utility-science-pack": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "utility-science-pack-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "water-barrel": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "water-barrel-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "wood-processing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "wood-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "wooden-chest": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "wooden-chest-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "yumako-mash-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "yumako-processing": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "productivity",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "yumako-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  },
+  "yumako-seed-recycling": {
+   "effects": [
+    "consumption",
+    "pollution",
+    "quality",
+    "speed"
+   ],
+   "max_productivity": 3
+  }
+ },
+ "steam_per_s": {
+  "boiler": 60.0,
+  "heat-exchanger": 103.09278350515464,
+  "steam-engine": 30,
+  "steam-turbine": 60
+ },
+ "heat_w": {
+  "heat-exchanger": 10000000,
+  "heating-tower": 40000000,
+  "nuclear-reactor": 40000000
+ },
+ "circuit": {
+  "wire_reach": 9,
+  "wire_reach_counts": {
+   "7.5": 1,
+   "9": 80,
+   "10": 1,
+   "18": 1,
+   "30": 1,
+   "32": 1
+  },
+  "connector_ids": {
+   "1": [
+    "circuit_red",
+    "combinator_input_red"
+   ],
+   "2": [
+    "circuit_green",
+    "combinator_input_green"
+   ],
+   "3": [
+    "combinator_output_red"
+   ],
+   "4": [
+    "combinator_output_green"
+   ],
+   "5": [
+    "pole_copper",
+    "power_switch_left_copper"
+   ],
+   "6": [
+    "power_switch_right_copper"
+   ]
+  }
+ },
+ "signals": {
+  "asteroid-chunk": [
+   "asteroid-chunk-unknown",
+   "carbonic-asteroid-chunk",
+   "metallic-asteroid-chunk",
+   "oxide-asteroid-chunk",
+   "parameter-0",
+   "parameter-1",
+   "parameter-2",
+   "parameter-3",
+   "parameter-4",
+   "parameter-5",
+   "parameter-6",
+   "parameter-7",
+   "parameter-8",
+   "parameter-9",
+   "promethium-asteroid-chunk"
+  ],
+  "entity": [
+   "1x2-remnants",
+   "accumulator",
+   "accumulator-explosion",
+   "accumulator-remnants",
+   "acid-splash-fire-spitter-behemoth",
+   "acid-splash-fire-spitter-big",
+   "acid-splash-fire-spitter-medium",
+   "acid-splash-fire-spitter-small",
+   "acid-splash-fire-worm-behemoth",
+   "acid-splash-fire-worm-big",
+   "acid-splash-fire-worm-medium",
+   "acid-splash-fire-worm-small",
+   "acid-sticker-behemoth",
+   "acid-sticker-big",
+   "acid-sticker-medium",
+   "acid-sticker-small",
+   "acid-stream-spitter-behemoth",
+   "acid-stream-spitter-big",
+   "acid-stream-spitter-medium",
+   "acid-stream-spitter-small",
+   "acid-stream-worm-behemoth",
+   "acid-stream-worm-big",
+   "acid-stream-worm-medium",
+   "acid-stream-worm-small",
+   "active-provider-chest",
+   "active-provider-chest-explosion",
+   "active-provider-chest-remnants",
+   "agricultural-tower",
+   "agricultural-tower-explosion",
+   "agricultural-tower-remnants",
+   "aquilo-tiles-inner-explosion",
+   "aquilo-tiles-outer-explosion",
+   "arithmetic-combinator",
+   "arithmetic-combinator-explosion",
+   "arithmetic-combinator-remnants",
+   "artillery-cannon-muzzle-flash",
+   "artillery-flare",
+   "artillery-projectile",
+   "artillery-turret",
+   "artillery-turret-explosion",
+   "artillery-turret-remnants",
+   "artillery-wagon",
+   "artillery-wagon-explosion",
+   "artillery-wagon-remnants",
+   "ashland-lichen-tree",
+   "ashland-lichen-tree-flaming",
+   "ashland-lichen-tree-stump",
+   "assembling-machine-1",
+   "assembling-machine-1-explosion",
+   "assembling-machine-1-remnants",
+   "assembling-machine-2",
+   "assembling-machine-2-explosion",
+   "assembling-machine-2-remnants",
+   "assembling-machine-3",
+   "assembling-machine-3-explosion",
+   "assembling-machine-3-remnants",
+   "asteroid-collector",
+   "asteroid-collector-explosion",
+   "asteroid-collector-remnants",
+   "atomic-bomb-ground-zero-projectile",
+   "atomic-bomb-wave",
+   "atomic-bomb-wave-spawns-cluster-nuke-explosion",
+   "atomic-bomb-wave-spawns-fire-smoke-explosion",
+   "atomic-bomb-wave-spawns-nuclear-smoke",
+   "atomic-bomb-wave-spawns-nuke-shockwave-explosion",
+   "atomic-fire-smoke",
+   "atomic-nuke-shockwave",
+   "atomic-rocket",
+   "beacon",
+   "beacon-explosion",
+   "beacon-remnants",
+   "behemoth-biter",
+   "behemoth-biter-corpse",
+   "behemoth-biter-die",
+   "behemoth-spitter",
+   "behemoth-spitter-corpse",
+   "behemoth-spitter-die",
+   "behemoth-worm-corpse",
+   "behemoth-worm-corpse-burrowed",
+   "behemoth-worm-die",
+   "behemoth-worm-turret",
+   "big-acid-splash-fire-stomper",
+   "big-acid-sticker-stomper",
+   "big-acid-stream-stomper",
+   "big-artillery-explosion",
+   "big-biter",
+   "big-biter-corpse",
+   "big-biter-die",
+   "big-carbonic-asteroid",
+   "big-demolisher",
+   "big-demolisher-ash-cloud",
+   "big-demolisher-ash-cloud-trail",
+   "big-demolisher-corpse",
+   "big-demolisher-expanding-ash-cloud-1",
+   "big-demolisher-expanding-ash-cloud-10",
+   "big-demolisher-expanding-ash-cloud-11",
+   "big-demolisher-expanding-ash-cloud-12",
+   "big-demolisher-expanding-ash-cloud-13",
+   "big-demolisher-expanding-ash-cloud-14",
+   "big-demolisher-expanding-ash-cloud-15",
+   "big-demolisher-expanding-ash-cloud-16",
+   "big-demolisher-expanding-ash-cloud-17",
+   "big-demolisher-expanding-ash-cloud-18",
+   "big-demolisher-expanding-ash-cloud-19",
+   "big-demolisher-expanding-ash-cloud-2",
+   "big-demolisher-expanding-ash-cloud-20",
+   "big-demolisher-expanding-ash-cloud-21",
+   "big-demolisher-expanding-ash-cloud-22",
+   "big-demolisher-expanding-ash-cloud-23",
+   "big-demolisher-expanding-ash-cloud-24",
+   "big-demolisher-expanding-ash-cloud-25",
+   "big-demolisher-expanding-ash-cloud-26",
+   "big-demolisher-expanding-ash-cloud-27",
+   "big-demolisher-expanding-ash-cloud-28",
+   "big-demolisher-expanding-ash-cloud-29",
+   "big-demolisher-expanding-ash-cloud-3",
+   "big-demolisher-expanding-ash-cloud-30",
+   "big-demolisher-expanding-ash-cloud-4",
+   "big-demolisher-expanding-ash-cloud-5",
+   "big-demolisher-expanding-ash-cloud-6",
+   "big-demolisher-expanding-ash-cloud-7",
+   "big-demolisher-expanding-ash-cloud-8",
+   "big-demolisher-expanding-ash-cloud-9",
+   "big-demolisher-fissure",
+   "big-demolisher-fissure-damage-explosion",
+   "big-demolisher-fissure-explosion",
+   "big-demolisher-fissure-scorchmark",
+   "big-demolisher-segment-x0_65",
+   "big-demolisher-segment-x0_77",
+   "big-demolisher-segment-x0_87",
+   "big-demolisher-segment-x0_97",
+   "big-demolisher-segment-x0_99",
+   "big-demolisher-segment-x1_08",
+   "big-demolisher-segment-x1_09",
+   "big-demolisher-segment-x1_1",
+   "big-demolisher-segment-x1_17",
+   "big-demolisher-segment-x1_2",
+   "big-demolisher-segment-x1_27",
+   "big-demolisher-segment-x1_28",
+   "big-demolisher-segment-x1_3",
+   "big-demolisher-segment-x1_33",
+   "big-demolisher-segment-x1_36",
+   "big-demolisher-segment-x1_37",
+   "big-demolisher-segment-x1_4",
+   "big-demolisher-segment-x1_41",
+   "big-demolisher-segment-x1_52",
+   "big-demolisher-tail-x0_64",
+   "big-demolisher-trail-lower",
+   "big-demolisher-trail-upper",
+   "big-electric-pole",
+   "big-electric-pole-explosion",
+   "big-electric-pole-remnants",
+   "big-explosion",
+   "big-fulgora-rock",
+   "big-metallic-asteroid",
+   "big-mining-drill",
+   "big-mining-drill-explosion",
+   "big-mining-drill-remnants",
+   "big-oxide-asteroid",
+   "big-promethium-asteroid",
+   "big-remnants",
+   "big-rock",
+   "big-sand-rock",
+   "big-scorchmark",
+   "big-scorchmark-tintable",
+   "big-spitter",
+   "big-spitter-corpse",
+   "big-spitter-die",
+   "big-stomper-corpse",
+   "big-stomper-pentapod",
+   "big-stomper-pentapod-die",
+   "big-stomper-pentapod-leg",
+   "big-stomper-pentapod-leg-die",
+   "big-stomper-shell",
+   "big-strafer-corpse",
+   "big-strafer-pentapod",
+   "big-strafer-pentapod-die",
+   "big-strafer-pentapod-leg",
+   "big-strafer-pentapod-leg-die",
+   "big-strafer-projectile",
+   "big-volcanic-rock",
+   "big-worm-corpse",
+   "big-worm-corpse-burrowed",
+   "big-worm-die",
+   "big-worm-turret",
+   "big-wriggler-die",
+   "big-wriggler-pentapod",
+   "big-wriggler-pentapod-corpse",
+   "big-wriggler-pentapod-premature",
+   "biochamber",
+   "biochamber-explosion",
+   "biochamber-remnants",
+   "bioflux-speed-regen-sticker",
+   "bioflux-speed-regen-sticker-behind",
+   "biolab",
+   "biolab-explosion",
+   "biolab-remnants",
+   "biter-spawner",
+   "biter-spawner-corpse",
+   "biter-spawner-die",
+   "blood-explosion-big",
+   "blood-explosion-huge",
+   "blood-explosion-small",
+   "blood-fountain",
+   "blood-fountain-big",
+   "blood-fountain-hit-spray",
+   "blue-chest",
+   "blue-laser",
+   "boiler",
+   "boiler-explosion",
+   "boiler-remnants",
+   "boompuff",
+   "boompuff-explosion",
+   "boompuff-seed",
+   "bottomless-chest",
+   "buffer-chest",
+   "buffer-chest-explosion",
+   "buffer-chest-remnants",
+   "bulk-inserter",
+   "bulk-inserter-explosion",
+   "bulk-inserter-remnants",
+   "burner-generator",
+   "burner-inserter",
+   "burner-inserter-explosion",
+   "burner-inserter-remnants",
+   "burner-mining-drill",
+   "burner-mining-drill-explosion",
+   "burner-mining-drill-remnants",
+   "calcite",
+   "cannon-projectile",
+   "captive-biter-spawner",
+   "captive-spawner-explosion-1",
+   "captive-spawner-explosion-2",
+   "capture-robot",
+   "capture-robot-explosion",
+   "capture-robot-rocket",
+   "car",
+   "car-explosion",
+   "car-remnants",
+   "carbonic-asteroid-explosion-1",
+   "carbonic-asteroid-explosion-2",
+   "carbonic-asteroid-explosion-3",
+   "carbonic-asteroid-explosion-4",
+   "carbonic-asteroid-explosion-5",
+   "cargo-bay",
+   "cargo-bay-remnants",
+   "cargo-landing-pad",
+   "cargo-landing-pad-remnants",
+   "cargo-pod",
+   "cargo-pod-container",
+   "cargo-pod-container-explosion",
+   "cargo-pod-container-remnants",
+   "cargo-pod-shadow",
+   "cargo-wagon",
+   "cargo-wagon-explosion",
+   "cargo-wagon-remnants",
+   "centrifuge",
+   "centrifuge-explosion",
+   "centrifuge-remnants",
+   "chain-tesla-gun-beam-bounce",
+   "chain-tesla-gun-beam-start",
+   "chain-tesla-turret-beam-bounce",
+   "chain-tesla-turret-beam-start",
+   "character",
+   "character-corpse",
+   "chemical-plant",
+   "chemical-plant-explosion",
+   "chemical-plant-remnants",
+   "cliff",
+   "cliff-explosives",
+   "cliff-fulgora",
+   "cliff-gleba",
+   "cliff-vulcanus",
+   "cluster-grenade",
+   "cluster-nuke-explosion",
+   "coal",
+   "compi-speech-bubble",
+   "constant-combinator",
+   "constant-combinator-explosion",
+   "constant-combinator-remnants",
+   "construction-robot",
+   "construction-robot-explosion",
+   "construction-robot-remnants",
+   "copper-ore",
+   "copper-stromatolite",
+   "crash-site-chest-1",
+   "crash-site-chest-2",
+   "crash-site-explosion-smoke",
+   "crash-site-fire-flame",
+   "crash-site-fire-smoke",
+   "crash-site-spaceship",
+   "crash-site-spaceship-wreck-big-1",
+   "crash-site-spaceship-wreck-big-2",
+   "crash-site-spaceship-wreck-medium-1",
+   "crash-site-spaceship-wreck-medium-2",
+   "crash-site-spaceship-wreck-medium-3",
+   "crash-site-spaceship-wreck-small-1",
+   "crash-site-spaceship-wreck-small-2",
+   "crash-site-spaceship-wreck-small-3",
+   "crash-site-spaceship-wreck-small-4",
+   "crash-site-spaceship-wreck-small-5",
+   "crash-site-spaceship-wreck-small-6",
+   "crater-cliff",
+   "crude-oil",
+   "crusher",
+   "crusher-remnants",
+   "cryogenic-plant",
+   "cryogenic-plant-explosion",
+   "cryogenic-plant-remnants",
+   "curved-rail-a",
+   "curved-rail-a-remnants",
+   "curved-rail-b",
+   "curved-rail-b-remnants",
+   "cuttlepop",
+   "dead-dry-hairy-tree",
+   "dead-grey-trunk",
+   "dead-tree-desert",
+   "decider-combinator",
+   "decider-combinator-explosion",
+   "decider-combinator-remnants",
+   "deconstructible-tile-proxy",
+   "defender",
+   "defender-capsule",
+   "defender-remnants",
+   "defender-robot-explosion",
+   "demolisher-ash-cloud-visual-dummy",
+   "demolisher-ash-sticker",
+   "destroyer",
+   "destroyer-capsule",
+   "destroyer-remnants",
+   "destroyer-robot-explosion",
+   "display-panel",
+   "display-panel-explosion",
+   "display-panel-remnants",
+   "distractor",
+   "distractor-capsule",
+   "distractor-remnants",
+   "distractor-robot-explosion",
+   "dry-hairy-tree",
+   "dry-tree",
+   "dummy-elevated-curved-rail-a",
+   "dummy-elevated-curved-rail-b",
+   "dummy-elevated-half-diagonal-rail",
+   "dummy-elevated-straight-rail",
+   "dummy-rail-ramp",
+   "dummy-rail-support",
+   "dummy-spider-unit",
+   "electric-beam",
+   "electric-beam-no-sound",
+   "electric-energy-interface",
+   "electric-furnace",
+   "electric-furnace-explosion",
+   "electric-furnace-remnants",
+   "electric-mini-stun",
+   "electric-mining-drill",
+   "electric-mining-drill-explosion",
+   "electric-mining-drill-remnants",
+   "electromagnetic-plant",
+   "electromagnetic-plant-explosion",
+   "electromagnetic-plant-remnants",
+   "elevated-curved-rail-a",
+   "elevated-curved-rail-b",
+   "elevated-half-diagonal-rail",
+   "elevated-rail-explosion",
+   "elevated-rail-remnants",
+   "elevated-straight-rail",
+   "enemy-damaged-explosion",
+   "entity-ghost",
+   "entity-unknown",
+   "explosion",
+   "explosion-gunshot",
+   "explosion-gunshot-small",
+   "explosion-hit",
+   "explosive-cannon-projectile",
+   "explosive-rocket",
+   "explosive-uranium-cannon-projectile",
+   "express-loader",
+   "express-splitter",
+   "express-splitter-explosion",
+   "express-splitter-remnants",
+   "express-transport-belt",
+   "express-transport-belt-explosion",
+   "express-transport-belt-explosion-base",
+   "express-transport-belt-remnants",
+   "express-underground-belt",
+   "express-underground-belt-explosion",
+   "express-underground-belt-explosion-base",
+   "express-underground-belt-remnants",
+   "factorio-logo-11tiles",
+   "factorio-logo-16tiles",
+   "factorio-logo-22tiles",
+   "fake-selection-box-2x2",
+   "fast-inserter",
+   "fast-inserter-explosion",
+   "fast-inserter-remnants",
+   "fast-loader",
+   "fast-splitter",
+   "fast-splitter-explosion",
+   "fast-splitter-remnants",
+   "fast-transport-belt",
+   "fast-transport-belt-explosion",
+   "fast-transport-belt-explosion-base",
+   "fast-transport-belt-remnants",
+   "fast-underground-belt",
+   "fast-underground-belt-explosion",
+   "fast-underground-belt-explosion-base",
+   "fast-underground-belt-remnants",
+   "fire-flame",
+   "fire-flame-on-tree",
+   "fire-sticker",
+   "fish",
+   "flamethrower-fire-stream",
+   "flamethrower-turret",
+   "flamethrower-turret-explosion",
+   "flamethrower-turret-remnants",
+   "fluid-wagon",
+   "fluid-wagon-explosion",
+   "fluid-wagon-remnants",
+   "fluorine-vent",
+   "flying-robot-damaged-explosion",
+   "foundation-tile-explosion",
+   "foundry",
+   "foundry-explosion",
+   "foundry-remnants",
+   "fulgoran-ruin-attractor",
+   "fulgoran-ruin-big",
+   "fulgoran-ruin-colossal",
+   "fulgoran-ruin-huge",
+   "fulgoran-ruin-medium",
+   "fulgoran-ruin-small",
+   "fulgoran-ruin-stonehenge",
+   "fulgoran-ruin-vault",
+   "fulgurite",
+   "fulgurite-small",
+   "funneltrunk",
+   "fusion-generator",
+   "fusion-generator-explosion",
+   "fusion-generator-remnants",
+   "fusion-reactor",
+   "fusion-reactor-explosion",
+   "fusion-reactor-remnants",
+   "gate",
+   "gate-explosion",
+   "gate-remnants",
+   "gleba-blood-explosion-big",
+   "gleba-blood-explosion-huge",
+   "gleba-blood-explosion-small",
+   "gleba-blood-fountain",
+   "gleba-blood-fountain-big",
+   "gleba-blood-fountain-hit-spray",
+   "gleba-enemy-damaged-explosion",
+   "gleba-spawner",
+   "gleba-spawner-corpse",
+   "gleba-spawner-corpse-small",
+   "gleba-spawner-small",
+   "grenade",
+   "grenade-explosion",
+   "ground-explosion",
+   "gun-turret",
+   "gun-turret-explosion",
+   "gun-turret-remnants",
+   "hairyclubnub",
+   "half-diagonal-rail",
+   "half-diagonal-rail-remnants",
+   "handheld-flamethrower-fire-stream",
+   "heat-exchanger",
+   "heat-exchanger-explosion",
+   "heat-exchanger-remnants",
+   "heat-interface",
+   "heat-pipe",
+   "heat-pipe-explosion",
+   "heat-pipe-remnants",
+   "heating-tower",
+   "heating-tower-explosion",
+   "heating-tower-remnants",
+   "hidden-electric-energy-interface",
+   "highlight-box",
+   "huge-carbonic-asteroid",
+   "huge-metallic-asteroid",
+   "huge-oxide-asteroid",
+   "huge-promethium-asteroid",
+   "huge-rock",
+   "huge-scorchmark",
+   "huge-scorchmark-tintable",
+   "huge-volcanic-rock",
+   "infinity-cargo-wagon",
+   "infinity-chest",
+   "infinity-pipe",
+   "inserter",
+   "inserter-explosion",
+   "inserter-remnants",
+   "iron-chest",
+   "iron-chest-explosion",
+   "iron-chest-remnants",
+   "iron-ore",
+   "iron-stromatolite",
+   "item-on-ground",
+   "item-request-proxy",
+   "jellynut-speed-sticker",
+   "jellynut-speed-sticker-behind",
+   "jellystem",
+   "lab",
+   "lab-explosion",
+   "lab-remnants",
+   "lamp-explosion",
+   "lamp-remnants",
+   "land-mine",
+   "land-mine-explosion",
+   "land-mine-remnants",
+   "lane-splitter",
+   "laser",
+   "laser-beam",
+   "laser-bubble",
+   "laser-turret",
+   "laser-turret-explosion",
+   "laser-turret-remnants",
+   "legacy-curved-rail",
+   "legacy-curved-rail-remnants",
+   "legacy-straight-rail",
+   "legacy-straight-rail-remnants",
+   "lickmaw",
+   "lightning",
+   "lightning-collector",
+   "lightning-collector-remnants",
+   "lightning-rod",
+   "lightning-rod-remnants",
+   "linked-belt",
+   "linked-chest",
+   "lithium-brine",
+   "lithium-iceberg-big",
+   "lithium-iceberg-huge",
+   "loader",
+   "loader-1x1",
+   "locomotive",
+   "locomotive-explosion",
+   "locomotive-remnants",
+   "logistic-robot",
+   "logistic-robot-explosion",
+   "logistic-robot-remnants",
+   "long-handed-inserter",
+   "long-handed-inserter-explosion",
+   "long-handed-inserter-remnants",
+   "market",
+   "massive-explosion",
+   "medium-acid-splash-fire-stomper",
+   "medium-acid-sticker-stomper",
+   "medium-acid-stream-stomper",
+   "medium-biter",
+   "medium-biter-corpse",
+   "medium-biter-die",
+   "medium-carbonic-asteroid",
+   "medium-demolisher",
+   "medium-demolisher-ash-cloud",
+   "medium-demolisher-ash-cloud-trail",
+   "medium-demolisher-corpse",
+   "medium-demolisher-expanding-ash-cloud-1",
+   "medium-demolisher-expanding-ash-cloud-10",
+   "medium-demolisher-expanding-ash-cloud-11",
+   "medium-demolisher-expanding-ash-cloud-12",
+   "medium-demolisher-expanding-ash-cloud-13",
+   "medium-demolisher-expanding-ash-cloud-14",
+   "medium-demolisher-expanding-ash-cloud-15",
+   "medium-demolisher-expanding-ash-cloud-16",
+   "medium-demolisher-expanding-ash-cloud-17",
+   "medium-demolisher-expanding-ash-cloud-18",
+   "medium-demolisher-expanding-ash-cloud-19",
+   "medium-demolisher-expanding-ash-cloud-2",
+   "medium-demolisher-expanding-ash-cloud-20",
+   "medium-demolisher-expanding-ash-cloud-21",
+   "medium-demolisher-expanding-ash-cloud-22",
+   "medium-demolisher-expanding-ash-cloud-23",
+   "medium-demolisher-expanding-ash-cloud-24",
+   "medium-demolisher-expanding-ash-cloud-25",
+   "medium-demolisher-expanding-ash-cloud-26",
+   "medium-demolisher-expanding-ash-cloud-27",
+   "medium-demolisher-expanding-ash-cloud-28",
+   "medium-demolisher-expanding-ash-cloud-29",
+   "medium-demolisher-expanding-ash-cloud-3",
+   "medium-demolisher-expanding-ash-cloud-30",
+   "medium-demolisher-expanding-ash-cloud-4",
+   "medium-demolisher-expanding-ash-cloud-5",
+   "medium-demolisher-expanding-ash-cloud-6",
+   "medium-demolisher-expanding-ash-cloud-7",
+   "medium-demolisher-expanding-ash-cloud-8",
+   "medium-demolisher-expanding-ash-cloud-9",
+   "medium-demolisher-fissure",
+   "medium-demolisher-fissure-damage-explosion",
+   "medium-demolisher-fissure-explosion",
+   "medium-demolisher-fissure-scorchmark",
+   "medium-demolisher-segment-x0_4875",
+   "medium-demolisher-segment-x0_5775",
+   "medium-demolisher-segment-x0_6525",
+   "medium-demolisher-segment-x0_7275",
+   "medium-demolisher-segment-x0_7425",
+   "medium-demolisher-segment-x0_81",
+   "medium-demolisher-segment-x0_8175",
+   "medium-demolisher-segment-x0_825",
+   "medium-demolisher-segment-x0_8775",
+   "medium-demolisher-segment-x0_9",
+   "medium-demolisher-segment-x0_9525",
+   "medium-demolisher-segment-x0_96",
+   "medium-demolisher-segment-x0_975",
+   "medium-demolisher-segment-x0_9975",
+   "medium-demolisher-segment-x1_02",
+   "medium-demolisher-segment-x1_0275",
+   "medium-demolisher-segment-x1_05",
+   "medium-demolisher-segment-x1_0575",
+   "medium-demolisher-segment-x1_14",
+   "medium-demolisher-tail-x0_48",
+   "medium-demolisher-trail-lower",
+   "medium-demolisher-trail-upper",
+   "medium-electric-pole",
+   "medium-electric-pole-explosion",
+   "medium-electric-pole-remnants",
+   "medium-explosion",
+   "medium-metallic-asteroid",
+   "medium-oxide-asteroid",
+   "medium-promethium-asteroid",
+   "medium-remnants",
+   "medium-scorchmark",
+   "medium-scorchmark-tintable",
+   "medium-small-remnants",
+   "medium-spitter",
+   "medium-spitter-corpse",
+   "medium-spitter-die",
+   "medium-stomper-corpse",
+   "medium-stomper-pentapod",
+   "medium-stomper-pentapod-die",
+   "medium-stomper-pentapod-leg",
+   "medium-stomper-pentapod-leg-die",
+   "medium-stomper-shell",
+   "medium-strafer-corpse",
+   "medium-strafer-pentapod",
+   "medium-strafer-pentapod-die",
+   "medium-strafer-pentapod-leg",
+   "medium-strafer-pentapod-leg-die",
+   "medium-strafer-projectile",
+   "medium-worm-corpse",
+   "medium-worm-corpse-burrowed",
+   "medium-worm-die",
+   "medium-worm-turret",
+   "medium-wriggler-die",
+   "medium-wriggler-pentapod",
+   "medium-wriggler-pentapod-corpse",
+   "medium-wriggler-pentapod-premature",
+   "metallic-asteroid-explosion-1",
+   "metallic-asteroid-explosion-2",
+   "metallic-asteroid-explosion-3",
+   "metallic-asteroid-explosion-4",
+   "metallic-asteroid-explosion-5",
+   "nuclear-reactor",
+   "nuclear-reactor-explosion",
+   "nuclear-reactor-remnants",
+   "nuclear-smouldering-smoke-source",
+   "nuke-effects-aquilo",
+   "nuke-effects-nauvis",
+   "nuke-effects-space",
+   "nuke-effects-vulcanus",
+   "nuke-explosion",
+   "offshore-pump",
+   "offshore-pump-explosion",
+   "offshore-pump-remnants",
+   "oil-refinery",
+   "oil-refinery-explosion",
+   "oil-refinery-remnants",
+   "one-way-valve",
+   "orange-arrow-with-circle",
+   "overflow-valve",
+   "oxide-asteroid-explosion-1",
+   "oxide-asteroid-explosion-2",
+   "oxide-asteroid-explosion-3",
+   "oxide-asteroid-explosion-4",
+   "oxide-asteroid-explosion-5",
+   "parameter-0",
+   "parameter-1",
+   "parameter-2",
+   "parameter-3",
+   "parameter-4",
+   "parameter-5",
+   "parameter-6",
+   "parameter-7",
+   "parameter-8",
+   "parameter-9",
+   "passive-provider-chest",
+   "passive-provider-chest-explosion",
+   "passive-provider-chest-remnants",
+   "piercing-shotgun-pellet",
+   "pipe",
+   "pipe-explosion",
+   "pipe-explosion-base",
+   "pipe-remnants",
+   "pipe-to-ground",
+   "pipe-to-ground-explosion",
+   "pipe-to-ground-explosion-base",
+   "pipe-to-ground-remnants",
+   "poison-capsule",
+   "poison-cloud",
+   "poison-cloud-visual-dummy",
+   "power-switch",
+   "power-switch-explosion",
+   "power-switch-remnants",
+   "programmable-speaker",
+   "programmable-speaker-explosion",
+   "programmable-speaker-remnants",
+   "promethium-asteroid-explosion-1",
+   "promethium-asteroid-explosion-2",
+   "promethium-asteroid-explosion-3",
+   "promethium-asteroid-explosion-4",
+   "promethium-asteroid-explosion-5",
+   "proxy-container",
+   "pump",
+   "pump-explosion",
+   "pump-remnants",
+   "pumpjack",
+   "pumpjack-explosion",
+   "pumpjack-remnants",
+   "radar",
+   "radar-explosion",
+   "radar-remnants",
+   "rail-chain-signal",
+   "rail-chain-signal-explosion",
+   "rail-chain-signal-remnants",
+   "rail-ending-remnants",
+   "rail-explosion",
+   "rail-ramp",
+   "rail-ramp-explosion-higher",
+   "rail-ramp-explosion-lower",
+   "rail-ramp-explosion-middle",
+   "rail-ramp-remnants",
+   "rail-signal",
+   "rail-signal-explosion",
+   "rail-signal-remnants",
+   "rail-support",
+   "rail-support-explosion",
+   "rail-support-remnants",
+   "railgun-beam",
+   "railgun-turret",
+   "railgun-turret-remnants",
+   "recycler",
+   "recycler-explosion",
+   "recycler-remnants",
+   "red-chest",
+   "requester-chest",
+   "requester-chest-explosion",
+   "requester-chest-remnants",
+   "roboport",
+   "roboport-explosion",
+   "roboport-remnants",
+   "rock-damaged-explosion",
+   "rocket",
+   "rocket-silo",
+   "rocket-silo-explosion",
+   "rocket-silo-remnants",
+   "rocket-silo-rocket",
+   "rocket-silo-rocket-shadow",
+   "rocket-turret",
+   "rocket-turret-remnants",
+   "scrap",
+   "selector-combinator",
+   "selector-combinator-explosion",
+   "selector-combinator-remnants",
+   "shotgun-pellet",
+   "simple-entity-with-force",
+   "simple-entity-with-owner",
+   "slipstack",
+   "slowdown-capsule",
+   "slowdown-capsule-explosion",
+   "slowdown-sticker",
+   "small-acid-splash-fire-stomper",
+   "small-acid-sticker-stomper",
+   "small-acid-stream-stomper",
+   "small-biter",
+   "small-biter-corpse",
+   "small-biter-die",
+   "small-carbonic-asteroid",
+   "small-demolisher",
+   "small-demolisher-ash-cloud",
+   "small-demolisher-ash-cloud-trail",
+   "small-demolisher-corpse",
+   "small-demolisher-expanding-ash-cloud-1",
+   "small-demolisher-expanding-ash-cloud-10",
+   "small-demolisher-expanding-ash-cloud-11",
+   "small-demolisher-expanding-ash-cloud-12",
+   "small-demolisher-expanding-ash-cloud-13",
+   "small-demolisher-expanding-ash-cloud-14",
+   "small-demolisher-expanding-ash-cloud-15",
+   "small-demolisher-expanding-ash-cloud-16",
+   "small-demolisher-expanding-ash-cloud-17",
+   "small-demolisher-expanding-ash-cloud-18",
+   "small-demolisher-expanding-ash-cloud-19",
+   "small-demolisher-expanding-ash-cloud-2",
+   "small-demolisher-expanding-ash-cloud-20",
+   "small-demolisher-expanding-ash-cloud-21",
+   "small-demolisher-expanding-ash-cloud-22",
+   "small-demolisher-expanding-ash-cloud-23",
+   "small-demolisher-expanding-ash-cloud-24",
+   "small-demolisher-expanding-ash-cloud-25",
+   "small-demolisher-expanding-ash-cloud-26",
+   "small-demolisher-expanding-ash-cloud-27",
+   "small-demolisher-expanding-ash-cloud-28",
+   "small-demolisher-expanding-ash-cloud-29",
+   "small-demolisher-expanding-ash-cloud-3",
+   "small-demolisher-expanding-ash-cloud-30",
+   "small-demolisher-expanding-ash-cloud-4",
+   "small-demolisher-expanding-ash-cloud-5",
+   "small-demolisher-expanding-ash-cloud-6",
+   "small-demolisher-expanding-ash-cloud-7",
+   "small-demolisher-expanding-ash-cloud-8",
+   "small-demolisher-expanding-ash-cloud-9",
+   "small-demolisher-fissure",
+   "small-demolisher-fissure-damage-explosion",
+   "small-demolisher-fissure-explosion",
+   "small-demolisher-fissure-scorchmark",
+   "small-demolisher-segment-x0_325",
+   "small-demolisher-segment-x0_385",
+   "small-demolisher-segment-x0_435",
+   "small-demolisher-segment-x0_485",
+   "small-demolisher-segment-x0_495",
+   "small-demolisher-segment-x0_54",
+   "small-demolisher-segment-x0_545",
+   "small-demolisher-segment-x0_55",
+   "small-demolisher-segment-x0_585",
+   "small-demolisher-segment-x0_6",
+   "small-demolisher-segment-x0_635",
+   "small-demolisher-segment-x0_64",
+   "small-demolisher-segment-x0_65",
+   "small-demolisher-segment-x0_665",
+   "small-demolisher-segment-x0_68",
+   "small-demolisher-segment-x0_685",
+   "small-demolisher-segment-x0_7",
+   "small-demolisher-segment-x0_705",
+   "small-demolisher-segment-x0_76",
+   "small-demolisher-tail-x0_32",
+   "small-demolisher-trail-lower",
+   "small-demolisher-trail-upper",
+   "small-electric-pole",
+   "small-electric-pole-explosion",
+   "small-electric-pole-remnants",
+   "small-lamp",
+   "small-metallic-asteroid",
+   "small-oxide-asteroid",
+   "small-promethium-asteroid",
+   "small-remnants",
+   "small-scorchmark",
+   "small-scorchmark-tintable",
+   "small-spitter",
+   "small-spitter-corpse",
+   "small-spitter-die",
+   "small-stomper-corpse",
+   "small-stomper-pentapod",
+   "small-stomper-pentapod-die",
+   "small-stomper-pentapod-leg",
+   "small-stomper-pentapod-leg-die",
+   "small-stomper-shell",
+   "small-strafer-corpse",
+   "small-strafer-pentapod",
+   "small-strafer-pentapod-die",
+   "small-strafer-pentapod-leg",
+   "small-strafer-pentapod-leg-die",
+   "small-strafer-projectile",
+   "small-worm-corpse",
+   "small-worm-corpse-burrowed",
+   "small-worm-die",
+   "small-worm-turret",
+   "small-wriggler-die",
+   "small-wriggler-pentapod",
+   "small-wriggler-pentapod-corpse",
+   "small-wriggler-pentapod-premature",
+   "solar-panel",
+   "solar-panel-explosion",
+   "solar-panel-remnants",
+   "space-platform-foundation-explosion",
+   "space-platform-hub",
+   "spark-explosion",
+   "spark-explosion-higher",
+   "spidertron",
+   "spidertron-explosion",
+   "spidertron-leg-1",
+   "spidertron-leg-2",
+   "spidertron-leg-3",
+   "spidertron-leg-4",
+   "spidertron-leg-5",
+   "spidertron-leg-6",
+   "spidertron-leg-7",
+   "spidertron-leg-8",
+   "spidertron-remnants",
+   "spitter-spawner",
+   "spitter-spawner-corpse",
+   "spitter-spawner-die",
+   "splitter",
+   "splitter-explosion",
+   "splitter-remnants",
+   "stack-inserter",
+   "stack-inserter-explosion",
+   "stack-inserter-remnants",
+   "steam-engine",
+   "steam-engine-explosion",
+   "steam-engine-remnants",
+   "steam-turbine",
+   "steam-turbine-explosion",
+   "steam-turbine-remnants",
+   "steel-chest",
+   "steel-chest-explosion",
+   "steel-chest-remnants",
+   "steel-furnace",
+   "steel-furnace-explosion",
+   "steel-furnace-remnants",
+   "stingfrond",
+   "stone",
+   "stone-furnace",
+   "stone-furnace-explosion",
+   "stone-furnace-remnants",
+   "stone-wall",
+   "storage-chest",
+   "storage-chest-explosion",
+   "storage-chest-remnants",
+   "storage-tank",
+   "storage-tank-explosion",
+   "storage-tank-remnants",
+   "strafer-sticker",
+   "straight-rail",
+   "straight-rail-remnants",
+   "stun-sticker",
+   "substation",
+   "substation-explosion",
+   "substation-remnants",
+   "sulfuric-acid-geyser",
+   "sunnycomb",
+   "tank",
+   "tank-explosion",
+   "tank-flamethrower-fire-stream",
+   "tank-remnants",
+   "teflilly",
+   "tesla-turret",
+   "tesla-turret-remnants",
+   "tesla-turret-slow",
+   "tesla-turret-stun",
+   "thruster",
+   "thruster-explosion",
+   "thruster-remnants",
+   "tile-ghost",
+   "tile-proxy",
+   "top-up-valve",
+   "train-stop",
+   "train-stop-explosion",
+   "train-stop-remnants",
+   "transport-belt",
+   "transport-belt-explosion",
+   "transport-belt-explosion-base",
+   "transport-belt-remnants",
+   "tree-01",
+   "tree-01-stump",
+   "tree-02",
+   "tree-02-red",
+   "tree-02-stump",
+   "tree-03",
+   "tree-03-stump",
+   "tree-04",
+   "tree-04-stump",
+   "tree-05",
+   "tree-05-stump",
+   "tree-06",
+   "tree-06-brown",
+   "tree-06-stump",
+   "tree-07",
+   "tree-07-stump",
+   "tree-08",
+   "tree-08-brown",
+   "tree-08-red",
+   "tree-08-stump",
+   "tree-09",
+   "tree-09-brown",
+   "tree-09-red",
+   "tree-09-stump",
+   "tree-dying-proxy",
+   "tree-plant",
+   "tree-proxy",
+   "tungsten-ore",
+   "turbo-loader",
+   "turbo-splitter",
+   "turbo-splitter-explosion",
+   "turbo-splitter-remnants",
+   "turbo-transport-belt",
+   "turbo-transport-belt-explosion",
+   "turbo-transport-belt-explosion-base",
+   "turbo-transport-belt-remnants",
+   "turbo-underground-belt",
+   "turbo-underground-belt-explosion",
+   "turbo-underground-belt-explosion-base",
+   "turbo-underground-belt-remnants",
+   "underground-belt",
+   "underground-belt-explosion",
+   "underground-belt-explosion-base",
+   "underground-belt-remnants",
+   "uranium-cannon-explosion",
+   "uranium-cannon-projectile",
+   "uranium-cannon-shell-explosion",
+   "uranium-ore",
+   "vulcanus-chimney",
+   "vulcanus-chimney-cold",
+   "vulcanus-chimney-faded",
+   "vulcanus-chimney-short",
+   "vulcanus-chimney-truncated",
+   "vulcanus-cliff-collapse",
+   "wall-damaged-explosion",
+   "wall-explosion",
+   "wall-remnants",
+   "water-cane",
+   "water-splash",
+   "wooden-chest",
+   "wooden-chest-explosion",
+   "wooden-chest-remnants",
+   "wube-logo-space-platform",
+   "yumako-regen-sticker",
+   "yumako-regen-sticker-behind",
+   "yumako-tree"
+  ],
+  "fluid": [
+   "ammonia",
+   "ammoniacal-solution",
+   "crude-oil",
+   "electrolyte",
+   "fluid-unknown",
+   "fluorine",
+   "fluoroketone-cold",
+   "fluoroketone-hot",
+   "fusion-plasma",
+   "heavy-oil",
+   "holmium-solution",
+   "lava",
+   "light-oil",
+   "lithium-brine",
+   "lubricant",
+   "molten-copper",
+   "molten-iron",
+   "parameter-0",
+   "parameter-1",
+   "parameter-2",
+   "parameter-3",
+   "parameter-4",
+   "parameter-5",
+   "parameter-6",
+   "parameter-7",
+   "parameter-8",
+   "parameter-9",
+   "petroleum-gas",
+   "steam",
+   "sulfuric-acid",
+   "thruster-fuel",
+   "thruster-oxidizer",
+   "water"
+  ],
+  "item": [
+   "accumulator",
+   "active-provider-chest",
+   "advanced-circuit",
+   "agricultural-science-pack",
+   "agricultural-tower",
+   "arithmetic-combinator",
+   "artificial-jellynut-soil",
+   "artificial-yumako-soil",
+   "artillery-shell",
+   "artillery-targeting-remote",
+   "artillery-turret",
+   "artillery-wagon",
+   "artillery-wagon-cannon",
+   "assembling-machine-1",
+   "assembling-machine-2",
+   "assembling-machine-3",
+   "asteroid-collector",
+   "atomic-bomb",
+   "automation-science-pack",
+   "barrel",
+   "battery",
+   "battery-equipment",
+   "battery-mk2-equipment",
+   "battery-mk3-equipment",
+   "beacon",
+   "belt-immunity-equipment",
+   "big-electric-pole",
+   "big-mining-drill",
+   "biochamber",
+   "bioflux",
+   "biolab",
+   "biter-egg",
+   "blueprint",
+   "blueprint-book",
+   "boiler",
+   "bottomless-chest",
+   "buffer-chest",
+   "bulk-inserter",
+   "burner-generator",
+   "burner-inserter",
+   "burner-mining-drill",
+   "calcite",
+   "cannon-shell",
+   "captive-biter-spawner",
+   "capture-robot-rocket",
+   "car",
+   "carbon",
+   "carbon-fiber",
+   "carbonic-asteroid-chunk",
+   "cargo-bay",
+   "cargo-landing-pad",
+   "cargo-wagon",
+   "centrifuge",
+   "chemical-plant",
+   "chemical-science-pack",
+   "cliff-explosives",
+   "cluster-grenade",
+   "coal",
+   "coin",
+   "combat-shotgun",
+   "concrete",
+   "constant-combinator",
+   "construction-robot",
+   "copper-bacteria",
+   "copper-cable",
+   "copper-ore",
+   "copper-plate",
+   "copper-wire",
+   "copy-paste-tool",
+   "crude-oil-barrel",
+   "crusher",
+   "cryogenic-plant",
+   "cryogenic-science-pack",
+   "cut-paste-tool",
+   "decider-combinator",
+   "deconstruction-planner",
+   "defender-capsule",
+   "depleted-uranium-fuel-cell",
+   "destroyer-capsule",
+   "discharge-defense-equipment",
+   "discharge-defense-remote",
+   "display-panel",
+   "distractor-capsule",
+   "efficiency-module",
+   "efficiency-module-2",
+   "efficiency-module-3",
+   "electric-energy-interface",
+   "electric-engine-unit",
+   "electric-furnace",
+   "electric-mining-drill",
+   "electromagnetic-plant",
+   "electromagnetic-science-pack",
+   "electronic-circuit",
+   "empty-module-slot",
+   "energy-shield-equipment",
+   "energy-shield-mk2-equipment",
+   "engine-unit",
+   "exoskeleton-equipment",
+   "explosive-cannon-shell",
+   "explosive-rocket",
+   "explosive-uranium-cannon-shell",
+   "explosives",
+   "express-loader",
+   "express-splitter",
+   "express-transport-belt",
+   "express-underground-belt",
+   "fast-inserter",
+   "fast-loader",
+   "fast-splitter",
+   "fast-transport-belt",
+   "fast-underground-belt",
+   "firearm-magazine",
+   "fission-reactor-equipment",
+   "flamethrower",
+   "flamethrower-ammo",
+   "flamethrower-turret",
+   "fluid-wagon",
+   "fluoroketone-cold-barrel",
+   "fluoroketone-hot-barrel",
+   "flying-robot-frame",
+   "foundation",
+   "foundry",
+   "fusion-generator",
+   "fusion-power-cell",
+   "fusion-reactor",
+   "fusion-reactor-equipment",
+   "gate",
+   "green-wire",
+   "grenade",
+   "gun-turret",
+   "hazard-concrete",
+   "heat-exchanger",
+   "heat-interface",
+   "heat-pipe",
+   "heating-tower",
+   "heavy-armor",
+   "heavy-oil-barrel",
+   "holmium-ore",
+   "holmium-plate",
+   "ice",
+   "ice-platform",
+   "infinity-cargo-wagon",
+   "infinity-chest",
+   "infinity-pipe",
+   "inserter",
+   "iron-bacteria",
+   "iron-chest",
+   "iron-gear-wheel",
+   "iron-ore",
+   "iron-plate",
+   "iron-stick",
+   "item-unknown",
+   "jelly",
+   "jellynut",
+   "jellynut-seed",
+   "lab",
+   "land-mine",
+   "landfill",
+   "lane-splitter",
+   "laser-turret",
+   "light-armor",
+   "light-oil-barrel",
+   "lightning-collector",
+   "lightning-rod",
+   "linked-belt",
+   "linked-chest",
+   "lithium",
+   "lithium-plate",
+   "loader",
+   "locomotive",
+   "logistic-robot",
+   "logistic-science-pack",
+   "long-handed-inserter",
+   "low-density-structure",
+   "lubricant-barrel",
+   "mech-armor",
+   "medium-electric-pole",
+   "metallic-asteroid-chunk",
+   "metallurgic-science-pack",
+   "military-science-pack",
+   "modular-armor",
+   "night-vision-equipment",
+   "no-item",
+   "nuclear-fuel",
+   "nuclear-reactor",
+   "nutrients",
+   "offshore-pump",
+   "oil-refinery",
+   "one-way-valve",
+   "overflow-valve",
+   "overgrowth-jellynut-soil",
+   "overgrowth-yumako-soil",
+   "oxide-asteroid-chunk",
+   "parameter-0",
+   "parameter-1",
+   "parameter-2",
+   "parameter-3",
+   "parameter-4",
+   "parameter-5",
+   "parameter-6",
+   "parameter-7",
+   "parameter-8",
+   "parameter-9",
+   "passive-provider-chest",
+   "pentapod-egg",
+   "personal-laser-defense-equipment",
+   "personal-roboport-equipment",
+   "personal-roboport-mk2-equipment",
+   "petroleum-gas-barrel",
+   "piercing-rounds-magazine",
+   "piercing-shotgun-shell",
+   "pipe",
+   "pipe-to-ground",
+   "pistol",
+   "plastic-bar",
+   "poison-capsule",
+   "power-armor",
+   "power-armor-mk2",
+   "power-switch",
+   "processing-unit",
+   "production-science-pack",
+   "productivity-module",
+   "productivity-module-2",
+   "productivity-module-3",
+   "programmable-speaker",
+   "promethium-asteroid-chunk",
+   "promethium-science-pack",
+   "proxy-container",
+   "pump",
+   "pumpjack",
+   "quality-module",
+   "quality-module-2",
+   "quality-module-3",
+   "quantum-processor",
+   "radar",
+   "rail",
+   "rail-chain-signal",
+   "rail-ramp",
+   "rail-signal",
+   "rail-support",
+   "railgun",
+   "railgun-ammo",
+   "railgun-turret",
+   "raw-fish",
+   "recycler",
+   "red-wire",
+   "refined-concrete",
+   "refined-hazard-concrete",
+   "repair-pack",
+   "requester-chest",
+   "roboport",
+   "rocket",
+   "rocket-fuel",
+   "rocket-launcher",
+   "rocket-part",
+   "rocket-silo",
+   "rocket-turret",
+   "science",
+   "scrap",
+   "selection-tool",
+   "selector-combinator",
+   "shotgun",
+   "shotgun-shell",
+   "simple-entity-with-force",
+   "simple-entity-with-owner",
+   "slowdown-capsule",
+   "small-electric-pole",
+   "small-lamp",
+   "solar-panel",
+   "solar-panel-equipment",
+   "solid-fuel",
+   "space-platform-foundation",
+   "space-platform-hub",
+   "space-platform-starter-pack",
+   "space-science-pack",
+   "speed-module",
+   "speed-module-2",
+   "speed-module-3",
+   "spidertron",
+   "spidertron-remote",
+   "spidertron-rocket-launcher-1",
+   "spidertron-rocket-launcher-2",
+   "spidertron-rocket-launcher-3",
+   "spidertron-rocket-launcher-4",
+   "splitter",
+   "spoilage",
+   "stack-inserter",
+   "steam-engine",
+   "steam-turbine",
+   "steel-chest",
+   "steel-furnace",
+   "steel-plate",
+   "stone",
+   "stone-brick",
+   "stone-furnace",
+   "stone-wall",
+   "storage-chest",
+   "storage-tank",
+   "submachine-gun",
+   "substation",
+   "sulfur",
+   "sulfuric-acid-barrel",
+   "supercapacitor",
+   "superconductor",
+   "tank",
+   "tank-cannon",
+   "tank-flamethrower",
+   "tank-machine-gun",
+   "tesla-ammo",
+   "tesla-turret",
+   "teslagun",
+   "thruster",
+   "toolbelt-equipment",
+   "top-up-valve",
+   "train-stop",
+   "transport-belt",
+   "tree-seed",
+   "tungsten-carbide",
+   "tungsten-ore",
+   "tungsten-plate",
+   "turbo-loader",
+   "turbo-splitter",
+   "turbo-transport-belt",
+   "turbo-underground-belt",
+   "underground-belt",
+   "upgrade-planner",
+   "uranium-235",
+   "uranium-238",
+   "uranium-cannon-shell",
+   "uranium-fuel-cell",
+   "uranium-ore",
+   "uranium-rounds-magazine",
+   "utility-science-pack",
+   "vehicle-machine-gun",
+   "water-barrel",
+   "wood",
+   "wooden-chest",
+   "yumako",
+   "yumako-mash",
+   "yumako-seed"
+  ],
+  "quality": [
+   "epic",
+   "legendary",
+   "normal",
+   "quality-unknown",
+   "rare",
+   "uncommon"
+  ],
+  "recipe": [
+   "accumulator",
+   "accumulator-recycling",
+   "acid-neutralisation",
+   "active-provider-chest",
+   "active-provider-chest-recycling",
+   "advanced-carbonic-asteroid-crushing",
+   "advanced-circuit",
+   "advanced-circuit-recycling",
+   "advanced-metallic-asteroid-crushing",
+   "advanced-oil-processing",
+   "advanced-oxide-asteroid-crushing",
+   "advanced-thruster-fuel",
+   "advanced-thruster-oxidizer",
+   "agricultural-science-pack",
+   "agricultural-science-pack-recycling",
+   "agricultural-tower",
+   "agricultural-tower-recycling",
+   "ammonia-rocket-fuel",
+   "ammoniacal-solution-separation",
+   "arithmetic-combinator",
+   "arithmetic-combinator-recycling",
+   "artificial-jellynut-soil",
+   "artificial-jellynut-soil-recycling",
+   "artificial-yumako-soil",
+   "artificial-yumako-soil-recycling",
+   "artillery-shell",
+   "artillery-shell-recycling",
+   "artillery-turret",
+   "artillery-turret-recycling",
+   "artillery-wagon",
+   "artillery-wagon-recycling",
+   "assembling-machine-1",
+   "assembling-machine-1-recycling",
+   "assembling-machine-2",
+   "assembling-machine-2-recycling",
+   "assembling-machine-3",
+   "assembling-machine-3-recycling",
+   "asteroid-collector",
+   "asteroid-collector-recycling",
+   "atomic-bomb",
+   "atomic-bomb-recycling",
+   "automation-science-pack",
+   "automation-science-pack-recycling",
+   "barrel",
+   "barrel-recycling",
+   "basic-oil-processing",
+   "battery",
+   "battery-equipment",
+   "battery-equipment-recycling",
+   "battery-mk2-equipment",
+   "battery-mk2-equipment-recycling",
+   "battery-mk3-equipment",
+   "battery-mk3-equipment-recycling",
+   "battery-recycling",
+   "beacon",
+   "beacon-recycling",
+   "belt-immunity-equipment",
+   "belt-immunity-equipment-recycling",
+   "big-electric-pole",
+   "big-electric-pole-recycling",
+   "big-mining-drill",
+   "big-mining-drill-recycling",
+   "biochamber",
+   "biochamber-recycling",
+   "bioflux",
+   "bioflux-recycling",
+   "biolab",
+   "biolab-recycling",
+   "biolubricant",
+   "bioplastic",
+   "biosulfur",
+   "biter-egg",
+   "biter-egg-recycling",
+   "blueprint-book-recycling",
+   "blueprint-recycling",
+   "boiler",
+   "boiler-recycling",
+   "bottomless-chest-recycling",
+   "buffer-chest",
+   "buffer-chest-recycling",
+   "bulk-inserter",
+   "bulk-inserter-recycling",
+   "burner-generator-recycling",
+   "burner-inserter",
+   "burner-inserter-recycling",
+   "burner-mining-drill",
+   "burner-mining-drill-recycling",
+   "burnt-spoilage",
+   "calcite-recycling",
+   "cannon-shell",
+   "cannon-shell-recycling",
+   "captive-biter-spawner",
+   "captive-biter-spawner-recycling",
+   "capture-robot-rocket",
+   "capture-robot-rocket-recycling",
+   "car",
+   "car-recycling",
+   "carbon",
+   "carbon-fiber",
+   "carbon-fiber-recycling",
+   "carbon-recycling",
+   "carbonic-asteroid-chunk-recycling",
+   "carbonic-asteroid-crushing",
+   "carbonic-asteroid-reprocessing",
+   "cargo-bay",
+   "cargo-bay-recycling",
+   "cargo-landing-pad",
+   "cargo-landing-pad-recycling",
+   "cargo-wagon",
+   "cargo-wagon-recycling",
+   "casting-copper",
+   "casting-copper-cable",
+   "casting-iron",
+   "casting-iron-gear-wheel",
+   "casting-iron-stick",
+   "casting-low-density-structure",
+   "casting-pipe",
+   "casting-pipe-to-ground",
+   "casting-steel",
+   "centrifuge",
+   "centrifuge-recycling",
+   "chemical-plant",
+   "chemical-plant-recycling",
+   "chemical-science-pack",
+   "chemical-science-pack-recycling",
+   "cliff-explosives",
+   "cliff-explosives-recycling",
+   "cluster-grenade",
+   "cluster-grenade-recycling",
+   "coal-liquefaction",
+   "coal-recycling",
+   "coal-synthesis",
+   "coin-recycling",
+   "combat-shotgun",
+   "combat-shotgun-recycling",
+   "concrete",
+   "concrete-from-molten-iron",
+   "concrete-recycling",
+   "constant-combinator",
+   "constant-combinator-recycling",
+   "construction-robot",
+   "construction-robot-recycling",
+   "copper-bacteria",
+   "copper-bacteria-cultivation",
+   "copper-bacteria-recycling",
+   "copper-cable",
+   "copper-cable-recycling",
+   "copper-ore-recycling",
+   "copper-plate",
+   "copper-plate-recycling",
+   "crude-oil-barrel",
+   "crude-oil-barrel-recycling",
+   "crusher",
+   "crusher-recycling",
+   "cryogenic-plant",
+   "cryogenic-plant-recycling",
+   "cryogenic-science-pack",
+   "cryogenic-science-pack-recycling",
+   "decider-combinator",
+   "decider-combinator-recycling",
+   "deconstruction-planner-recycling",
+   "defender-capsule",
+   "defender-capsule-recycling",
+   "depleted-uranium-fuel-cell-recycling",
+   "destroyer-capsule",
+   "destroyer-capsule-recycling",
+   "discharge-defense-equipment",
+   "discharge-defense-equipment-recycling",
+   "display-panel",
+   "display-panel-recycling",
+   "distractor-capsule",
+   "distractor-capsule-recycling",
+   "efficiency-module",
+   "efficiency-module-2",
+   "efficiency-module-2-recycling",
+   "efficiency-module-3",
+   "efficiency-module-3-recycling",
+   "efficiency-module-recycling",
+   "electric-energy-interface-recycling",
+   "electric-engine-unit",
+   "electric-engine-unit-recycling",
+   "electric-furnace",
+   "electric-furnace-recycling",
+   "electric-mining-drill",
+   "electric-mining-drill-recycling",
+   "electrolyte",
+   "electromagnetic-plant",
+   "electromagnetic-plant-recycling",
+   "electromagnetic-science-pack",
+   "electromagnetic-science-pack-recycling",
+   "electronic-circuit",
+   "electronic-circuit-recycling",
+   "empty-crude-oil-barrel",
+   "empty-fluoroketone-cold-barrel",
+   "empty-fluoroketone-hot-barrel",
+   "empty-heavy-oil-barrel",
+   "empty-light-oil-barrel",
+   "empty-lubricant-barrel",
+   "empty-module-slot-recycling",
+   "empty-petroleum-gas-barrel",
+   "empty-sulfuric-acid-barrel",
+   "empty-water-barrel",
+   "energy-shield-equipment",
+   "energy-shield-equipment-recycling",
+   "energy-shield-mk2-equipment",
+   "energy-shield-mk2-equipment-recycling",
+   "engine-unit",
+   "engine-unit-recycling",
+   "exoskeleton-equipment",
+   "exoskeleton-equipment-recycling",
+   "explosive-cannon-shell",
+   "explosive-cannon-shell-recycling",
+   "explosive-rocket",
+   "explosive-rocket-recycling",
+   "explosive-uranium-cannon-shell",
+   "explosive-uranium-cannon-shell-recycling",
+   "explosives",
+   "explosives-recycling",
+   "express-loader",
+   "express-loader-recycling",
+   "express-splitter",
+   "express-splitter-recycling",
+   "express-transport-belt",
+   "express-transport-belt-recycling",
+   "express-underground-belt",
+   "express-underground-belt-recycling",
+   "fast-inserter",
+   "fast-inserter-recycling",
+   "fast-loader",
+   "fast-loader-recycling",
+   "fast-splitter",
+   "fast-splitter-recycling",
+   "fast-transport-belt",
+   "fast-transport-belt-recycling",
+   "fast-underground-belt",
+   "fast-underground-belt-recycling",
+   "firearm-magazine",
+   "firearm-magazine-recycling",
+   "fish-breeding",
+   "fission-reactor-equipment",
+   "fission-reactor-equipment-recycling",
+   "flamethrower",
+   "flamethrower-ammo",
+   "flamethrower-ammo-recycling",
+   "flamethrower-recycling",
+   "flamethrower-turret",
+   "flamethrower-turret-recycling",
+   "fluid-wagon",
+   "fluid-wagon-recycling",
+   "fluoroketone",
+   "fluoroketone-cold-barrel",
+   "fluoroketone-cold-barrel-recycling",
+   "fluoroketone-cooling",
+   "fluoroketone-hot-barrel",
+   "fluoroketone-hot-barrel-recycling",
+   "flying-robot-frame",
+   "flying-robot-frame-recycling",
+   "foundation",
+   "foundation-recycling",
+   "foundry",
+   "foundry-recycling",
+   "fusion-generator",
+   "fusion-generator-recycling",
+   "fusion-power-cell",
+   "fusion-power-cell-recycling",
+   "fusion-reactor",
+   "fusion-reactor-equipment",
+   "fusion-reactor-equipment-recycling",
+   "fusion-reactor-recycling",
+   "gate",
+   "gate-recycling",
+   "grenade",
+   "grenade-recycling",
+   "gun-turret",
+   "gun-turret-recycling",
+   "hazard-concrete",
+   "hazard-concrete-recycling",
+   "heat-exchanger",
+   "heat-exchanger-recycling",
+   "heat-interface",
+   "heat-interface-recycling",
+   "heat-pipe",
+   "heat-pipe-recycling",
+   "heating-tower",
+   "heating-tower-recycling",
+   "heavy-armor",
+   "heavy-armor-recycling",
+   "heavy-oil-barrel",
+   "heavy-oil-barrel-recycling",
+   "heavy-oil-cracking",
+   "holmium-ore-recycling",
+   "holmium-plate",
+   "holmium-plate-recycling",
+   "holmium-solution",
+   "ice-melting",
+   "ice-platform",
+   "ice-platform-recycling",
+   "ice-recycling",
+   "infinity-cargo-wagon-recycling",
+   "infinity-chest",
+   "infinity-chest-recycling",
+   "infinity-pipe",
+   "infinity-pipe-recycling",
+   "inserter",
+   "inserter-recycling",
+   "iron-bacteria",
+   "iron-bacteria-cultivation",
+   "iron-bacteria-recycling",
+   "iron-chest",
+   "iron-chest-recycling",
+   "iron-gear-wheel",
+   "iron-gear-wheel-recycling",
+   "iron-ore-recycling",
+   "iron-plate",
+   "iron-plate-recycling",
+   "iron-stick",
+   "iron-stick-recycling",
+   "item-unknown-recycling",
+   "jelly-recycling",
+   "jellynut-processing",
+   "jellynut-recycling",
+   "jellynut-seed-recycling",
+   "kovarex-enrichment-process",
+   "lab",
+   "lab-recycling",
+   "land-mine",
+   "land-mine-recycling",
+   "landfill",
+   "landfill-recycling",
+   "lane-splitter-recycling",
+   "laser-turret",
+   "laser-turret-recycling",
+   "light-armor",
+   "light-armor-recycling",
+   "light-oil-barrel",
+   "light-oil-barrel-recycling",
+   "light-oil-cracking",
+   "lightning-collector",
+   "lightning-collector-recycling",
+   "lightning-rod",
+   "lightning-rod-recycling",
+   "linked-belt-recycling",
+   "linked-chest-recycling",
+   "lithium",
+   "lithium-plate",
+   "lithium-plate-recycling",
+   "lithium-recycling",
+   "loader",
+   "loader-recycling",
+   "locomotive",
+   "locomotive-recycling",
+   "logistic-robot",
+   "logistic-robot-recycling",
+   "logistic-science-pack",
+   "logistic-science-pack-recycling",
+   "long-handed-inserter",
+   "long-handed-inserter-recycling",
+   "low-density-structure",
+   "low-density-structure-recycling",
+   "lubricant",
+   "lubricant-barrel",
+   "lubricant-barrel-recycling",
+   "mech-armor",
+   "mech-armor-recycling",
+   "medium-electric-pole",
+   "medium-electric-pole-recycling",
+   "metallic-asteroid-chunk-recycling",
+   "metallic-asteroid-crushing",
+   "metallic-asteroid-reprocessing",
+   "metallurgic-science-pack",
+   "metallurgic-science-pack-recycling",
+   "military-science-pack",
+   "military-science-pack-recycling",
+   "modular-armor",
+   "modular-armor-recycling",
+   "molten-copper",
+   "molten-copper-from-lava",
+   "molten-iron",
+   "molten-iron-from-lava",
+   "night-vision-equipment",
+   "night-vision-equipment-recycling",
+   "nuclear-fuel",
+   "nuclear-fuel-recycling",
+   "nuclear-fuel-reprocessing",
+   "nuclear-reactor",
+   "nuclear-reactor-recycling",
+   "nutrients-from-bioflux",
+   "nutrients-from-biter-egg",
+   "nutrients-from-fish",
+   "nutrients-from-spoilage",
+   "nutrients-from-yumako-mash",
+   "nutrients-recycling",
+   "offshore-pump",
+   "offshore-pump-recycling",
+   "oil-refinery",
+   "oil-refinery-recycling",
+   "one-way-valve-recycling",
+   "overflow-valve-recycling",
+   "overgrowth-jellynut-soil",
+   "overgrowth-jellynut-soil-recycling",
+   "overgrowth-yumako-soil",
+   "overgrowth-yumako-soil-recycling",
+   "oxide-asteroid-chunk-recycling",
+   "oxide-asteroid-crushing",
+   "oxide-asteroid-reprocessing",
+   "parameter-0",
+   "parameter-1",
+   "parameter-2",
+   "parameter-3",
+   "parameter-4",
+   "parameter-5",
+   "parameter-6",
+   "parameter-7",
+   "parameter-8",
+   "parameter-9",
+   "passive-provider-chest",
+   "passive-provider-chest-recycling",
+   "pentapod-egg",
+   "pentapod-egg-recycling",
+   "personal-laser-defense-equipment",
+   "personal-laser-defense-equipment-recycling",
+   "personal-roboport-equipment",
+   "personal-roboport-equipment-recycling",
+   "personal-roboport-mk2-equipment",
+   "personal-roboport-mk2-equipment-recycling",
+   "petroleum-gas-barrel",
+   "petroleum-gas-barrel-recycling",
+   "piercing-rounds-magazine",
+   "piercing-rounds-magazine-recycling",
+   "piercing-shotgun-shell",
+   "piercing-shotgun-shell-recycling",
+   "pipe",
+   "pipe-recycling",
+   "pipe-to-ground",
+   "pipe-to-ground-recycling",
+   "pistol",
+   "pistol-recycling",
+   "plastic-bar",
+   "plastic-bar-recycling",
+   "poison-capsule",
+   "poison-capsule-recycling",
+   "power-armor",
+   "power-armor-mk2",
+   "power-armor-mk2-recycling",
+   "power-armor-recycling",
+   "power-switch",
+   "power-switch-recycling",
+   "processing-unit",
+   "processing-unit-recycling",
+   "production-science-pack",
+   "production-science-pack-recycling",
+   "productivity-module",
+   "productivity-module-2",
+   "productivity-module-2-recycling",
+   "productivity-module-3",
+   "productivity-module-3-recycling",
+   "productivity-module-recycling",
+   "programmable-speaker",
+   "programmable-speaker-recycling",
+   "promethium-asteroid-chunk-recycling",
+   "promethium-science-pack",
+   "promethium-science-pack-recycling",
+   "proxy-container-recycling",
+   "pump",
+   "pump-recycling",
+   "pumpjack",
+   "pumpjack-recycling",
+   "quality-module",
+   "quality-module-2",
+   "quality-module-2-recycling",
+   "quality-module-3",
+   "quality-module-3-recycling",
+   "quality-module-recycling",
+   "quantum-processor",
+   "quantum-processor-recycling",
+   "radar",
+   "radar-recycling",
+   "rail",
+   "rail-chain-signal",
+   "rail-chain-signal-recycling",
+   "rail-ramp",
+   "rail-ramp-recycling",
+   "rail-recycling",
+   "rail-signal",
+   "rail-signal-recycling",
+   "rail-support",
+   "rail-support-recycling",
+   "railgun",
+   "railgun-ammo",
+   "railgun-ammo-recycling",
+   "railgun-recycling",
+   "railgun-turret",
+   "railgun-turret-recycling",
+   "raw-fish-recycling",
+   "recipe-unknown",
+   "recycler",
+   "recycler-recycling",
+   "refined-concrete",
+   "refined-concrete-recycling",
+   "refined-hazard-concrete",
+   "refined-hazard-concrete-recycling",
+   "repair-pack",
+   "repair-pack-recycling",
+   "requester-chest",
+   "requester-chest-recycling",
+   "roboport",
+   "roboport-recycling",
+   "rocket",
+   "rocket-fuel",
+   "rocket-fuel-from-jelly",
+   "rocket-fuel-recycling",
+   "rocket-launcher",
+   "rocket-launcher-recycling",
+   "rocket-part",
+   "rocket-recycling",
+   "rocket-silo",
+   "rocket-silo-recycling",
+   "rocket-turret",
+   "rocket-turret-recycling",
+   "science-recycling",
+   "scrap-recycling",
+   "selection-tool-recycling",
+   "selector-combinator",
+   "selector-combinator-recycling",
+   "shotgun",
+   "shotgun-recycling",
+   "shotgun-shell",
+   "shotgun-shell-recycling",
+   "simple-coal-liquefaction",
+   "simple-entity-with-force-recycling",
+   "simple-entity-with-owner-recycling",
+   "slowdown-capsule",
+   "slowdown-capsule-recycling",
+   "small-electric-pole",
+   "small-electric-pole-recycling",
+   "small-lamp",
+   "small-lamp-recycling",
+   "solar-panel",
+   "solar-panel-equipment",
+   "solar-panel-equipment-recycling",
+   "solar-panel-recycling",
+   "solid-fuel-from-ammonia",
+   "solid-fuel-from-heavy-oil",
+   "solid-fuel-from-light-oil",
+   "solid-fuel-from-petroleum-gas",
+   "solid-fuel-recycling",
+   "space-platform-foundation",
+   "space-platform-foundation-recycling",
+   "space-platform-hub-recycling",
+   "space-platform-starter-pack",
+   "space-platform-starter-pack-recycling",
+   "space-science-pack",
+   "space-science-pack-recycling",
+   "speed-module",
+   "speed-module-2",
+   "speed-module-2-recycling",
+   "speed-module-3",
+   "speed-module-3-recycling",
+   "speed-module-recycling",
+   "spidertron",
+   "spidertron-recycling",
+   "splitter",
+   "splitter-recycling",
+   "spoilage-recycling",
+   "stack-inserter",
+   "stack-inserter-recycling",
+   "steam-condensation",
+   "steam-engine",
+   "steam-engine-recycling",
+   "steam-turbine",
+   "steam-turbine-recycling",
+   "steel-chest",
+   "steel-chest-recycling",
+   "steel-furnace",
+   "steel-furnace-recycling",
+   "steel-plate",
+   "steel-plate-recycling",
+   "stone-brick",
+   "stone-brick-recycling",
+   "stone-furnace",
+   "stone-furnace-recycling",
+   "stone-recycling",
+   "stone-wall",
+   "stone-wall-recycling",
+   "storage-chest",
+   "storage-chest-recycling",
+   "storage-tank",
+   "storage-tank-recycling",
+   "submachine-gun",
+   "submachine-gun-recycling",
+   "substation",
+   "substation-recycling",
+   "sulfur",
+   "sulfur-recycling",
+   "sulfuric-acid",
+   "sulfuric-acid-barrel",
+   "sulfuric-acid-barrel-recycling",
+   "supercapacitor",
+   "supercapacitor-recycling",
+   "superconductor",
+   "superconductor-recycling",
+   "tank",
+   "tank-recycling",
+   "tesla-ammo",
+   "tesla-ammo-recycling",
+   "tesla-turret",
+   "tesla-turret-recycling",
+   "teslagun",
+   "teslagun-recycling",
+   "thruster",
+   "thruster-fuel",
+   "thruster-oxidizer",
+   "thruster-recycling",
+   "toolbelt-equipment",
+   "toolbelt-equipment-recycling",
+   "top-up-valve-recycling",
+   "train-stop",
+   "train-stop-recycling",
+   "transport-belt",
+   "transport-belt-recycling",
+   "tree-seed-recycling",
+   "tungsten-carbide",
+   "tungsten-carbide-recycling",
+   "tungsten-ore-recycling",
+   "tungsten-plate",
+   "tungsten-plate-recycling",
+   "turbo-loader",
+   "turbo-loader-recycling",
+   "turbo-splitter",
+   "turbo-splitter-recycling",
+   "turbo-transport-belt",
+   "turbo-transport-belt-recycling",
+   "turbo-underground-belt",
+   "turbo-underground-belt-recycling",
+   "underground-belt",
+   "underground-belt-recycling",
+   "upgrade-planner-recycling",
+   "uranium-235-recycling",
+   "uranium-238-recycling",
+   "uranium-cannon-shell",
+   "uranium-cannon-shell-recycling",
+   "uranium-fuel-cell",
+   "uranium-fuel-cell-recycling",
+   "uranium-ore-recycling",
+   "uranium-processing",
+   "uranium-rounds-magazine",
+   "uranium-rounds-magazine-recycling",
+   "utility-science-pack",
+   "utility-science-pack-recycling",
+   "water-barrel",
+   "water-barrel-recycling",
+   "wood-processing",
+   "wood-recycling",
+   "wooden-chest",
+   "wooden-chest-recycling",
+   "yumako-mash-recycling",
+   "yumako-processing",
+   "yumako-recycling",
+   "yumako-seed-recycling"
+  ],
+  "space-location": [
+   "aquilo",
+   "fulgora",
+   "gleba",
+   "nauvis",
+   "shattered-planet",
+   "solar-system-edge",
+   "space-location-unknown",
+   "vulcanus"
+  ],
+  "virtual": [
+   "down-arrow",
+   "down-left-arrow",
+   "down-right-arrow",
+   "left-arrow",
+   "right-arrow",
+   "shape-circle",
+   "shape-corner",
+   "shape-corner-2",
+   "shape-corner-3",
+   "shape-corner-4",
+   "shape-cross",
+   "shape-curve",
+   "shape-curve-2",
+   "shape-curve-3",
+   "shape-curve-4",
+   "shape-diagonal",
+   "shape-diagonal-2",
+   "shape-diagonal-cross",
+   "shape-horizontal",
+   "shape-t",
+   "shape-t-2",
+   "shape-t-3",
+   "shape-t-4",
+   "shape-vertical",
+   "signal-0",
+   "signal-1",
+   "signal-2",
+   "signal-3",
+   "signal-4",
+   "signal-5",
+   "signal-6",
+   "signal-7",
+   "signal-8",
+   "signal-9",
+   "signal-A",
+   "signal-B",
+   "signal-C",
+   "signal-D",
+   "signal-E",
+   "signal-F",
+   "signal-G",
+   "signal-H",
+   "signal-I",
+   "signal-J",
+   "signal-K",
+   "signal-L",
+   "signal-M",
+   "signal-N",
+   "signal-O",
+   "signal-P",
+   "signal-Q",
+   "signal-R",
+   "signal-S",
+   "signal-T",
+   "signal-U",
+   "signal-V",
+   "signal-W",
+   "signal-X",
+   "signal-Y",
+   "signal-Z",
+   "signal-alarm",
+   "signal-alert",
+   "signal-ampersand",
+   "signal-anticlockwise-circle-arrow",
+   "signal-any-quality",
+   "signal-apostrophe",
+   "signal-battery-full",
+   "signal-battery-low",
+   "signal-battery-mid-level",
+   "signal-black",
+   "signal-blue",
+   "signal-check",
+   "signal-circumflex-accent",
+   "signal-clock",
+   "signal-clockwise-circle-arrow",
+   "signal-colon",
+   "signal-comma",
+   "signal-cyan",
+   "signal-damage",
+   "signal-deny",
+   "signal-division",
+   "signal-dot",
+   "signal-equal",
+   "signal-exclamation-mark",
+   "signal-explosion",
+   "signal-fire",
+   "signal-fuel",
+   "signal-ghost",
+   "signal-greater-than",
+   "signal-greater-than-or-equal-to",
+   "signal-green",
+   "signal-grey",
+   "signal-heart",
+   "signal-hourglass",
+   "signal-info",
+   "signal-input",
+   "signal-left-parenthesis",
+   "signal-left-right-arrow",
+   "signal-left-square-bracket",
+   "signal-less-than",
+   "signal-less-than-or-equal-to",
+   "signal-letter-dot",
+   "signal-lightning",
+   "signal-liquid",
+   "signal-lock",
+   "signal-map-marker",
+   "signal-mining",
+   "signal-minus",
+   "signal-moon",
+   "signal-multiplication",
+   "signal-no-entry",
+   "signal-not-equal",
+   "signal-number-sign",
+   "signal-output",
+   "signal-percent",
+   "signal-pink",
+   "signal-plus",
+   "signal-question-mark",
+   "signal-quotation-mark",
+   "signal-radioactivity",
+   "signal-recycle",
+   "signal-red",
+   "signal-right-parenthesis",
+   "signal-right-square-bracket",
+   "signal-rightwards-leftwards-arrow",
+   "signal-science-pack",
+   "signal-shuffle",
+   "signal-skull",
+   "signal-slash",
+   "signal-snowflake",
+   "signal-speed",
+   "signal-stack-size",
+   "signal-star",
+   "signal-sun",
+   "signal-thermometer-blue",
+   "signal-thermometer-red",
+   "signal-trash-bin",
+   "signal-unlock",
+   "signal-up-down-arrow",
+   "signal-upwards-downwards-arrow",
+   "signal-weapon",
+   "signal-white",
+   "signal-white-flag",
+   "signal-yellow",
+   "up-arrow",
+   "up-left-arrow",
+   "up-right-arrow"
+  ]
+ },
+ "special_signals": [
+  "signal-anything",
+  "signal-each",
+  "signal-everything",
+  "signal-fluid-parameter",
+  "signal-fuel-parameter",
+  "signal-item-parameter",
+  "signal-signal-parameter",
+  "signal-unknown"
+ ],
+ "never_transmit": {
+  "virtual": [
+   "signal-anything",
+   "signal-each",
+   "signal-everything",
+   "signal-fluid-parameter",
+   "signal-fuel-parameter",
+   "signal-item-parameter",
+   "signal-signal-parameter",
+   "signal-unknown"
+  ]
+ },
+ "refused": {}
+}

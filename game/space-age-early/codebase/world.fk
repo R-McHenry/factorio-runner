@@ -1,0 +1,20 @@
+# world.fk: your base, one plot: 2000x2000 tiles (nauvis.fk places it; 2000,2000 here is the map
+# corner at 999,999, so a map tile x,y is this file's x+1000, y+1000).
+#
+# The starter kit (kit.fk) stands inside this plot as the world's own furniture: the design
+# declares it, so it is yours to build around, extend or take up. Everything else you add here is
+# your base.
+#
+# Build each factory as a sealed module: `module NAME size WxH { ... }` with `port` lines on its
+# edges. Its own belts stay inside its frame; the belts between factories are nets written here,
+# from one factory's port to the next one's. A change inside one factory never moves another.
+#   docs/LANGUAGE.md "Modules with ports"   the module, its ports, its contract
+#   docs/EXAMPLES.md busbase.fk             a whole base built this way: smelting, a bus,
+#                                          circuits, a mall and science
+# Two items into one row share a belt, a lane each: `lanes A | B` (the build's could-pair check names
+# the pair when you leave them on two belts).
+# A factory used in several places (or a big one) can live in a file of its own:
+#   import Smelting from "smelting.fk"
+import Kit from "kit.fk"
+
+kit   = Kit @(1000, 1000)      # the kit: chests, roboport, panels, accumulators, poles at map 0,0

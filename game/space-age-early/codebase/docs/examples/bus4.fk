@@ -1,0 +1,20 @@
+# bus4.fk: Rory's 4-belt bus (2026-10-21), a river of iron, as the Bus template: four belts run
+# east (rows 11..14 here); a load from the south at x 11 merges into all four by a staircase of
+# splitters that fills the far belt first; two taps pull out by staircases, north at x 26 and south
+# at x 33, each taking from the far belt first. bus4.json is his demo exactly as he placed it; the
+# template at the same parameters lays the same bus, and the router lays the belts to and from it.
+# Grow it: make it longer, add loads and taps (load=s11|s40), and a net for each port.
+ore   = Chest<requester, item=iron-ore, rate=3/s>   @(1, 18)
+coal  = Chest<requester, item=coal, rate=1/s>       @(1, 21)
+smelt = SmelterRow<n=8, recipe=iron-plate>          @(4, 18)
+bus   = Bus<belts=4, length=54, item=iron-plate, load=s11, tap=n26|s33> @(0, 10)
+gears = AsmRow<n=1, recipe=iron-gear-wheel>         @(30, 1)
+gbox  = Chest<provider, limit=4>                    @(26, 2)
+box   = Chest<provider, limit=8>                    @(36, 19)
+
+net ore_:  ore -> smelt
+net fuel:  coal -> smelt
+net iron1: smelt -> bus.load1             # the smelters' plates onto the bus
+net fe:    bus.tap1 -> gears              # the gears take what they need first
+net gear:  gears -> gbox
+net spare: bus.tap2 -> box                # the rest into the logistic network

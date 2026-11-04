@@ -28,7 +28,7 @@ import shutil
 import time
 import uuid
 
-from . import archive, cell as cells, facts, kit, ledger, maps, node as nodes
+from . import archive, cell as cells, facts, fk, kit, ledger, maps, node as nodes
 from .agent import llm as llms
 from .agent.tools import PROFILES, Toolbox, goal_text, referee
 from .server import Server, ensure_factorio
@@ -101,6 +101,19 @@ def fresh(store, spec: dict, work: str) -> nodes.Node:
         os.makedirs(wd, exist_ok=True)
         with open(os.path.join(wd, "NOTES.md"), "w") as fh:
             fh.write("# Notes\n\nNothing yet: this is a fresh map with the kickoff kit.\n")
+        cb = spec["_paths"].get("codebase")
+        if cb:
+            # the toolkit's game codebase, part of every node from here on
+            gd = os.path.join(wd, "game")
+            shutil.copytree(cb, gd)
+            with open(os.path.join(gd, "kit.json"), "w") as fh:
+                json.dump(kit.kit_json(g.get("kit", "kickoff-v1")), fh, indent=1)
+            area = spec.get("toolkit", {}).get("terrain_area", "-256,-256,256,256")
+            rc, out = fk.run(f"read-terrain . --surface nauvis --area {area} --name map", gd, srv,
+                             spec.get("toolkit", {}).get("pack"))
+            report["terrain"] = out.splitlines()[-1][:300] if out else f"rc {rc}"
+            if rc != 0 or not os.path.exists(os.path.join(gd, "map.terrain.json")):
+                raise RuntimeError(f"read-terrain failed ({rc}): {out[-1500:]}")
         root = nodes.snapshot(store, srv, wd, arm, None, None, {"usd": 0.0, "turns": 0})
     store.put_json(f"roots/{arm}.json", {"node": root.id, "kit": report, "created": time.time()})
     archive.offer(store, root)
@@ -164,10 +177,42 @@ class Session:
                     f"the legit game from just before. load_state {name} to count again.)")
         return self.server.lua(code)
 
+    def fk(self, args: str) -> str:
+        """The toolkit, run in the work dir's game codebase against this episode's server."""
+        gd = os.path.join(self.workdir, "game")
+        if not os.path.isdir(gd):
+            return "error: this arm has no game codebase (toolkit profile without game.codebase)"
+        code = fk.lua_code(args)
+        note = ""
+        if code is not None:
+            why = referee(code)
+            if why and self.valid:
+                self.n_invalid += 1
+                name = f"last-valid-{self.n_invalid}"
+                self._save(name, valid=True)
+                self.last_valid = name
+                self.valid = False
+                self._record(role="invalid", why=why, state=name)
+                note = (f"\n(note: {why}. The run doesn't count from here; state {name} is the legit "
+                        f"game from just before. load_state {name} to count again.)")
+        rc, out = fk.run(args, gd, self.server, self.spec.get("toolkit", {}).get("pack"),
+                         timeout=float(self.spec.get("toolkit", {}).get("timeout_s", 900)))
+        if len(out) > 12000:
+            out = out[:3000] + f"\n... [{len(out) - 9000} chars cut] ...\n" + out[-6000:]
+        return f"{out or '(no output)'}\n(exit {rc}){note}"
+
     def _save(self, name: str, valid: bool) -> dict:
+        """Save the game, and the game codebase with it (a toolkit run's design must match its world
+        after a load). NOTES.md and the other work files are not rolled back: what the agent learned
+        stays."""
         path = self.server.save(f"st-{name}")
         st = {"tick": self.server.tick(), "valid": valid,
-              "last_valid": None if valid else self.last_valid, "file": path}
+              "last_valid": None if valid else self.last_valid, "file": path, "code": None}
+        gd = os.path.join(self.workdir, "game")
+        if os.path.isdir(gd):
+            st["code"] = path + ".game.tar.gz"
+            with open(st["code"], "wb") as fh:
+                fh.write(nodes.pack_dir(gd))
         self.states[name] = st
         return st
 
@@ -182,12 +227,18 @@ class Session:
         if st is None:
             return f"error: no state {name}; list_states shows them"
         tick = self.server.load(st["file"])
+        if st.get("code"):
+            gd = os.path.join(self.workdir, "game")
+            shutil.rmtree(gd, ignore_errors=True)
+            with open(st["code"], "rb") as fh:
+                nodes.unpack_dir(fh.read(), gd)
         self.valid = st["valid"]
         self.last_valid = st["last_valid"]
         made = nodes.read_state(self.server)["made"]
         self.ep_state["levels"] = cells.cell(made)
         self._record(role="load", state=name, tick=tick, valid=self.valid)
-        return f"loaded state {name}: tick {tick}; goal: {goal_text(self.goal, made)}"
+        code = " (and the game codebase as it was then)" if st.get("code") else ""
+        return f"loaded state {name}{code}: tick {tick}; goal: {goal_text(self.goal, made)}"
 
     def list_states(self) -> str:
         rows = [f"{n}: tick {s['tick']}, {'legit' if s['valid'] else 'testing'}"

@@ -129,6 +129,14 @@ KITS = {
 }
 
 
+def kit_json(name: str) -> dict:
+    """The kit as a toolkit codebase declares it (game/kit.json): the bootstrap and the chests."""
+    bootstrap, _, _ = KITS[name]
+    ents = [{"name": n, "wx": x, "wy": y, "d": 0} for n, x, y in bootstrap]
+    ents += [{"name": "storage-chest", "wx": x, "wy": y, "d": 0} for x, y in CHESTS]
+    return {"note": f"the starter kit the runner puts down (runner.kit, kit {name})", "entities": ents}
+
+
 def apply(server, name: str = "kickoff-v1") -> dict:
     """Put kit `name` down on a fresh map (paused server). -> the three steps' reports."""
     if name not in KITS:

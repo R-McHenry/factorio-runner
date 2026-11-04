@@ -1,0 +1,31 @@
+# The toolkit profile with no model: a scripted agent drives fk on the early-bots start (tests).
+arm = "test-fk-scripted"
+
+[game]
+factorio = "2.0.77"
+mods = "../game/space-age-early/mods"
+map_gen = "../game/space-age/map-gen-settings.json"
+map_settings = "../game/space-age/map-settings.json"
+codebase = "../game/space-age-early/codebase"
+seed = 1
+kit = "kickoff-early-bots"
+
+[agent]
+provider = "scripted"
+provider_name = "scripted"
+script = "arms/test-fk-script.json"
+
+[toolkit]
+profile = "fk"
+pack = "sa-early"
+
+[session]
+episodes = 1
+
+[episode]
+max_turns = 20
+max_ticks = 36000
+goal_dist = 2
+
+[budget]
+monthly_usd = 0

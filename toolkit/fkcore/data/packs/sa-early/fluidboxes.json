@@ -1,0 +1,587 @@
+{
+ "checked": "60 entities created live (15 prototypes x 4 directions): every normal connection's position and target_position equals the centre + at[direction] and one tile further along dir + the entity's direction; assembling-machine-2/3 without a recipe have no live box",
+ "entities": {
+  "assembling-machine-2": {
+   "boxes": [
+    {
+     "connections": [{"at": [[0, -1], [1, 0], [0, 1], [-1, 0]], "dir": 0, "flow": "input", "type": "normal"}],
+     "index": 1,
+     "production": "input"
+    },
+    {
+     "connections": [{"at": [[0, 1], [-1, 0], [0, -1], [1, 0]], "dir": 8, "flow": "output", "type": "normal"}],
+     "index": 2,
+     "production": "output"
+    }
+   ],
+   "boxes_need_fluid_recipe": true,
+   "size": [3, 3],
+   "type": "assembling-machine"
+  },
+  "assembling-machine-3": {
+   "boxes": [
+    {
+     "connections": [{"at": [[0, -1], [1, 0], [0, 1], [-1, 0]], "dir": 0, "flow": "input", "type": "normal"}],
+     "index": 1,
+     "production": "input"
+    },
+    {
+     "connections": [{"at": [[0, 1], [-1, 0], [0, -1], [1, 0]], "dir": 8, "flow": "output", "type": "normal"}],
+     "index": 2,
+     "production": "output"
+    }
+   ],
+   "boxes_need_fluid_recipe": true,
+   "size": [3, 3],
+   "type": "assembling-machine"
+  },
+  "boiler": {
+   "boxes": [
+    {
+     "connections": [
+      {
+       "at": [[-1, 0.5], [-0.5, -1], [1, -0.5], [0.5, 1]],
+       "dir": 12,
+       "flow": "input-output",
+       "type": "normal"
+      },
+      {
+       "at": [[1, 0.5], [-0.5, 1], [-1, -0.5], [0.5, -1]],
+       "dir": 4,
+       "flow": "input-output",
+       "type": "normal"
+      }
+     ],
+     "filter": "water",
+     "index": 1,
+     "production": "input"
+    },
+    {
+     "connections": [
+      {
+       "at": [[0, -0.5], [0.5, 0], [0, 0.5], [-0.5, 0]],
+       "dir": 0,
+       "flow": "output",
+       "type": "normal"
+      }
+     ],
+     "filter": "steam",
+     "index": 2,
+     "production": "output"
+    }
+   ],
+   "size": [3, 2],
+   "type": "boiler"
+  },
+  "chemical-plant": {
+   "boxes": [
+    {
+     "connections": [{"at": [[-1, -1], [1, -1], [1, 1], [-1, 1]], "dir": 0, "flow": "input", "type": "normal"}],
+     "index": 1,
+     "production": "input"
+    },
+    {
+     "connections": [{"at": [[1, -1], [1, 1], [-1, 1], [-1, -1]], "dir": 0, "flow": "input", "type": "normal"}],
+     "index": 2,
+     "production": "input"
+    },
+    {
+     "connections": [{"at": [[-1, 1], [-1, -1], [1, -1], [1, 1]], "dir": 8, "flow": "output", "type": "normal"}],
+     "index": 3,
+     "production": "output"
+    },
+    {
+     "connections": [{"at": [[1, 1], [-1, 1], [-1, -1], [1, -1]], "dir": 8, "flow": "output", "type": "normal"}],
+     "index": 4,
+     "production": "output"
+    }
+   ],
+   "size": [3, 3],
+   "type": "assembling-machine"
+  },
+  "electric-mining-drill": {
+   "boxes": [
+    {
+     "connections": [
+      {
+       "at": [[-1, 0], [0, -1], [1, 0], [0, 1]],
+       "dir": 12,
+       "flow": "input-output",
+       "type": "normal"
+      },
+      {
+       "at": [[1, 0], [0, 1], [-1, 0], [0, -1]],
+       "dir": 4,
+       "flow": "input-output",
+       "type": "normal"
+      },
+      {
+       "at": [[0, 1], [-1, 0], [0, -1], [1, 0]],
+       "dir": 8,
+       "flow": "input-output",
+       "type": "normal"
+      }
+     ],
+     "index": 1,
+     "production": "none"
+    }
+   ],
+   "boxes_need_fluid_resource": true,
+   "read": "2.1 (fluid ports), on a laptop server: prototypes.entity's fluidbox_prototypes[1].pipe_connections, and a drill created facing N, E, S and W on uranium ore (its live box and get_pipe_connections agree); on ore that needs no fluid the drill has no live box",
+   "size": [3, 3],
+   "type": "mining-drill"
+  },
+  "heat-exchanger": {
+   "boxes": [
+    {
+     "connections": [
+      {
+       "at": [[-1, 0.5], [-0.5, -1], [1, -0.5], [0.5, 1]],
+       "dir": 12,
+       "flow": "input-output",
+       "type": "normal"
+      },
+      {
+       "at": [[1, 0.5], [-0.5, 1], [-1, -0.5], [0.5, -1]],
+       "dir": 4,
+       "flow": "input-output",
+       "type": "normal"
+      }
+     ],
+     "filter": "water",
+     "index": 1,
+     "production": "input"
+    },
+    {
+     "connections": [
+      {
+       "at": [[0, -0.5], [0.5, 0], [0, 0.5], [-0.5, 0]],
+       "dir": 0,
+       "flow": "output",
+       "type": "normal"
+      }
+     ],
+     "filter": "steam",
+     "index": 2,
+     "production": "output"
+    }
+   ],
+   "size": [3, 2],
+   "type": "boiler"
+  },
+  "infinity-pipe": {
+   "boxes": [
+    {
+     "connections": [
+      {
+       "at": [[0, 0], [0, 0], [0, 0], [0, 0]],
+       "categories": ["default", "fusion-plasma"],
+       "dir": 0,
+       "flow": "input-output",
+       "type": "normal"
+      },
+      {
+       "at": [[0, 0], [0, 0], [0, 0], [0, 0]],
+       "categories": ["default", "fusion-plasma"],
+       "dir": 4,
+       "flow": "input-output",
+       "type": "normal"
+      },
+      {
+       "at": [[0, 0], [0, 0], [0, 0], [0, 0]],
+       "categories": ["default", "fusion-plasma"],
+       "dir": 8,
+       "flow": "input-output",
+       "type": "normal"
+      },
+      {
+       "at": [[0, 0], [0, 0], [0, 0], [0, 0]],
+       "categories": ["default", "fusion-plasma"],
+       "dir": 12,
+       "flow": "input-output",
+       "type": "normal"
+      }
+     ],
+     "index": 1,
+     "production": "none"
+    }
+   ],
+   "collision_box": [-0.2890625, -0.2890625, 0.2890625, 0.2890625],
+   "size": [1, 1],
+   "type": "infinity-pipe"
+  },
+  "offshore-pump": {
+   "boxes": [
+    {
+     "connections": [{"at": [[0, 0], [0, 0], [0, 0], [0, 0]], "dir": 8, "flow": "output", "type": "normal"}],
+     "index": 1,
+     "production": "output"
+    }
+   ],
+   "size": [1, 1],
+   "type": "offshore-pump",
+   "water_area": [-1, -2, 1, -1]
+  },
+  "oil-refinery": {
+   "boxes": [
+    {
+     "connections": [{"at": [[-1, 2], [-2, -1], [1, -2], [2, 1]], "dir": 8, "flow": "input", "type": "normal"}],
+     "index": 1,
+     "production": "input"
+    },
+    {
+     "connections": [{"at": [[1, 2], [-2, 1], [-1, -2], [2, -1]], "dir": 8, "flow": "input", "type": "normal"}],
+     "index": 2,
+     "production": "input"
+    },
+    {
+     "connections": [{"at": [[-2, -2], [2, -2], [2, 2], [-2, 2]], "dir": 0, "flow": "output", "type": "normal"}],
+     "index": 3,
+     "production": "output"
+    },
+    {
+     "connections": [{"at": [[0, -2], [2, 0], [0, 2], [-2, 0]], "dir": 0, "flow": "output", "type": "normal"}],
+     "index": 4,
+     "production": "output"
+    },
+    {
+     "connections": [{"at": [[2, -2], [2, 2], [-2, 2], [-2, -2]], "dir": 0, "flow": "output", "type": "normal"}],
+     "index": 5,
+     "production": "output"
+    }
+   ],
+   "size": [5, 5],
+   "type": "assembling-machine"
+  },
+  "pipe": {
+   "boxes": [
+    {
+     "connections": [
+      {"at": [[0, 0], [0, 0], [0, 0], [0, 0]], "dir": 0, "flow": "input-output", "type": "normal"},
+      {"at": [[0, 0], [0, 0], [0, 0], [0, 0]], "dir": 4, "flow": "input-output", "type": "normal"},
+      {"at": [[0, 0], [0, 0], [0, 0], [0, 0]], "dir": 8, "flow": "input-output", "type": "normal"},
+      {
+       "at": [[0, 0], [0, 0], [0, 0], [0, 0]],
+       "dir": 12,
+       "flow": "input-output",
+       "type": "normal"
+      }
+     ],
+     "index": 1,
+     "production": "none"
+    }
+   ],
+   "size": [1, 1],
+   "type": "pipe"
+  },
+  "pipe-to-ground": {
+   "boxes": [
+    {
+     "connections": [
+      {"at": [[0, 0], [0, 0], [0, 0], [0, 0]], "dir": 0, "flow": "input-output", "type": "normal"},
+      {
+       "at": [[0, 0], [0, 0], [0, 0], [0, 0]],
+       "dir": 8,
+       "flow": "input-output",
+       "max_distance": 10,
+       "type": "underground"
+      }
+     ],
+     "index": 1,
+     "production": "none"
+    }
+   ],
+   "size": [1, 1],
+   "type": "pipe-to-ground"
+  },
+  "pump": {
+   "boxes": [
+    {
+     "connections": [
+      {
+       "at": [[0, -0.5], [0.5, 0], [0, 0.5], [-0.5, 0]],
+       "dir": 0,
+       "flow": "output",
+       "type": "normal"
+      },
+      {
+       "at": [[0, 0.5], [-0.5, 0], [0, -0.5], [0.5, 0]],
+       "dir": 8,
+       "flow": "input",
+       "type": "normal"
+      }
+     ],
+     "index": 1,
+     "production": "none"
+    }
+   ],
+   "size": [1, 2],
+   "type": "pump"
+  },
+  "pumpjack": {
+   "boxes": [
+    {
+     "connections": [{"at": [[1, -1], [1, -1], [-1, 1], [-1, 1]], "dir": 0, "flow": "output", "type": "normal"}],
+     "index": 1,
+     "production": "output"
+    }
+   ],
+   "size": [3, 3],
+   "type": "mining-drill"
+  },
+  "steam-engine": {
+   "boxes": [
+    {
+     "connections": [
+      {
+       "at": [[0, 2], [-2, 0], [0, -2], [2, 0]],
+       "dir": 8,
+       "flow": "input-output",
+       "type": "normal"
+      },
+      {
+       "at": [[0, -2], [2, 0], [0, 2], [-2, 0]],
+       "dir": 0,
+       "flow": "input-output",
+       "type": "normal"
+      }
+     ],
+     "filter": "steam",
+     "index": 1,
+     "production": "input"
+    }
+   ],
+   "size": [3, 5],
+   "type": "generator"
+  },
+  "steam-turbine": {
+   "boxes": [
+    {
+     "connections": [
+      {
+       "at": [[0, 2], [-2, 0], [0, -2], [2, 0]],
+       "dir": 8,
+       "flow": "input-output",
+       "type": "normal"
+      },
+      {
+       "at": [[0, -2], [2, 0], [0, 2], [-2, 0]],
+       "dir": 0,
+       "flow": "input-output",
+       "type": "normal"
+      }
+     ],
+     "filter": "steam",
+     "index": 1,
+     "production": "input"
+    }
+   ],
+   "size": [3, 5],
+   "type": "generator"
+  },
+  "storage-tank": {
+   "boxes": [
+    {
+     "connections": [
+      {
+       "at": [[-1, -1], [1, -1], [1, 1], [-1, 1]],
+       "dir": 0,
+       "flow": "input-output",
+       "type": "normal"
+      },
+      {
+       "at": [[1, 1], [-1, 1], [-1, -1], [1, -1]],
+       "dir": 4,
+       "flow": "input-output",
+       "type": "normal"
+      },
+      {
+       "at": [[1, 1], [-1, 1], [-1, -1], [1, -1]],
+       "dir": 8,
+       "flow": "input-output",
+       "type": "normal"
+      },
+      {
+       "at": [[-1, -1], [1, -1], [1, 1], [-1, 1]],
+       "dir": 12,
+       "flow": "input-output",
+       "type": "normal"
+      }
+     ],
+     "index": 1,
+     "production": "none"
+    }
+   ],
+   "size": [3, 3],
+   "type": "storage-tank"
+  }
+ },
+ "notes": [
+  "at: the connection's point inside the entity (relative to its centre) for the entity facing N, E, S, W; dir: the side it faces for an entity facing north (it turns with the entity); the pipe that connects stands one tile from at along that side",
+  "recipes: the boxes a recipe makes live, in the game's order. One fluid on a side with several boxes merges them into one box holding every connection of that side (plastic-bar: both chemical-plant inputs); basic-oil-processing uses only box 2 and box 5 (its fluidbox_index); boxes a recipe does not use have no connection",
+  "pipe-to-ground (measured): pairs up to 10 tiles end to end (11 does not pair); along the underground side the first pipe-to-ground on the same axis decides (facing back: its partner; facing the same way: no partner); one at right angles is passed; a pipe between the ends is passed; a pipe beside an end does not connect to it",
+  "water_area: an offshore pump's tile_buildability_rules area that must be water, relative to its centre for the pump facing north (x0, y0, x1, y1); its own tile must be ground"
+ ],
+ "recipes": {
+  "assembling-machine-2": {
+   "concrete": [{"fluid": "water", "members": [[1, 1]]}],
+   "crude-oil-barrel": [{"fluid": "crude-oil", "members": [[1, 1]]}],
+   "electric-engine-unit": [{"fluid": "lubricant", "members": [[1, 1]]}],
+   "empty-crude-oil-barrel": [{"fluid": "crude-oil", "members": [[2, 1]]}],
+   "empty-fluoroketone-cold-barrel": [{"fluid": "fluoroketone-cold", "members": [[2, 1]]}],
+   "empty-fluoroketone-hot-barrel": [{"fluid": "fluoroketone-hot", "members": [[2, 1]]}],
+   "empty-heavy-oil-barrel": [{"fluid": "heavy-oil", "members": [[2, 1]]}],
+   "empty-light-oil-barrel": [{"fluid": "light-oil", "members": [[2, 1]]}],
+   "empty-lubricant-barrel": [{"fluid": "lubricant", "members": [[2, 1]]}],
+   "empty-petroleum-gas-barrel": [{"fluid": "petroleum-gas", "members": [[2, 1]]}],
+   "empty-sulfuric-acid-barrel": [{"fluid": "sulfuric-acid", "members": [[2, 1]]}],
+   "empty-water-barrel": [{"fluid": "water", "members": [[2, 1]]}],
+   "express-splitter": [{"fluid": "lubricant", "members": [[1, 1]]}],
+   "express-transport-belt": [{"fluid": "lubricant", "members": [[1, 1]]}],
+   "express-underground-belt": [{"fluid": "lubricant", "members": [[1, 1]]}],
+   "fluoroketone-cold-barrel": [{"fluid": "fluoroketone-cold", "members": [[1, 1]]}],
+   "fluoroketone-hot-barrel": [{"fluid": "fluoroketone-hot", "members": [[1, 1]]}],
+   "foundation": [{"fluid": "fluoroketone-cold", "members": [[1, 1]]}],
+   "foundry": [{"fluid": "lubricant", "members": [[1, 1]]}],
+   "heavy-oil-barrel": [{"fluid": "heavy-oil", "members": [[1, 1]]}],
+   "holmium-plate": [{"fluid": "holmium-solution", "members": [[1, 1]]}],
+   "ice-platform": [{"fluid": "ammonia", "members": [[1, 1]]}],
+   "light-oil-barrel": [{"fluid": "light-oil", "members": [[1, 1]]}],
+   "lubricant-barrel": [{"fluid": "lubricant", "members": [[1, 1]]}],
+   "overgrowth-jellynut-soil": [{"fluid": "water", "members": [[1, 1]]}],
+   "overgrowth-yumako-soil": [{"fluid": "water", "members": [[1, 1]]}],
+   "petroleum-gas-barrel": [{"fluid": "petroleum-gas", "members": [[1, 1]]}],
+   "processing-unit": [{"fluid": "sulfuric-acid", "members": [[1, 1]]}],
+   "refined-concrete": [{"fluid": "water", "members": [[1, 1]]}],
+   "rocket-fuel": [{"fluid": "light-oil", "members": [[1, 1]]}],
+   "sulfuric-acid-barrel": [{"fluid": "sulfuric-acid", "members": [[1, 1]]}],
+   "tungsten-carbide": [{"fluid": "sulfuric-acid", "members": [[1, 1]]}],
+   "water-barrel": [{"fluid": "water", "members": [[1, 1]]}]
+  },
+  "assembling-machine-3": {
+   "concrete": [{"fluid": "water", "members": [[1, 1]]}],
+   "crude-oil-barrel": [{"fluid": "crude-oil", "members": [[1, 1]]}],
+   "electric-engine-unit": [{"fluid": "lubricant", "members": [[1, 1]]}],
+   "empty-crude-oil-barrel": [{"fluid": "crude-oil", "members": [[2, 1]]}],
+   "empty-fluoroketone-cold-barrel": [{"fluid": "fluoroketone-cold", "members": [[2, 1]]}],
+   "empty-fluoroketone-hot-barrel": [{"fluid": "fluoroketone-hot", "members": [[2, 1]]}],
+   "empty-heavy-oil-barrel": [{"fluid": "heavy-oil", "members": [[2, 1]]}],
+   "empty-light-oil-barrel": [{"fluid": "light-oil", "members": [[2, 1]]}],
+   "empty-lubricant-barrel": [{"fluid": "lubricant", "members": [[2, 1]]}],
+   "empty-petroleum-gas-barrel": [{"fluid": "petroleum-gas", "members": [[2, 1]]}],
+   "empty-sulfuric-acid-barrel": [{"fluid": "sulfuric-acid", "members": [[2, 1]]}],
+   "empty-water-barrel": [{"fluid": "water", "members": [[2, 1]]}],
+   "express-splitter": [{"fluid": "lubricant", "members": [[1, 1]]}],
+   "express-transport-belt": [{"fluid": "lubricant", "members": [[1, 1]]}],
+   "express-underground-belt": [{"fluid": "lubricant", "members": [[1, 1]]}],
+   "fluoroketone-cold-barrel": [{"fluid": "fluoroketone-cold", "members": [[1, 1]]}],
+   "fluoroketone-hot-barrel": [{"fluid": "fluoroketone-hot", "members": [[1, 1]]}],
+   "foundation": [{"fluid": "fluoroketone-cold", "members": [[1, 1]]}],
+   "foundry": [{"fluid": "lubricant", "members": [[1, 1]]}],
+   "heavy-oil-barrel": [{"fluid": "heavy-oil", "members": [[1, 1]]}],
+   "holmium-plate": [{"fluid": "holmium-solution", "members": [[1, 1]]}],
+   "ice-platform": [{"fluid": "ammonia", "members": [[1, 1]]}],
+   "light-oil-barrel": [{"fluid": "light-oil", "members": [[1, 1]]}],
+   "lubricant-barrel": [{"fluid": "lubricant", "members": [[1, 1]]}],
+   "overgrowth-jellynut-soil": [{"fluid": "water", "members": [[1, 1]]}],
+   "overgrowth-yumako-soil": [{"fluid": "water", "members": [[1, 1]]}],
+   "petroleum-gas-barrel": [{"fluid": "petroleum-gas", "members": [[1, 1]]}],
+   "processing-unit": [{"fluid": "sulfuric-acid", "members": [[1, 1]]}],
+   "refined-concrete": [{"fluid": "water", "members": [[1, 1]]}],
+   "rocket-fuel": [{"fluid": "light-oil", "members": [[1, 1]]}],
+   "sulfuric-acid-barrel": [{"fluid": "sulfuric-acid", "members": [[1, 1]]}],
+   "tungsten-carbide": [{"fluid": "sulfuric-acid", "members": [[1, 1]]}],
+   "water-barrel": [{"fluid": "water", "members": [[1, 1]]}]
+  },
+  "chemical-plant": {
+   "acid-neutralisation": [
+    {"fluid": "sulfuric-acid", "members": [[1, 1], [2, 1]]},
+    {"fluid": "steam", "members": [[3, 1], [4, 1]]}
+   ],
+   "advanced-thruster-fuel": [
+    {"fluid": "water", "members": [[1, 1], [2, 1]]},
+    {"fluid": "thruster-fuel", "members": [[3, 1], [4, 1]]}
+   ],
+   "advanced-thruster-oxidizer": [
+    {"fluid": "water", "members": [[1, 1], [2, 1]]},
+    {"fluid": "thruster-oxidizer", "members": [[3, 1], [4, 1]]}
+   ],
+   "ammonia-rocket-fuel": [{"fluid": "water", "members": [[1, 1]]}, {"fluid": "ammonia", "members": [[2, 1]]}],
+   "ammoniacal-solution-separation": [
+    {"fluid": "ammoniacal-solution", "members": [[1, 1], [2, 1]]},
+    {"fluid": "ammonia", "members": [[3, 1], [4, 1]]}
+   ],
+   "battery": [{"fluid": "sulfuric-acid", "members": [[1, 1], [2, 1]]}],
+   "carbon": [{"fluid": "sulfuric-acid", "members": [[1, 1], [2, 1]]}],
+   "coal-synthesis": [{"fluid": "water", "members": [[1, 1], [2, 1]]}],
+   "explosives": [{"fluid": "water", "members": [[1, 1], [2, 1]]}],
+   "fish-breeding": [{"fluid": "water", "members": [[1, 1], [2, 1]]}],
+   "flamethrower-ammo": [{"fluid": "crude-oil", "members": [[1, 1], [2, 1]]}],
+   "heavy-oil-cracking": [
+    {"fluid": "water", "members": [[1, 1]]},
+    {"fluid": "heavy-oil", "members": [[2, 1]]},
+    {"fluid": "light-oil", "members": [[3, 1], [4, 1]]}
+   ],
+   "holmium-solution": [
+    {"fluid": "water", "members": [[1, 1], [2, 1]]},
+    {"fluid": "holmium-solution", "members": [[3, 1], [4, 1]]}
+   ],
+   "ice-melting": [{"fluid": "water", "members": [[3, 1], [4, 1]]}],
+   "light-oil-cracking": [
+    {"fluid": "water", "members": [[1, 1]]},
+    {"fluid": "light-oil", "members": [[2, 1]]},
+    {"fluid": "petroleum-gas", "members": [[3, 1], [4, 1]]}
+   ],
+   "lithium": [{"fluid": "lithium-brine", "members": [[1, 1]]}, {"fluid": "ammonia", "members": [[2, 1]]}],
+   "lubricant": [
+    {"fluid": "heavy-oil", "members": [[1, 1], [2, 1]]},
+    {"fluid": "lubricant", "members": [[3, 1], [4, 1]]}
+   ],
+   "plastic-bar": [{"fluid": "petroleum-gas", "members": [[1, 1], [2, 1]]}],
+   "solid-fuel-from-ammonia": [{"fluid": "ammonia", "members": [[1, 1]]}, {"fluid": "crude-oil", "members": [[2, 1]]}],
+   "solid-fuel-from-heavy-oil": [{"fluid": "heavy-oil", "members": [[1, 1], [2, 1]]}],
+   "solid-fuel-from-light-oil": [{"fluid": "light-oil", "members": [[1, 1], [2, 1]]}],
+   "solid-fuel-from-petroleum-gas": [{"fluid": "petroleum-gas", "members": [[1, 1], [2, 1]]}],
+   "steam-condensation": [
+    {"fluid": "steam", "members": [[1, 1], [2, 1]]},
+    {"fluid": "water", "members": [[3, 1], [4, 1]]}
+   ],
+   "sulfur": [{"fluid": "water", "members": [[1, 1]]}, {"fluid": "petroleum-gas", "members": [[2, 1]]}],
+   "sulfuric-acid": [
+    {"fluid": "water", "members": [[1, 1], [2, 1]]},
+    {"fluid": "sulfuric-acid", "members": [[3, 1], [4, 1]]}
+   ],
+   "thruster-fuel": [
+    {"fluid": "water", "members": [[1, 1], [2, 1]]},
+    {"fluid": "thruster-fuel", "members": [[3, 1], [4, 1]]}
+   ],
+   "thruster-oxidizer": [
+    {"fluid": "water", "members": [[1, 1], [2, 1]]},
+    {"fluid": "thruster-oxidizer", "members": [[3, 1], [4, 1]]}
+   ]
+  },
+  "oil-refinery": {
+   "advanced-oil-processing": [
+    {"fluid": "water", "members": [[1, 1]]},
+    {"fluid": "crude-oil", "members": [[2, 1]]},
+    {"fluid": "heavy-oil", "members": [[3, 1]]},
+    {"fluid": "light-oil", "members": [[4, 1]]},
+    {"fluid": "petroleum-gas", "members": [[5, 1]]}
+   ],
+   "basic-oil-processing": [{"fluid": "crude-oil", "members": [[2, 1]]}, {"fluid": "petroleum-gas", "members": [[5, 1]]}],
+   "coal-liquefaction": [
+    {"fluid": "heavy-oil", "members": [[1, 1]]},
+    {"fluid": "steam", "members": [[2, 1]]},
+    {"fluid": "heavy-oil", "members": [[3, 1]]},
+    {"fluid": "light-oil", "members": [[4, 1]]},
+    {"fluid": "petroleum-gas", "members": [[5, 1]]}
+   ],
+   "simple-coal-liquefaction": [
+    {"fluid": "sulfuric-acid", "members": [[1, 1], [2, 1]]},
+    {"fluid": "heavy-oil", "members": [[3, 1], [4, 1], [5, 1]]}
+   ]
+  }
+ },
+ "source": "read from the game over RCON on the test map (Factorio 2.0.77, base + Space Age), 2026-10-20, by the fluids worker: prototypes.entity[name].fluidbox_prototypes[i].pipe_connections (direction, flow_direction, connection_type, positions per entity direction N E S W, max_underground_distance); per crafting machine and fluid recipe, a machine created on the lab surface, set_recipe, then the live boxes' get_filter and get_pipe_connections",
+ "version": "2.0.77"
+}

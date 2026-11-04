@@ -1,0 +1,77 @@
+# routing.fk: small pieces that help the router, yours to change. Each one is a sealed module: its
+# ports are where belts cross its edge, and its one net is laid inside it. Place one where you want
+# a belt to go and run your net through it; the router lays each stretch as a net of its own.
+#
+#   import Waypoint, Merge, Split from "routing.fk"
+#
+# A net the router can't find a way for: make it pass a spot of your choosing.
+#
+#   wp = Waypoint<item=iron-gear-wheel> @(8, 28)
+#   net gear: gears -> wp -> red, belts, ins
+#
+# A chain like this is still one net, gear. Its stretches are gear (gears to the waypoint) and
+# gear@wp (the waypoint on), and the route step and fk status show them together. A piece in a
+# chain has inout ports: the first one is its way in, the others its ways out.
+#
+# One belt into two, where you want the split. The consumers after it are shared, the first to
+# way a, the second to way b; or take a way on to consumers of its own on the next line:
+#
+#   sp = Split<item=copper-plate> @(4, 16)
+#   net copper: copper_smelt -> sp -> cable, red     (cable on a, red on b)
+#
+#   net copper: copper_smelt -> sp -> cable
+#     sp.b -> wp2 -> red                             (b goes by waypoint wp2)
+#
+# The same written as plain nets, one per stretch, also works (wp.i and wp.o name the ports):
+#
+#   net gear:  gears -> wp.i
+#   net gear2: wp.o -> red, belts, ins
+#
+# Two belts into one, where you want the join:
+#
+#   mg = Merge<a=automation-science-pack, b=logistic-science-pack> @(4, 40)
+#   net pk_r:  red -> mg.a
+#   net pk_g:  green -> mg.b
+#   net packs: mg.o -> labs
+#
+# A Merge joins two nets, so it is not in a chain: its ports are in and out.
+#
+# Each piece runs north to south (in at its top edge, out at its bottom); turn it with `rot`
+# (@(x, y, rot 1) runs east to west, rot 3 west to east). Make your own the same way: ports on
+# the edge, one net between them, as long or as wide as you like. docs\LANGUAGE.md, "Modules
+# with ports", has the rules.
+
+# One belt, three tiles long: the net passes here.
+module Waypoint<item> size 1x3 {
+  port i : inout $item @n0
+  port o : inout $item @s0
+  net p: i -> o
+}
+
+# Two belts into one, by a splitter. A splitter keeps lanes: each item leaves on the lane it came
+# in on, so this does not put a and b on lanes of their own (`lanes`, in LANGUAGE.md, does).
+module Merge<a, b> size 2x3 {
+  port a : in  $a @n0
+  port b : in  $b @n1
+  port o : out $a | $b @s0
+  net p: a, b -> o
+}
+
+# One belt into two, by a splitter.
+module Split<item> size 2x3 {
+  port i : inout $item @n0
+  port a : inout $item @s0
+  port b : inout $item @s1
+  net p: i -> a, b
+}
+
+# A pump in a pipe, 1x2: `net lub: oil -> pp -> engines` with pp = InlinePump<fluid=lubricant>.
+# A long pipe loses throughput; a pump starts a new run, so the route step's pipe-length check
+# names where one helps. (Pump<fluid=...> is the one pump on its own, for nets written by hand.)
+module InlinePump<fluid> size 1x2 {
+  port i : inout $fluid @n0
+  port o : inout $fluid @s0
+  pm = Pump<fluid=$fluid> @(0, 0, rot 2)
+  net a: i -> pm
+  net b: pm -> o
+}

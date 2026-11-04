@@ -1,0 +1,9 @@
+# robot-feed.fk: the kit's robots back into a roboport (12x8)
+# The kit's logistic and construction robots end up as items in a storage chest whenever a build
+# takes up the roboport that held them (they are not lost, and nothing uses them there). This puts
+# them back: a requester chest asks for them and one inserter drops them into the roboport.
+# Place the plot on free ground next to the network, and let `cover power` power it.
+
+port  = Roboport @(0, 0)
+botin = Chest<requester, item="logistic-robot", request=50, rate=1/s> @(5, 1)
+net load: botin -> port

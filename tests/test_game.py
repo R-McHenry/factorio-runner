@@ -105,3 +105,35 @@ class EarlyBotsTest(unittest.TestCase):
                                 "'fk-early-roboport'}) do o[#o + 1] = prototypes.recipe[n].ingredients[1].amount end "
                                 "rcon.print(table.concat(o, ' '))")
                 self.assertEqual(costs, "80 80 300")
+
+
+@unittest.skipUnless(os.environ.get("FACTORIO_BIN") or REQUIRED, "FACTORIO_BIN not set")
+class ToolkitTest(unittest.TestCase):
+    def test_fk_profile(self):
+        """The toolkit profile on the early-bots start: the codebase seeded at fresh (kit.json,
+        terrain), fk commands against the episode's server, fk lua through the referee with its
+        quotes intact, save states that roll the codebase back, a build, and the world matching
+        the design."""
+        spec = specs.load(os.path.join(ROOT, "arms", "test-fk-scripted.toml"))
+        spec["agent"]["script"] = os.path.join(ROOT, spec["agent"]["script"])
+        with tempfile.TemporaryDirectory() as d:
+            store = LocalStore(os.path.join(d, "store"))
+            episode.fresh(store, spec, os.path.join(d, "fresh"))
+            kit = store.get_json(f"roots/{spec['arm']}.json")["kit"]
+            self.assertIn("terrain", kit)
+            ses = episode.Session(store, spec, os.path.join(d, "work"), seed=1)
+            res = ses.run()[0]
+            steps = [json.loads(l) for l in store.get(f"steps/{spec['arm']}/{ses.id}.jsonl").decode().splitlines()]
+            out = {}
+            for s in steps:
+                if s.get("role") == "tool":
+                    out.setdefault(s["name"], []).append(s["out"])
+            self.assertIn("research available now", out["fk"][1])
+            self.assertIn("isn't used in this lab", out["fk"][2])           # fk wait redirected
+            self.assertIn("quotes kept", out["fk"][3])                       # the Lua went through as written
+            self.assertNotIn("marker.fk", out["list_files"][0])              # load_state rolled the codebase back
+            self.assertEqual(res["invalid_marks"], 1)                        # fk lua's insert was marked
+            build = out["fk"][5]
+            self.assertIn("[23/23]", build)
+            self.assertIn("(exit 0)", build)
+            self.assertRegex(out["fk"][6], r"ok (\d+)/\1 designed entities")  # world == design

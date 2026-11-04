@@ -1,0 +1,13 @@
+# nauvis.surface: the surface of this run. Where the plots go is the world design, nauvis.fk; this
+# file holds what is true of the world itself: the ground and how the game watches what is built.
+# The base is one plot, and the kit is part of its design (world.fk, kit.fk), so there is no claim
+# to keep out of it: every tile inside the plot is yours.
+surface  nauvis
+mode     play                                   # you see where you look; alerts come to you
+terrain  map                                    # map.terrain.json: the bare ground, read at the start
+catalog  base
+design   nauvis.fk                              # the plot: your world
+
+watch plots:      keep
+watch sanctioned: mark 2h
+notify            nearby

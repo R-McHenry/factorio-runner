@@ -1,0 +1,15 @@
+# beltless.fk: a first cell with no belts at all (13x7)
+# Every transfer is one inserter and the router lays it between the machines: a fast one across a
+# one-tile gap, a long-handed one across two or three. This is the shape of a first factory: chests
+# in, chest-to-machine by inserter, machine-to-machine by inserter, no belt in or out.
+
+fe   = Chest<requester, item=iron-plate, request=400>   @(0, 0)
+gear = Assembler<recipe=iron-gear-wheel>                 @(2, 0)
+red  = Assembler<recipe=automation-science-pack>         @(6, 0)
+lab1 = Lab                                               @(10, 0)
+cu   = Chest<requester, item=copper-plate, request=200>  @(6, 4)
+
+net fe:    fe -> gear
+net gears: gear -> red
+net cu:    cu -> red
+net packs: red -> lab1

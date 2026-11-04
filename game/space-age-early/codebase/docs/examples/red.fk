@@ -1,0 +1,15 @@
+# red.fk: red science from plates the robots bring, into labs. Plot: 30x30.
+# Two input chests (iron, copper), a gear row, a science row that takes gears and copper on two
+# belts, and the labs at the end. Every row's head is at x = 8, so the router has columns 0..7.
+iron   = Chest<requester, item=iron-plate, rate=1/s>   @(2, 2)
+copper = Chest<requester, item=copper-plate, rate=1/s> @(2, 12)
+gears  = AsmRow<n=1, recipe=iron-gear-wheel>          @(8, 2)
+red    = AsmRow<n=3, recipe=automation-science-pack>  @(8, 12)
+labs   = LabRow<n=3>                                  @(8, 23)
+
+net plates: iron -> gears
+net copp:   copper -> red
+net gear:   gears -> red
+net packs:  red -> labs
+
+assert red.rate >= 9/min
