@@ -387,22 +387,38 @@ class Session:
         except Exception as e:  # a map is a nicety too
             self.log(f"  map capture failed: {e}")
 
-    def _trim(self):
-        """Keep long sessions going: once the prompt passes `session.trim_at` tokens (60k), shorten
-        every tool result older than the last `session.trim_keep` (8) to 300 characters, all in one
-        pass, so the conversation's cached prefix only changes once per pass."""
-        if self.prompt_tokens < int(self.ses.get("trim_at", 60000)):
+    def _trim(self, before: int | None = None):
+        """Keep long sessions going. Once the prompt passes `session.trim_at` tokens (40k), every
+        tool exchange older than the last `session.trim_keep` (8) is shortened: the result to 300
+        characters and the call's arguments (long Lua, whole files) to 200, all in one pass, so the
+        conversation's cached prefix only changes once per pass. `before`: shorten everything
+        before that message index regardless (a new episode's start), whatever the prompt size."""
+        if before is None and self.prompt_tokens < int(self.ses.get("trim_at", 40000)):
             return 0
         keep = int(self.ses.get("trim_keep", 8))
         tools_at = [i for i, m in enumerate(self.messages) if m.get("role") == "tool"]
+        old = [i for i in tools_at if i < before] if before is not None else (tools_at[:-keep] if keep else tools_at)
         n = 0
-        for i in tools_at[:-keep] if keep else tools_at:
+        for i in old:
             c = self.messages[i].get("content") or ""
             if len(c) > 400 and not c.startswith("[shortened"):
                 self.messages[i] = dict(self.messages[i], content="[shortened to save context] " + c[:300] + " …")
                 n += 1
+        last = old[-1] if old else -1
+        for i, m in enumerate(self.messages[:last + 1]):
+            if m.get("role") != "assistant" or not m.get("tool_calls"):
+                continue
+            calls = []
+            for c in m["tool_calls"]:
+                a = c["function"].get("arguments") or ""
+                if len(a) > 300 and not a.startswith('{"shortened"'):
+                    c = dict(c, function=dict(c["function"], arguments=json.dumps({"shortened": a[:200] + " …"})))
+                    n += 1
+                calls.append(c)
+            self.messages[i] = dict(m, tool_calls=calls)
         if n:
-            self._record(role="trim", shortened=n, prompt_tokens=self.prompt_tokens)
+            self._record(role="trim", shortened=n, prompt_tokens=self.prompt_tokens,
+                         episode_start=before is not None)
             self.prompt_tokens = 0     # measured again by the next reply
         return n
 
@@ -526,6 +542,8 @@ class Session:
                f"is saved.\n")
         if moved:
             msg += f"\nThe notes left in this game's work dir (NOTES.md):\n\n{notes}"
+        if index > 0:
+            self._trim(before=len(self.messages))
         self.messages.append({"role": "user", "content": msg})
         self._record(role="episode", index=index, node=start.id, tick=tick0, goal=self.goal, moved=moved)
         self.log(f"session {self.id} episode {index + 1}: from {start.id} (tick {tick0}), goal {self.goal}")

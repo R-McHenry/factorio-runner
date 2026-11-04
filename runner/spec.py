@@ -10,7 +10,7 @@ DEFAULTS = {
     "episode": {"max_turns": 60, "max_usd": 0.25, "max_ticks": 216000, "goal_dist": 3,
                 "eval_cap": 36000, "check_every": 600, "snapshot_every": 7200},
     "session": {"episodes": 3, "next": "select", "max_usd": 1.0, "context_limit": 120000,
-                "trim_at": 60000, "trim_keep": 8},
+                "trim_at": 40000, "trim_keep": 8},
     "prompt": {"layers": ["l0-lab-bare"], "facts_p": 0.5},
     "toolkit": {"profile": "bare"},
     "budget": {"monthly_usd": 10.0, "hard_usd": 0},   # target (shown) and limit (0: none)

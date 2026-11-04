@@ -294,6 +294,23 @@ class TrimTest(unittest.TestCase):
         ses.prompt_tokens = 5000
         self.assertEqual(ses._trim(), 0)                     # already shortened: no second change
 
+    def test_long_call_arguments_and_episode_start(self):
+        import json as _json
+        from runner.episode import Session
+        ses = object.__new__(Session)
+        ses.ses = {"trim_at": 1000, "trim_keep": 1}
+        ses.steps, ses.ep_state = [], {}
+        ses.messages = [{"role": "system", "content": "s"}]
+        for i in range(3):
+            ses.messages += [{"role": "assistant", "content": "", "tool_calls": [{"id": str(i), "type": "function",
+                              "function": {"name": "lua", "arguments": _json.dumps({"code": "x" * 900})}}]},
+                             {"role": "tool", "tool_call_id": str(i), "content": "y" * 900}]
+        ses.prompt_tokens = 10
+        self.assertGreater(ses._trim(before=len(ses.messages)), 0)   # under trim_at, but a new episode
+        args = [m["tool_calls"][0]["function"]["arguments"] for m in ses.messages if m.get("tool_calls")]
+        self.assertTrue(all(_json.loads(a).get("shortened") for a in args))
+        self.assertTrue(all(len(a) < 300 for a in args))
+
 
 class ModSettingsTest(unittest.TestCase):
     def test_early_bots_settings_file_matches_its_source(self):
