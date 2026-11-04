@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factorio runner status</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 16px; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 15px; margin: 0 0 8px; }
+.sub { color: var(--ink-2); font-size: 13px; }
+.filters { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 16px; }
+.filters label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-2); }
+select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--ring);
+  border-radius: 6px; padding: 6px 8px; max-width: 100%; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.tile, .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 12px 14px; }
+.tile .k { font-size: 12px; color: var(--ink-2); }
+.tile .v { font-size: 26px; font-weight: 600; margin-top: 2px; }
+.tile .n { font-size: 12px; color: var(--muted); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 12px; margin-bottom: 16px; }
+.card { min-width: 0; }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--ring);
+  border-radius: 8px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.12);
+  white-space: nowrap; display: none; z-index: 2; }
+.tip .row { display: flex; align-items: center; gap: 6px; }
+.tip .row b { font-variant-numeric: tabular-nums; }
+.tip .key { width: 12px; height: 2px; border-radius: 1px; }
+.tip .hd { color: var(--ink-2); margin-bottom: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); margin: 4px 0 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; width: 14px; height: 2px; border-radius: 1px; }
+.legend i.dash { background: none !important; border-top: 2px dashed var(--muted); height: 0; }
+.empty { color: var(--muted); font-size: 13px; padding: 24px 0; text-align: center; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--ink-2); font-weight: 500; font-size: 12px; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.scroll { overflow-x: auto; }
+.badge { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--ink-2);
+  word-break: break-all; }
+details { margin-top: 8px; font-size: 12px; color: var(--ink-2); }
+details table { margin-top: 6px; }
+.theme { margin-left: auto; }
+button { font: inherit; font-size: 12px; color: var(--ink-2); background: none; border: 1px solid var(--ring);
+  border-radius: 6px; padding: 4px 8px; cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Factorio runner</h1>
+  <span class="sub" id="gen">loading…</span>
+  <span class="theme"><button id="themeBtn" type="button">Theme</button></span>
+</header>
+
+<div class="filters">
+  <label>Arm <select id="armSel"></select></label>
+  <label>Session <select id="sesSel"></select></label>
+</div>
+
+<section class="tiles" id="tiles"></section>
+
+<section class="card" style="margin-bottom:16px">
+  <h2>Sessions</h2>
+  <div class="scroll"><table id="sesTable"></table></div>
+</section>
+
+<section class="grid">
+  <div class="card"><h2 id="itemsTitle">Items produced</h2><div class="sub">Cumulative, log scale. Solid: legit run · dashed: testing.</div>
+    <div class="legend" id="itemsLegend"></div><div class="chart" id="itemsChart"></div>
+    <details><summary>Data table</summary><div class="scroll" id="itemsTable"></div></details></div>
+  <div class="card"><h2>Research done</h2><div class="sub">Technologies researched, by game time.</div>
+    <div class="legend" id="resLegend"></div><div class="chart" id="resChart"></div>
+    <details><summary>Data table</summary><div class="scroll" id="resTable"></div></details></div>
+  <div class="card"><h2>Archive frontier</h2><div class="sub">Best cell height reached from fresh, by $ the arm has spent.</div>
+    <div class="legend" id="frLegend"></div><div class="chart" id="frChart"></div>
+    <details><summary>Data table</summary><div class="scroll" id="frTable"></div></details></div>
+</section>
+
+<section class="card">
+  <h2>Recent episodes</h2>
+  <div class="scroll"><table id="epTable"></table></div>
+</section>
+</main>
+
+<script id="initial" type="application/json">null</script>
+<script>
+"use strict";
+const SERIES = ["--s1", "--s2", "--s3", "--s4"];
+const STATE = {
+  running: {color: "--good", icon: "▶", label: "running"},
+  finished: {color: "--muted", icon: "■", label: "finished"},
+  stalled: {color: "--warning", icon: "⏸", label: "stalled"},
+  failed: {color: "--critical", icon: "✕", label: "failed"},
+};
+let DATA = null;
+const sel = {arm: null, session: null};
+try { const s = JSON.parse(localStorage.getItem("runner-sel") || "{}"); Object.assign(sel, s); } catch (e) {}
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const el = (tag, attrs = {}, kids = []) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "text") n.textContent = v; else if (k === "style") n.style.cssText = v; else n.setAttribute(k, v);
+  }
+  for (const k of kids) n.append(k);
+  return n;
+};
+const svgEl = (tag, attrs = {}) => {
+  const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+};
+const gameTime = t => { const s = Math.round(t / 60), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+  return h ? `${h}h${String(m).padStart(2, "0")}m` : `${m}m${String(s % 60).padStart(2, "0")}s`; };
+const ago = t => { const s = Math.max(0, Date.now() / 1000 - t);
+  return s < 90 ? `${Math.round(s)} s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 172800 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; };
+const usd = v => v == null ? "–" : v < 0.01 && v > 0 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`;
+const compact = v => v >= 1e6 ? (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(v >= 1e4 ? 0 : 1) + "k" : String(Math.round(v));
+
+function badge(state) {
+  const s = STATE[state] || STATE.finished;
+  return el("span", {class: "badge"}, [el("span", {class: "dot", style: `background:var(${s.color})`, "aria-hidden": "true"}),
+    el("span", {text: `${s.icon} ${s.label}`})]);
+}
+function legit(valid) {
+  return el("span", {class: "badge"}, [el("span", {class: "dot", style: `background:var(${valid ? "--good" : "--warning"})`, "aria-hidden": "true"}),
+    el("span", {text: valid ? "✓ legit" : "○ testing"})]);
+}
+function table(node, head, rows, numeric = []) {
+  node.replaceChildren();
+  const tr = el("tr");
+  head.forEach((h, i) => tr.append(el("th", {text: h, class: numeric.includes(i) ? "num" : ""})));
+  node.append(el("thead", {}, [tr]));
+  const tb = el("tbody");
+  for (const r of rows) {
+    const row = el("tr");
+    r.forEach((c, i) => { const td = el("td", {class: numeric.includes(i) ? "num" : ""});
+      if (c instanceof Node) td.append(c); else td.textContent = c == null ? "–" : String(c); row.append(td); });
+    tb.append(row);
+  }
+  node.append(tb);
+}
+
+// A line chart with a snapping crosshair and one tooltip for every series.
+// series: [{name, color, points: [{x, y, dash, brk}]}]; a point with brk starts a new segment.
+function lineChart(host, series, opt) {
+  host.replaceChildren();
+  const pts = series.flatMap(s => s.points);
+  if (!pts.length) { host.append(el("div", {class: "empty", text: opt.empty || "No data yet."})); return; }
+  const W = Math.max(280, Math.round(host.clientWidth || 560)), H = 240, m = {l: 44, r: opt.labelRight && W > 420 ? 110 : 14, t: 10, b: 28};
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  let x0 = Math.min(...xs), x1 = Math.max(...xs); if (x1 === x0) x1 = x0 + 1;
+  let y0, y1, fy;
+  if (opt.ylog) {
+    y0 = 0; y1 = Math.max(1, Math.ceil(Math.log10(Math.max(...ys, 1))));
+    fy = v => Math.log10(Math.max(1, v));
+  } else {
+    y0 = 0; y1 = Math.max(...ys, 1) * 1.08; fy = v => v;
+  }
+  const X = v => m.l + (v - x0) / (x1 - x0) * (W - m.l - m.r);
+  const Y = v => H - m.b - (fy(v) - y0) / (y1 - y0) * (H - m.t - m.b);
+  const svg = svgEl("svg", {viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": opt.label || "chart"});
+  // grid + y ticks
+  const yt = opt.ylog ? Array.from({length: y1 + 1}, (_, i) => 10 ** i) : [0, 0.25, 0.5, 0.75, 1].map(f => f * y1);
+  for (const v of yt) {
+    const y = Y(v);
+    svg.append(svgEl("line", {x1: m.l, x2: W - m.r, y1: y, y2: y, stroke: css("--grid"), "stroke-width": 1}));
+    const t = svgEl("text", {x: m.l - 6, y: y + 4, "text-anchor": "end", "font-size": 11, fill: css("--muted")});
+    t.textContent = opt.yfmt ? opt.yfmt(v) : compact(v); svg.append(t);
+  }
+  svg.append(svgEl("line", {x1: m.l, x2: W - m.r, y1: H - m.b, y2: H - m.b, stroke: css("--axis"), "stroke-width": 1}));
+  for (let i = 0; i <= 4; i++) {
+    const v = x0 + (x1 - x0) * i / 4, t = svgEl("text", {x: X(v), y: H - m.b + 18, "text-anchor": i === 0 ? "start" : i === 4 ? "end" : "middle", "font-size": 11, fill: css("--muted")});
+    t.textContent = opt.xfmt ? opt.xfmt(v) : compact(v); svg.append(t);
+  }
+  // lines: one path per contiguous run of the same dash style
+  for (const s of series) {
+    let run = [], dash = null;
+    const flush = () => { if (run.length) {
+      svg.append(svgEl("path", {d: run.map((p, i) => `${i ? "L" : "M"}${X(p.x).toFixed(1)},${Y(p.y).toFixed(1)}`).join(""),
+        fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round",
+        "stroke-dasharray": dash ? "5 4" : "none"})); } };
+    s.points.forEach((p, i) => {
+      if (i && (p.brk || !!p.dash !== dash)) { const keep = p.brk ? [] : [run[run.length - 1]]; flush(); run = keep; }
+      dash = !!p.dash; run.push(p);
+    });
+    flush();
+  }
+  // direct labels at the line ends, nudged apart so they never collide
+  if (m.r > 14) {
+    const labs = series.filter(s => s.points.length).map(s => ({s, y: Y(s.points[s.points.length - 1].y)})).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < labs.length; i++) labs[i].y = Math.max(labs[i].y, labs[i - 1].y + 13);
+    for (const l of labs) {
+      const t = svgEl("text", {x: W - m.r + 6, y: l.y + 4, "font-size": 11, fill: css("--ink-2")});
+      t.textContent = l.s.name.length > 16 ? l.s.name.slice(0, 15) + "…" : l.s.name; svg.append(t);
+    }
+  }
+  const cross = svgEl("line", {y1: m.t, y2: H - m.b, stroke: css("--axis"), "stroke-width": 1, visibility: "hidden"});
+  svg.append(cross);
+  const hit = svgEl("rect", {x: m.l, y: m.t, width: W - m.l - m.r, height: H - m.t - m.b, fill: "transparent", tabindex: 0});
+  svg.append(hit);
+  host.append(svg);
+  const tip = el("div", {class: "tip"}); host.append(tip);
+  const uniq = [...new Set(xs)].sort((a, b) => a - b);
+  const show = xv => {
+    const near = uniq.reduce((a, b) => Math.abs(b - xv) < Math.abs(a - xv) ? b : a, uniq[0]);
+    cross.setAttribute("x1", X(near)); cross.setAttribute("x2", X(near)); cross.setAttribute("visibility", "visible");
+    tip.replaceChildren(el("div", {class: "hd", text: opt.xfmt ? opt.xfmt(near) : String(near)}));
+    for (const s of series) {
+      if (!s.points.length) continue;
+      const p = s.points.reduce((a, b) => Math.abs(b.x - near) < Math.abs(a.x - near) ? b : a);
+      tip.append(el("div", {class: "row"}, [el("span", {class: "key", style: `background:${s.color}`}),
+        el("b", {text: (opt.vfmt || compact)(p.y)}), el("span", {text: s.name + (p.dash ? " (testing)" : "")})]));
+    }
+    const rect = svg.getBoundingClientRect(), px = X(near) / W * rect.width;
+    tip.style.display = "block";
+    tip.style.left = Math.min(rect.width - tip.offsetWidth, Math.max(0, px + 10)) + "px";
+    tip.style.top = "8px";
+  };
+  const hide = () => { cross.setAttribute("visibility", "hidden"); tip.style.display = "none"; };
+  hit.addEventListener("pointermove", ev => { const r = svg.getBoundingClientRect();
+    show(x0 + ((ev.clientX - r.left) / r.width * W - m.l) / (W - m.l - m.r) * (x1 - x0)); });
+  hit.addEventListener("pointerleave", hide);
+  hit.addEventListener("focus", () => show(uniq[uniq.length - 1]));
+  hit.addEventListener("blur", hide);
+}
+function legend(node, series, dashNote) {
+  node.replaceChildren();
+  if (series.length >= 2) for (const s of series) node.append(el("span", {}, [el("i", {style: `background:${s.color}`}), el("span", {text: s.name})]));
+  if (dashNote) node.append(el("span", {}, [el("i", {class: "dash"}), el("span", {text: "testing"})]));
+}
+
+function render() {
+  if (!DATA) return;
+  document.getElementById("gen").textContent = `updated ${ago(DATA.generated)} · month ${DATA.month}`;
+  const arms = Object.keys(DATA.arms);
+  if (!arms.includes(sel.arm)) sel.arm = arms[0] || null;
+  const armSel = document.getElementById("armSel"); armSel.replaceChildren();
+  for (const a of arms) armSel.append(el("option", {value: a, text: a}));
+  armSel.value = sel.arm || "";
+  const sessions = DATA.sessions.filter(s => s.arm === sel.arm);
+  if (!sessions.some(s => s.session === sel.session)) sel.session = sessions[0] ? sessions[0].session : null;
+  const sesSel = document.getElementById("sesSel"); sesSel.replaceChildren();
+  for (const s of sessions) sesSel.append(el("option", {value: s.session, text: `${s.session} · ${s.state}`}));
+  sesSel.value = sel.session || "";
+  try { localStorage.setItem("runner-sel", JSON.stringify(sel)); } catch (e) {}
+
+  // tiles
+  const arm = DATA.arms[sel.arm] || {};
+  const eps = DATA.episodes.filter(e => e.arm === sel.arm);
+  const running = sessions.filter(s => s.state === "running").length;
+  const reached = eps.filter(e => e.reached_tick != null).length;
+  const prov = arm.provider || arm.model;
+  const spent = ((DATA.spend.usd || {})[prov]) || 0;
+  const tiles = document.getElementById("tiles"); tiles.replaceChildren();
+  const tile = (k, v, n) => tiles.append(el("div", {class: "tile"}, [el("div", {class: "k", text: k}), el("div", {class: "v", text: v}), el("div", {class: "n", text: n || ""})]));
+  tile("Running sessions", String(running), `${sessions.length} sessions in all`);
+  tile("Episodes", String(arm.episodes || eps.length), `${eps.length} with results`);
+  tile("Goals reached (legit)", String(reached), eps.length ? `${Math.round(100 * reached / eps.length)}% of episodes` : "");
+  tile("Archive cells", String(arm.cells || 0), `best height ${arm.best || 0}`);
+  tile(`Spend, ${DATA.month}`, usd(spent), arm.cap ? `cap $${arm.cap} for ${prov}` : prov || "");
+
+  // sessions table
+  table(document.getElementById("sesTable"), ["State", "Session", "Episode", "Game time", "Run", "Last action", "Turns", "Spent", "Updated"],
+    sessions.map(s => [badge(s.state), s.session, s.episode ? `${(s.episode.index ?? 0) + 1}` : "–", gameTime(s.tick || 0),
+      legit(s.valid), el("span", {class: "mono", text: s.last_call || ""}), s.turns, usd(s.usd), ago(s.updated)]), [6, 7]);
+
+  // items chart for the selected session
+  const ser = DATA.stats[sel.session] || [];
+  const finalMade = ser.length ? ser[ser.length - 1].made : {};
+  const items = Object.keys(finalMade).sort((a, b) => finalMade[b] - finalMade[a]).slice(0, 4);
+  const mk = (getter) => { let prev = -1; return ser.map(s => { const p = {x: s.tick, y: getter(s), dash: !s.valid, brk: s.tick < prev}; prev = s.tick; return p; }); };
+  const itemSeries = items.map((it, i) => ({name: it, color: css(SERIES[i]), points: mk(s => s.made[it] || 0)}));
+  document.getElementById("itemsTitle").textContent = sel.session ? `Items produced · ${sel.session}` : "Items produced";
+  legend(document.getElementById("itemsLegend"), itemSeries, ser.some(s => !s.valid));
+  lineChart(document.getElementById("itemsChart"), itemSeries, {ylog: true, xfmt: gameTime, label: "Items produced over game time", labelRight: itemSeries.length <= 4, empty: "No stats for this session yet."});
+  const itTable = el("table"); document.getElementById("itemsTable").replaceChildren(itTable);
+  table(itTable, ["Game time", "Run", ...items], ser.map(s => [gameTime(s.tick), s.valid ? "legit" : "testing", ...items.map(i => s.made[i] || 0)]), items.map((_, i) => i + 2));
+
+  const resSeries = [{name: "research", color: css("--s1"), points: mk(s => s.researched || 0)}];
+  legend(document.getElementById("resLegend"), resSeries, ser.some(s => !s.valid));
+  lineChart(document.getElementById("resChart"), resSeries, {xfmt: gameTime, vfmt: v => String(v), yfmt: v => String(Math.round(v)), label: "Technologies researched over game time", empty: "No stats for this session yet."});
+  const rTable = el("table"); document.getElementById("resTable").replaceChildren(rTable);
+  table(rTable, ["Game time", "Run", "Researched"], ser.map(s => [gameTime(s.tick), s.valid ? "legit" : "testing", s.researched]), [2]);
+
+  // archive frontier (step line) for every arm, at most 4
+  const frSeries = arms.slice(0, 4).map((a, i) => {
+    const pts = []; let last = null;
+    for (const f of DATA.arms[a].frontier) { if (last) pts.push({x: f.usd, y: last.height}); pts.push({x: f.usd, y: f.height}); last = f; }
+    return {name: a, color: css(SERIES[i]), points: pts};
+  });
+  legend(document.getElementById("frLegend"), frSeries, false);
+  lineChart(document.getElementById("frChart"), frSeries, {xfmt: v => `$${v.toFixed(v < 1 ? 2 : 1)}`, vfmt: v => String(v), label: "Archive frontier by spend", empty: "The archive has no cells yet."});
+  const fTable = el("table"); document.getElementById("frTable").replaceChildren(fTable);
+  table(fTable, ["Arm", "Spent", "Height", "Game time"], arms.flatMap(a => DATA.arms[a].frontier.map(f => [a, usd(f.usd), f.height, gameTime(f.tick)])), [1, 2]);
+
+  // episodes
+  table(document.getElementById("epTable"), ["Ended", "Session", "#", "Goal", "Result", "Game time used", "Turns", "Spent", "Marked testing"],
+    eps.slice(0, 40).map(e => [e.ended ? ago(e.ended) : "–", e.session, (e.index ?? 0) + 1,
+      Object.entries(e.goal || {}).map(([k, v]) => `${k} ≥ ${2 ** v}`).join(", "),
+      e.reached_tick != null ? el("span", {class: "badge"}, [el("span", {class: "dot", style: "background:var(--good)"}), el("span", {text: `✓ reached at ${gameTime(e.reached_tick)}`})]) : e.stop,
+      gameTime(Math.max(0, (e.end_tick || 0) - (e.start_tick || 0))), e.turns, usd(e.usd), e.invalid_marks || 0]), [2, 6, 7, 8]);
+}
+
+document.getElementById("armSel").addEventListener("change", e => { sel.arm = e.target.value; sel.session = null; render(); });
+document.getElementById("sesSel").addEventListener("change", e => { sel.session = e.target.value; render(); });
+document.getElementById("themeBtn").addEventListener("click", () => {
+  const r = document.documentElement, dark = r.dataset.theme ? r.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  r.dataset.theme = dark ? "light" : "dark"; try { localStorage.setItem("runner-theme", r.dataset.theme); } catch (e) {} render(); });
+try { const t = localStorage.getItem("runner-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+
+async function load() {
+  try {
+    const r = await fetch("data.json?" + Date.now(), {cache: "no-store"});
+    if (r.ok) { DATA = await r.json(); render(); return; }
+  } catch (e) {}
+  if (!DATA) { try { DATA = JSON.parse(document.getElementById("initial").textContent); } catch (e) {} render(); }
+}
+load(); setInterval(load, 30000);
+let resizeT = null;
+addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(render, 150); });
+</script>
+</body>
+</html>

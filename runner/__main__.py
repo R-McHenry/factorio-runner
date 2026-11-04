@@ -6,6 +6,7 @@
     python -m runner show    ARM.toml --store URL         the archive's frontier and the month's spend
     python -m runner ping    ARM.toml                     the model endpoint answers (lists models)
     python -m runner facts-import SEED.json --store URL   merge facts into the bank (by id)
+    python -m runner status --store URL --site DIR        the status page (index.html + data.json)
 
 --store: a directory, file:///dir, or s3://bucket/prefix. --work: scratch space (default ./work).
 """
@@ -22,8 +23,8 @@ from .store import open_store
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="runner")
-    ap.add_argument("cmd", choices=["fresh", "episode", "smoke", "show", "ping", "facts-import"])
-    ap.add_argument("arm", help="arm spec (for facts-import: the seed JSON)")
+    ap.add_argument("cmd", choices=["fresh", "episode", "smoke", "show", "ping", "facts-import", "status"])
+    ap.add_argument("arm", nargs="?", help="arm spec (facts-import: the seed JSON; status: unused)")
     ap.add_argument("--store", default=os.environ.get("RUNNER_STORE", "./store"))
     ap.add_argument("--work", default="./work")
     ap.add_argument("-n", type=int, default=1)
@@ -32,7 +33,13 @@ def main(argv=None) -> int:
     ap.add_argument("--keep-work", action="store_true")
     ap.add_argument("--out", default="./out", help="each session's steps and results, also kept here")
     ap.add_argument("--transcript", action="store_true", help="print a compact transcript")
+    ap.add_argument("--site", default="./site", help="status: the directory the page is written to")
     a = ap.parse_args(argv)
+    if a.cmd == "status":
+        from . import status
+        d = status.write_site(open_store(a.store), a.site)
+        print(f"wrote {a.site}: {len(d['arms'])} arms, {len(d['sessions'])} sessions, {len(d['episodes'])} episodes")
+        return 0
     if a.cmd == "facts-import":
         from . import facts
         with open(a.arm) as fh:

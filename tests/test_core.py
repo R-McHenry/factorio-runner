@@ -118,3 +118,23 @@ class MiscTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StatusTest(unittest.TestCase):
+    def test_collect(self):
+        from runner import status
+        with tempfile.TemporaryDirectory() as d:
+            s = LocalStore(d)
+            s.put_json("archives/a.json", {"arm": "a", "episodes": 2, "cells": {
+                "x=1": {"node": "n1", "tick": 10, "usd": 0.1, "height": 2},
+                "x=2": {"node": "n2", "tick": 20, "usd": 0.05, "height": 3}}})
+            s.put_json("status/a/s1.json", {"session": "s1", "arm": "a", "state": "running", "updated": 0})
+            s.put_json("stats/a/s1.json", {"samples": [{"tick": 1, "valid": True, "made": {"iron-plate": 3}}]})
+            d2 = status.collect(s)
+            self.assertEqual(list(d2["arms"]), ["a"])
+            self.assertEqual(d2["arms"]["a"]["frontier"][-1]["height"], 3)
+            self.assertEqual(d2["sessions"][0]["state"], "stalled")   # old update -> stalled
+            self.assertEqual(d2["stats"]["s1"][0]["made"], {"iron-plate": 3})
+            site = os.path.join(d, "site")
+            status.write_site(s, site)
+            self.assertTrue(os.path.exists(os.path.join(site, "index.html")))

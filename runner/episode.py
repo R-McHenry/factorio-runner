@@ -104,6 +104,10 @@ class Session:
         self.n_invalid = 0
         self.prompt_tokens = 0
         self.ep_state: dict = {}
+        self.series: list[dict] = []        # in-game stats over the session, for the status page
+        self.started = time.time()
+        self.last_call = ""
+        self._pushed = 0.0
 
     # -- what the tools call ---------------------------------------------------------------------
     def status_tag(self) -> str:
@@ -175,6 +179,7 @@ class Session:
             self.server.run(step)
             done += step
             st = nodes.read_state(self.server)
+            self._sample(st)
             levels = cells.cell(st["made"])
             if self.valid:
                 if self.ep_state["reached"] is None and cells.reached(levels, self.goal):
@@ -212,6 +217,44 @@ class Session:
     def _record(self, **kw):
         kw.setdefault("episode", self.ep_state.get("id"))
         self.steps.append(json.dumps(dict(kw, t=round(time.time(), 2)), ensure_ascii=False))
+
+    def _sample(self, st: dict, force: bool = False):
+        """One point of the session's in-game stats (at most every 1800 ticks unless forced)."""
+        last = self.series[-1] if self.series else None
+        if not force and last and last["valid"] == self.valid and 0 <= st["tick"] - last["tick"] < 1800:
+            return
+        self.series.append({"t": round(time.time(), 1), "tick": st["tick"], "valid": self.valid,
+                            "ep": self.ep_state.get("index", 0), "researched": st["researched"],
+                            "made": {k: int(v) for k, v in st["made"].items() if v}})
+
+    def _push(self, state: str = "running", force: bool = False):
+        """The live status and stats for the status page (throttled to one write per 20 s)."""
+        now = time.time()
+        if not force and now - self._pushed < 20:
+            return
+        self._pushed = now
+        es = self.ep_state
+        try:
+            tick = self.server.tick() if state == "running" else (self.series[-1]["tick"] if self.series else 0)
+        except Exception:
+            tick = self.series[-1]["tick"] if self.series else 0
+        status = {
+            "session": self.id, "arm": self.arm, "model": self.spec["agent"].get("model"),
+            "profile": self.spec["toolkit"]["profile"], "state": state, "updated": now,
+            "started": self.started, "tick": tick, "valid": self.valid, "last_valid": self.last_valid,
+            "turns": self.turns, "usd": round(self.usd, 5), "tokens": self.tokens,
+            "last_call": self.last_call[:300], "facts": len(getattr(self, "facts_drawn", [])),
+            "episode": {"index": es.get("index"), "id": es.get("id"), "goal": getattr(self, "goal", {}),
+                        "start_tick": es.get("tick0"), "reached_tick": es.get("reached")} if es else None,
+            "episodes_done": [{k: r.get(k) for k in ("index", "id", "reached_tick", "stop", "turns", "usd",
+                                                     "start_tick", "end_tick", "end_valid", "invalid_marks")}
+                              for r in self.results]}
+        try:
+            self.store.put_json(f"status/{self.arm}/{self.id}.json", status)
+            self.store.put_json(f"stats/{self.arm}/{self.id}.json", {"session": self.id, "arm": self.arm,
+                                                                      "samples": self.series})
+        except Exception as e:  # the page is a nicety; a store hiccup must not end the session
+            self.log(f"  status push failed: {e}")
 
     def _ask(self, messages, tools=None):
         r = self.client.complete(messages, tools)
@@ -265,8 +308,17 @@ class Session:
                     break
                 if self.usd >= float(self.ses.get("max_usd", 1e9)):
                     break
+            final = "finished"
             return self.results
+        except BaseException:
+            final = "failed"
+            raise
         finally:
+            try:
+                self._sample(nodes.read_state(self.server), force=True)
+            except Exception:
+                pass
+            self._push(final, force=True)
             self.server.stop()
             try:
                 self.store.put(f"steps/{self.arm}/{self.id}.jsonl", ("\n".join(self.steps) + "\n").encode())
@@ -303,7 +355,9 @@ class Session:
         self.goal = cells.make_goal(cells.cell(st["made"]), st["can"], int(self.ep.get("goal_dist", 3)), self.rng)
         self.ep_state = {"id": eid, "start": start, "tick_end": tick0 + int(self.ep.get("max_ticks", 216000)),
                          "levels": cells.cell(st["made"]), "snap_tick": tick0, "reached": None,
-                         "offered": [], "usd0": self.usd, "turns0": self.turns, "invalid0": self.n_invalid}
+                         "offered": [], "usd0": self.usd, "turns0": self.turns, "invalid0": self.n_invalid,
+                         "index": index, "tick0": tick0}
+        self._sample(st, force=True)
         self.states = {k: v for k, v in self.states.items() if not moved}
         self._save("start", valid=True)
         self.box.finished = None
@@ -367,6 +421,8 @@ class Session:
                 out = self.box.call(c["function"]["name"], args if isinstance(args, dict) else {})
                 self.messages.append({"role": "tool", "tool_call_id": c["id"], "content": out})
                 self._record(role="tool", turn=self.turns, name=c["function"]["name"], out=out[:4000])
+                self.last_call = f"{c['function']['name']} {c['function']['arguments'] or ''}"
+                self._push()
         # the knowledge step
         self.messages.append({"role": "user", "content": facts.KNOWLEDGE_PROMPT})
         r = self._ask(self.messages)

@@ -2,3 +2,5 @@ store/
 work/
 __pycache__/
 *.pyc
+site/
+out/
