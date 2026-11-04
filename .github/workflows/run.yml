@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       cmd:
-        description: "fresh | episode | smoke (fresh + n episodes) | show | ping"
+        description: "fresh | episode | smoke (fresh + n sessions) | show | status | ping"
         required: true
         default: episode
       arm:
@@ -92,6 +92,14 @@ jobs:
           path: out
           if-no-files-found: ignore
           retention-days: 30
+      - name: Upload the status page (cmd status)
+        if: ${{ always() && inputs.cmd == 'status' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-${{ github.run_id }}
+          path: site
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload the local store (no S3 yet)
         if: ${{ always() && (vars.STORE_BUCKET == '' || inputs.store == 'local') && inputs.cmd != 'ping' }}
         uses: actions/upload-artifact@v4
