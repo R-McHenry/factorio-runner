@@ -2,6 +2,7 @@
 
     python -m runner fresh   ARM.toml --store URL         the arm's root node: fresh map + kickoff kit
     python -m runner episode ARM.toml --store URL [-n N]  N episodes, one after another
+    python -m runner smoke   ARM.toml --store URL [-n N]  fresh, then N episodes (one job, no shared store)
     python -m runner show    ARM.toml --store URL         the archive's frontier and the month's spend
     python -m runner ping    ARM.toml                     the model endpoint answers (lists models)
     python -m runner facts-import SEED.json --store URL   merge facts into the bank (by id)
@@ -21,7 +22,7 @@ from .store import open_store
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="runner")
-    ap.add_argument("cmd", choices=["fresh", "episode", "show", "ping", "facts-import"])
+    ap.add_argument("cmd", choices=["fresh", "episode", "smoke", "show", "ping", "facts-import"])
     ap.add_argument("arm", help="arm spec (for facts-import: the seed JSON)")
     ap.add_argument("--store", default=os.environ.get("RUNNER_STORE", "./store"))
     ap.add_argument("--work", default="./work")
@@ -46,10 +47,11 @@ def main(argv=None) -> int:
 
     store = open_store(a.store)
     store.put_json(f"arms/{spec['arm']}.lock.json", specs.lock(spec))
-    if a.cmd == "fresh":
+    if a.cmd in ("fresh", "smoke"):
         root = episode.fresh(store, spec, os.path.join(a.work, "fresh-" + spec["arm"]))
         print(json.dumps({"root": root.id, "tick": root.tick, "cell": root.key}))
-        return 0
+        if a.cmd == "fresh":
+            return 0
     if a.cmd == "show":
         arch = archive.get(store, spec["arm"])
         rows = archive.frontier(arch)

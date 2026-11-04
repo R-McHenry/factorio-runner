@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       cmd:
-        description: "fresh | episode | show | ping"
+        description: "fresh | episode | smoke (fresh + n episodes) | show | ping"
         required: true
         default: episode
       arm:
