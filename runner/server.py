@@ -35,10 +35,15 @@ def ensure_factorio(version: str, cache: str) -> str:
     exe = os.path.join(root, "factorio", "bin", "x64", "factorio")
     if os.path.exists(exe):
         return exe
+    os.makedirs(cache, exist_ok=True)
     os.makedirs(root, exist_ok=True)
     tar = os.path.join(cache, f"factorio-headless-{version}.tar.xz")
     if not os.path.exists(tar):
-        urllib.request.urlretrieve(DOWNLOAD.format(version=version), tar + ".part")
+        # factorio.com refuses urllib's default User-Agent (403)
+        req = urllib.request.Request(DOWNLOAD.format(version=version),
+                                     headers={"User-Agent": "factorio-runner"})
+        with urllib.request.urlopen(req, timeout=600) as r, open(tar + ".part", "wb") as fh:
+            shutil.copyfileobj(r, fh)
         os.replace(tar + ".part", tar)
     with tarfile.open(tar) as t:
         t.extractall(root, filter="tar")

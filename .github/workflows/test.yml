@@ -17,8 +17,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/factorio
-          key: factorio-2.0.77-headless
+          key: factorio-2.0.77-headless-v2
       - name: Fetch Factorio
+        shell: bash
         run: python -c "import os; from runner.server import ensure_factorio as e; print(e('2.0.77', os.path.expanduser('~/.cache/factorio')))" | tee factorio-bin
       - name: Tests (unit + the scripted loop against a real server)
-        run: FACTORIO_BIN=$(cat factorio-bin) python -m unittest discover -s tests -t . -v
+        shell: bash
+        run: FACTORIO_BIN=$(cat factorio-bin) REQUIRE_GAME=1 python -m unittest discover -s tests -t . -v

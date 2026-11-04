@@ -11,7 +11,10 @@ from runner.store import LocalStore
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-@unittest.skipUnless(os.environ.get("FACTORIO_BIN"), "FACTORIO_BIN not set")
+REQUIRED = os.environ.get("REQUIRE_GAME") == "1"   # CI: a missing server is a failure, not a skip
+
+
+@unittest.skipUnless(os.environ.get("FACTORIO_BIN") or REQUIRED, "FACTORIO_BIN not set")
 class GameTest(unittest.TestCase):
     def test_fresh_and_episode(self):
         spec = specs.load(os.path.join(ROOT, "arms", "test-scripted.toml"))
