@@ -74,3 +74,29 @@ class GameTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(os.environ.get("FACTORIO_BIN") or REQUIRED, "FACTORIO_BIN not set")
+class EarlyBotsTest(unittest.TestCase):
+    def test_early_bots_start_builds_on_solar(self):
+        """Rory's fk-early-bots kit: the solar block carries the low-power roboport, and its robots
+        build ghosts from the first minute."""
+        from runner.server import Server
+        from runner import kit
+        with tempfile.TemporaryDirectory() as d:
+            srv = Server(os.environ["FACTORIO_BIN"], os.path.join(d, "srv"),
+                         mods=os.path.join(ROOT, "game", "space-age-early", "mods"))
+            with srv:
+                save = srv.create("t", os.path.join(ROOT, "game", "space-age", "map-gen-settings.json"),
+                                  os.path.join(ROOT, "game", "space-age", "map-settings.json"), 1)
+                srv.start(save)
+                rep = kit.apply(srv, "kickoff-early-bots")
+                self.assertIn("built 16/16", rep["bootstrap"])
+                self.assertIn("short {}", rep["kit"])
+                self.assertEqual(srv.lua("rcon.print(tostring(settings.global['fk-loot-chests'].value))"), "false")
+                srv.lua("game.surfaces[1].create_entity{name = 'entity-ghost', inner_name = 'assembling-machine-1', "
+                        "position = {30.5, 8.5}, force = 'player'}")
+                srv.run(1800)
+                got = srv.lua("local s = game.surfaces[1] local n = s.find_entity('fk-early-roboport', {8, 8}).logistic_network "
+                              "rcon.print(s.count_entities_filtered{name = 'assembling-machine-1'} .. ' ' .. n.all_construction_robots)")
+                self.assertEqual(got, "1 50")

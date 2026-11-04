@@ -96,7 +96,7 @@ def fresh(store, spec: dict, work: str) -> nodes.Node:
         save = srv.create("fresh", spec["_paths"].get("map_gen"), spec["_paths"].get("map_settings"),
                           g.get("seed"))
         srv.start(save)
-        report = kit.apply(srv)
+        report = kit.apply(srv, g.get("kit", "kickoff-v1"))
         wd = os.path.join(work, "work")
         os.makedirs(wd, exist_ok=True)
         with open(os.path.join(wd, "NOTES.md"), "w") as fh:

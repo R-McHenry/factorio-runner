@@ -1,0 +1,46 @@
+# Space Age map (Rory's main-game settings), the early-bots kickoff kit (Rory's fk-early-bots mod:
+# low-power robots and roboport, a steam plant in the chests), DeepSeek on the bare tool profile.
+arm = "sa-deepseek-bare-v1"
+
+[game]
+factorio = "2.0.77"
+mods = "../game/space-age-early/mods"
+map_gen = "../game/space-age/map-gen-settings.json"
+map_settings = "../game/space-age/map-settings.json"
+seed = 1
+kit = "kickoff-early-bots"
+
+[agent]
+provider = "openai"
+provider_name = "deepseek"
+base_url = "https://api.deepseek.com"
+model = "deepseek-flash"   # the API lists deepseek-flash and deepseek-v4-pro (2026-11-04)
+api_key_env = "DEEPSEEK_API_KEY"
+temperature = 0.7
+max_tokens = 16384          # a reasoning model's thinking counts against this
+max_tokens_ceiling = 65536  # a turn cut off with no answer is asked again with 4x, up to this
+# $ per million tokens; third-party snapshot 2026-11 (off-peak flash), check before trusting
+price = { in_hit = 0.003, in_miss = 0.15, out = 0.60 }
+
+[toolkit]
+profile = "bare"
+
+[prompt]
+layers = ["l0-lab-bare"]
+facts_p = 0.5
+
+[episode]
+max_turns = 60
+max_usd = 0.25
+max_ticks = 216000
+goal_dist = 3
+
+[budget]
+monthly_usd = 10.0   # target, shown on the status page
+hard_usd = 100.0     # the most Rory said to spend in a month; sessions stop starting past it
+
+[session]
+episodes = 3
+next = "select"
+max_usd = 0.6
+context_limit = 100000

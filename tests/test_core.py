@@ -293,3 +293,22 @@ class TrimTest(unittest.TestCase):
         self.assertEqual(ses.prompt_tokens, 0)
         ses.prompt_tokens = 5000
         self.assertEqual(ses._trim(), 0)                     # already shortened: no second change
+
+
+class ModSettingsTest(unittest.TestCase):
+    def test_early_bots_settings_file_matches_its_source(self):
+        import json
+        from runner import modsettings
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        d = os.path.join(root, "game", "space-age-early", "mods")
+        src = json.load(open(os.path.join(d, "mod-settings.json")))
+        src = {k: v for k, v in src.items() if k in ("startup", "runtime-global", "runtime-per-user")}
+        with open(os.path.join(d, "mod-settings.dat"), "rb") as fh:
+            data = fh.read()
+        self.assertEqual(data, modsettings.write(src))
+        self.assertFalse(modsettings.read(data)[1]["runtime-global"]["fk-loot-chests"]["value"])
+
+    def test_kits(self):
+        from runner import kit
+        self.assertEqual(kit.KITS["kickoff-early-bots"][0][0][0], "fk-early-roboport")   # roboport first
+        self.assertNotIn("nuclear-reactor", dict(kit.KITS["kickoff-early-bots"][2]))
