@@ -1,0 +1,52 @@
+# The late-cell start (warp kit, stockpile style): red+green research and a small base's materials
+# in the chests, no factory. Otherwise the same as check-deepseek-fk.
+# Was: the toolkit run: the early-bots start, DeepSeek with the fk toolkit (a game codebase in its work dir,
+# part of every node), and Rory's guide to a base that scales (modules, scaffolding, paying down
+# debt) as its own prompt layer, so it can be switched off.
+arm = "check-deepseek-late-fk"
+
+[game]
+factorio = "2.0.77"
+mods = "../game/space-age-early/mods"
+map_gen = "../game/space-age/map-gen-settings.json"
+map_settings = "../game/space-age/map-settings.json"
+seed = 1
+kit = "warp-green-early-bots"
+codebase = "../game/space-age-early/codebase"
+
+[agent]
+provider = "openai"
+provider_name = "deepseek"
+base_url = "https://api.deepseek.com"
+model = "deepseek-flash"   # the API lists deepseek-flash and deepseek-v4-pro (2026-11-04)
+api_key_env = "DEEPSEEK_API_KEY"
+temperature = 0.7
+max_tokens = 16384          # a reasoning model's thinking counts against this
+max_tokens_ceiling = 65536  # a turn cut off with no answer is asked again with 4x, up to this
+# $ per million tokens; third-party snapshot 2026-11 (off-peak flash), check before trusting
+price = { in_hit = 0.003, in_miss = 0.15, out = 0.60 }
+
+[toolkit]
+profile = "fk"
+pack = "sa-early"
+timeout_s = 900
+
+[prompt]
+layers = ["l0-lab-fk", "l2-scalable"]
+facts_p = 0.5
+
+[episode]
+max_turns = 30
+max_usd = 0.4
+max_ticks = 216000
+goal_dist = 3
+
+[budget]
+monthly_usd = 10.0   # target, shown on the status page
+hard_usd = 100.0     # the most Rory said to spend in a month; sessions stop starting past it
+
+[session]
+episodes = 2
+next = "select"
+max_usd = 0.6
+context_limit = 100000

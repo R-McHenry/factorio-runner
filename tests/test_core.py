@@ -329,3 +329,10 @@ class ModSettingsTest(unittest.TestCase):
         from runner import kit
         self.assertEqual(kit.KITS["kickoff-early-bots"][0][0][0], "fk-early-roboport")   # roboport first
         self.assertNotIn("nuclear-reactor", dict(kit.KITS["kickoff-early-bots"][2]))
+        warp = kit.KITS["warp-green-early-bots"]
+        self.assertEqual(warp[0][0][0], "fk-early-roboport")
+        self.assertTrue(warp[3]["logistic-science-pack"] and warp[3]["steam-power"])
+        self.assertFalse(kit.RESEARCH.get("automation"))          # the baseline kit is untouched
+        stacks = {"fk-early-roboport": 10, "electric-mining-drill": 50, "transport-belt": 100}
+        self.assertLess(sum(-(-c // stacks.get(n, 50)) for n, c in warp[2]), 6 * 48)   # fits the chests
+        self.assertEqual(kit.kit_json("warp-green-early-bots")["entities"][0]["name"], "fk-early-roboport")

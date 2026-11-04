@@ -122,16 +122,41 @@ KIT_EARLY = [("fk-early-roboport", 5), ("assembling-machine-1", 3), ("medium-ele
              ("fast-inserter", 20), ("pipe", 200), ("pipe-to-ground", 10), ("iron-chest", 1),
              ("underground-belt", 20), ("splitter", 10), ("burner-mining-drill", 10)]
 
-#: kit name (an arm's game.kit) -> (bootstrap, robots, chest contents)
+#: A warp kit, stockpile style (PLAN-RUNNER 2f): the early-bots start aimed at a red+green science
+#: cell. The research a base that makes red and green science has, and the materials of one in the
+#: chests, but no factory: robots build it all inside the measured episode. Amounts are a guess at
+#: a small red+green base's teardown, to be calibrated against real teardown kits later.
+RESEARCH_GREEN = dict(RESEARCH)
+RESEARCH_GREEN.update({t: True for t in (
+    "automation", "logistics", "logistic-science-pack", "fast-inserter", "steel-processing",
+    "electric-mining-drill", "automation-2", "logistics-2", "advanced-material-processing",
+    "optics", "military", "stone-wall", "turrets", "repair-pack")})
+ROBOTS_GREEN = {"fk-early-construction-robot": 100, "fk-early-logistic-robot": 50}
+KIT_GREEN = [("fk-early-roboport", 10), ("assembling-machine-1", 20), ("assembling-machine-2", 10),
+             ("electric-mining-drill", 30), ("stone-furnace", 40), ("steel-furnace", 0), ("lab", 10),
+             ("medium-electric-pole", 150), ("small-electric-pole", 100), ("storage-chest", 10),
+             ("requester-chest", 20), ("passive-provider-chest", 20), ("offshore-pump", 2),
+             ("boiler", 6), ("steam-engine", 12), ("transport-belt", 800), ("underground-belt", 40),
+             ("splitter", 20), ("fast-transport-belt", 0), ("inserter", 150),
+             ("long-handed-inserter", 40), ("fast-inserter", 40), ("burner-inserter", 20),
+             ("pipe", 200), ("pipe-to-ground", 20), ("iron-chest", 10), ("burner-mining-drill", 10),
+             ("iron-plate", 1000), ("copper-plate", 800), ("steel-plate", 100),
+             ("iron-gear-wheel", 200), ("electronic-circuit", 300), ("coal", 500), ("stone", 200),
+             ("stone-brick", 100), ("iron-ore", 400), ("copper-ore", 400),
+             ("automation-science-pack", 50), ("logistic-science-pack", 50)]
+KIT_GREEN = [(n, c) for n, c in KIT_GREEN if c > 0]
+
+#: kit name (an arm's game.kit) -> (bootstrap, robots, chest contents[, research])
 KITS = {
     "kickoff-v1": (BOOTSTRAP, ROBOTS, KIT),
     "kickoff-early-bots": (BOOTSTRAP_EARLY, ROBOTS_EARLY, KIT_EARLY),
+    "warp-green-early-bots": (BOOTSTRAP_EARLY, ROBOTS_GREEN, KIT_GREEN, RESEARCH_GREEN),
 }
 
 
 def kit_json(name: str) -> dict:
     """The kit as a toolkit codebase declares it (game/kit.json): the bootstrap and the chests."""
-    bootstrap, _, _ = KITS[name]
+    bootstrap = KITS[name][0]
     ents = [{"name": n, "wx": x, "wy": y, "d": 0} for n, x, y in bootstrap]
     ents += [{"name": "storage-chest", "wx": x, "wy": y, "d": 0} for x, y in CHESTS]
     return {"note": f"the starter kit the runner puts down (runner.kit, kit {name})", "entities": ents}
@@ -141,11 +166,12 @@ def apply(server, name: str = "kickoff-v1") -> dict:
     """Put kit `name` down on a fresh map (paused server). -> the three steps' reports."""
     if name not in KITS:
         raise ValueError(f"no kit {name!r}; kits: {', '.join(KITS)}")
-    bootstrap, robots, contents = KITS[name]
+    bootstrap, robots, contents = KITS[name][:3]
+    research = KITS[name][3] if len(KITS[name]) > 3 else RESEARCH
     out = {"kit_name": name,
            "bootstrap": server.lua(LUA_BOOTSTRAP % (_q(bootstrap), _q(robots), _q(OIL))),
            "kit": server.lua(LUA_KIT % (_q(CHESTS), _q(contents))),
-           "rules": server.lua(LUA_RULES % _q(RESEARCH))}
+           "rules": server.lua(LUA_RULES % _q(research))}
     for step, line in out.items():
         if step != "kit_name" and line.startswith("REFUSED"):
             raise RuntimeError(f"kit {step}: {line}")
