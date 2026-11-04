@@ -1,10 +1,13 @@
 """The agent's tools, by profile, and the lab referee.
 
 Lab rules: reading the game is free; changing it goes through the game (ghosts that robots build,
-deconstruction orders, research, settings a player could set). The score is game ticks, so Lua
-that creates, moves or deletes things directly, or touches the clock, is refused before it runs.
+deconstruction orders, research, settings a player could set). The score is game ticks of a legit
+lineage, so Lua that creates, moves or deletes things directly, or touches the clock, makes the run
+stop counting: the referee saves the state just before it as last-valid-N and lets it run. Loading a
+legit state makes the run count again.
 
-Profile "bare": lua, paste, deconstruct, research, wait, read_file, write_file, list_files, finish.
+Profile "bare": lua, paste, deconstruct, research, evaluate, save_state, load_state, list_states,
+read_file, write_file, list_files, finish.
 """
 from __future__ import annotations
 
@@ -52,10 +55,11 @@ def _fn(name, desc, props, required=()):
 
 BARE = [
     _fn("lua", "Run Lua in the game (Factorio 2.0 API, /sc). Reads are free. Output is what you "
-        "rcon.print(). Writes must be things a player could do: ghosts (create_entity{name="
+        "rcon.print(). Changes a player could make keep the run legit: ghosts (create_entity{name="
         "'entity-ghost', inner_name=..., position=..., direction=..., force='player'}), "
-        "order_deconstruction, settings, logistic requests, add_research. The referee refuses "
-        "anything that creates, moves or deletes items or entities directly, or touches the clock.",
+        "order_deconstruction, settings, logistic requests, add_research. Lua that creates, moves "
+        "or deletes items or entities directly, or touches the clock, still runs, but the run stops "
+        "counting from there (a saved state from just before stays legit).",
         {"code": {"type": "string"}}, ["code"]),
     _fn("paste", "Paste a blueprint string as ghosts at x,y (robots build them from the logistic "
         "network). Obstacles in the way are marked for deconstruction.",
@@ -66,17 +70,24 @@ BARE = [
          "y1": {"type": "number"}}, ["x0", "y0", "x1", "y1"]),
     _fn("research", "Add a technology to the end of the research queue. -> the queue.",
         {"tech": {"type": "string"}}, ["tech"]),
-    _fn("wait", "Let the game run for `ticks` ticks (60 ticks = 1 game second), then stand still "
-        "again. Only game time counts, not your thinking time. Stops early when the goal is met. "
-        "-> the tick and the goal's progress.",
+    _fn("evaluate", "Run the game forward `ticks` ticks (60 ticks = 1 game second), then pause "
+        "again. Game time only moves here; your thinking costs none. Stops early when the "
+        "episode's goal is met. -> the tick and the goal's progress.",
         {"ticks": {"type": "integer"}}, ["ticks"]),
+    _fn("save_state", "Save the game as a named state, to come back to (undo, or try several "
+        "ideas from one point). Your work dir files are not part of it.",
+        {"name": {"type": "string"}}, ["name"]),
+    _fn("load_state", "Load a named state (yours, or one the runner saved, like start or "
+        "last-valid-N). The game goes back to that tick.",
+        {"name": {"type": "string"}}, ["name"]),
+    _fn("list_states", "List the saved states: name, tick, and whether each is legit.", {}, []),
     _fn("read_file", "Read a file in your work dir (NOTES.md and your own files).",
         {"path": {"type": "string"}}, ["path"]),
     _fn("write_file", "Write a file in your work dir (whole content).",
         {"path": {"type": "string"}, "content": {"type": "string"}}, ["path", "content"]),
     _fn("list_files", "List the files in your work dir.", {}, []),
-    _fn("finish", "End the episode (when the goal is met, or you are stuck). NOTES.md should be "
-        "current first: the next player starts from it.",
+    _fn("finish", "End this episode (when the goal is met, or you are stuck). NOTES.md should be "
+        "current first: whoever continues from here starts from it.",
         {"summary": {"type": "string"}}, ["summary"]),
 ]
 
@@ -113,7 +124,8 @@ rcon.print((ok and 'queued' or 'not queued (unknown, done, or not yet available)
 
 
 class Toolbox:
-    """Runs tool calls for one episode. `ctx` is the episode (goal, budgets, snapshot hook)."""
+    """Runs tool calls. `ctx` (the session) owns the clock, the saved states and the run's
+    validity: lua goes through ctx.lua, and every result ends with ctx.status_tag()."""
 
     def __init__(self, server, workdir: str, ctx, out_limit: int = 8000):
         self.server = server
@@ -121,7 +133,6 @@ class Toolbox:
         self.ctx = ctx
         self.out_limit = out_limit
         self.finished: str | None = None
-        self.refused = 0
 
     def _path(self, p: str) -> str:
         full = os.path.normpath(os.path.join(self.workdir, p))
@@ -133,34 +144,42 @@ class Toolbox:
         return s if len(s) <= self.out_limit else s[: self.out_limit] + f"\n... [{len(s) - self.out_limit} more chars cut]"
 
     def call(self, name: str, args: dict) -> str:
-        try:
-            return self._cut(getattr(self, "t_" + name)(**args))
-        except AttributeError:
-            return f"error: no tool {name}"
-        except TypeError as e:
-            return f"error: bad arguments for {name}: {e}"
-        except Exception as e:  # the game or the file system said no; the agent should see it
-            return f"error: {type(e).__name__}: {e}"
+        fn = getattr(self, "t_" + name, None)
+        if fn is None:
+            out = f"error: no tool {name}"
+        else:
+            try:
+                out = self._cut(fn(**args))
+            except TypeError as e:
+                out = f"error: bad arguments for {name}: {e}"
+            except Exception as e:  # the game or the file system said no; the agent should see it
+                out = f"error: {type(e).__name__}: {e}"
+        return f"{out}\n{self.ctx.status_tag()}"
 
     # -- tools ----------------------------------------------------------------------------------
     def t_lua(self, code: str) -> str:
-        why = referee(code)
-        if why:
-            self.refused += 1
-            return f"refused by the lab referee: {why}"
-        return self.server.lua(code) or "(no output: use rcon.print)"
+        return self.ctx.lua(code) or "(no output: use rcon.print)"
 
     def t_paste(self, blueprint: str, x: float, y: float) -> str:
-        return self.server.lua(LUA_PASTE % (json.dumps(blueprint), float(x), float(y)))
+        return self.ctx.server.lua(LUA_PASTE % (json.dumps(blueprint), float(x), float(y)))
 
     def t_deconstruct(self, x0, y0, x1, y1) -> str:
-        return self.server.lua(LUA_DECON % (float(x0), float(y0), float(x1), float(y1)))
+        return self.ctx.server.lua(LUA_DECON % (float(x0), float(y0), float(x1), float(y1)))
 
     def t_research(self, tech: str) -> str:
-        return self.server.lua(LUA_RESEARCH % json.dumps(tech))
+        return self.ctx.server.lua(LUA_RESEARCH % json.dumps(tech))
 
-    def t_wait(self, ticks: int) -> str:
-        return self.ctx.wait(int(ticks))
+    def t_evaluate(self, ticks: int) -> str:
+        return self.ctx.evaluate(int(ticks))
+
+    def t_save_state(self, name: str) -> str:
+        return self.ctx.save_state(str(name))
+
+    def t_load_state(self, name: str) -> str:
+        return self.ctx.load_state(str(name))
+
+    def t_list_states(self) -> str:
+        return self.ctx.list_states()
 
     def t_read_file(self, path: str) -> str:
         with open(self._path(path), encoding="utf-8", errors="replace") as fh:
@@ -195,6 +214,3 @@ def goal_text(goal: dict, made: dict) -> str:
     return ", ".join(rows)
 
 
-def state_text(server, goal: dict) -> str:
-    st = read_state(server)
-    return f"tick {st['tick']}; goal (items produced, total): {goal_text(goal, st['made'])}"

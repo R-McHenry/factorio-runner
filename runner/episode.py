@@ -1,25 +1,36 @@
-"""One episode: pick a node, restore it, set a goal, let the agent play on the lockstep clock,
-offer the nodes it reaches, and end with the knowledge step.
+"""Sessions and episodes.
+
+A session is one agent conversation. It plays up to `session.episodes` episodes in a row, so the
+agent doesn't start from nothing each time (and episode 2 vs 1 of a session can be compared). An
+episode is a goal cell from a start state; it ends when a legit state meets the goal, at the
+episode's budget, or when the agent calls finish. Then the knowledge step, then the next episode:
+from a node the archive picks (`session.next = "select"`) or from where the agent stands
+(`"continue"`).
+
+Time is decoupled: the game only moves in `evaluate`, and the agent may save and load states.
+The run is legit while every change since the last legit state went through the game; the
+referee doesn't block anything, it saves `last-valid-N` before a flagged command and marks the
+run as not counting until a legit state is loaded. Only legit states become archive nodes or
+count as reaching a goal.
 
 Writes to the store:
-- `nodes/<arm>/<id>.json` and blobs for every snapshot, offered to `archives/<arm>.json`;
-- `episodes/<arm>/<id>.json`, the result;
-- `steps/<arm>/<id>.jsonl`, every turn (tool calls, results, usage);
-- `facts/candidates/<arm>/<id>.json`, the knowledge step's facts;
-- the month's spend in `ledger/`.
+- `nodes/<arm>/<id>.json` + blobs for every snapshot, offered to `archives/<arm>.json`;
+- `episodes/<arm>/<id>.json` per episode, `steps/<arm>/<session>.jsonl` per session;
+- `facts/candidates/<arm>/<episode>.json`; the month's spend in `ledger/`.
 """
 from __future__ import annotations
 
 import json
 import os
 import random
+import re
 import shutil
 import time
 import uuid
 
 from . import archive, cell as cells, facts, kit, ledger, node as nodes
 from .agent import llm as llms
-from .agent.tools import PROFILES, Toolbox, goal_text
+from .agent.tools import PROFILES, Toolbox, goal_text, referee
 from .server import Server, ensure_factorio
 
 PROMPTS = os.path.join(os.path.dirname(__file__), "prompts")
@@ -37,6 +48,10 @@ def new_server(spec: dict, root: str) -> Server:
     g = spec["game"]
     exe = ensure_factorio(g["factorio"], os.environ.get("FACTORIO_CACHE", os.path.expanduser("~/.cache/factorio")))
     return Server(exe, root, mods=spec["_paths"].get("mods"))
+
+
+def _uid() -> str:
+    return time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
 
 
 # -- fresh: the root node ------------------------------------------------------------------------
@@ -61,37 +76,98 @@ def fresh(store, spec: dict, work: str) -> nodes.Node:
     return root
 
 
-# -- the episode -----------------------------------------------------------------------------------
-class Episode:
+# -- the session ---------------------------------------------------------------------------------
+class Session:
     def __init__(self, store, spec: dict, work: str, client=None, seed: int | None = None,
                  start_node: str | None = None, log=print):
         self.store = store
         self.spec = spec
         self.arm = spec["arm"]
         self.ep = spec["episode"]
-        self.id = time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
+        self.ses = spec.get("session", {})
+        self.id = _uid()
         self.work = os.path.join(work, self.id)
+        self.workdir = os.path.join(self.work, "work")
         self.rng = random.Random(seed if seed is not None else uuid.uuid4().int)
         self.client = client or llms.from_spec(spec["agent"])
         self.provider = spec["agent"].get("provider_name", spec["agent"].get("model", "model"))
-        self.start_node_id = start_node
+        self.first_node = start_node
         self.log = log
         self.usd = 0.0
         self.tokens = {"in_hit": 0, "in_miss": 0, "out": 0}
         self.turns = 0
-        self.offered: list[dict] = []
-        self.last_snapshot_tick = 0
-        self.reached_tick: int | None = None
-        self.steps_buf: list[str] = []
+        self.steps: list[str] = []
+        self.results: list[dict] = []
+        self.states: dict[str, dict] = {}    # name -> {tick, valid, last_valid, file}
+        self.valid = True
+        self.last_valid: str | None = None
+        self.n_invalid = 0
+        self.prompt_tokens = 0
+        self.ep_state: dict = {}
 
-    # -- the clock, as the agent's wait tool sees it -------------------------------------------------
-    def wait(self, ticks: int) -> str:
-        cap = int(self.ep.get("wait_cap", 36000))
+    # -- what the tools call ---------------------------------------------------------------------
+    def status_tag(self) -> str:
+        t = self.server.tick()
+        if self.valid:
+            return f"[legit run - counting towards the golden run - tick {t}]"
+        lv = self.states.get(self.last_valid, {})
+        return (f"[testing/planning - does not count - last valid state {self.last_valid} "
+                f"at tick {lv.get('tick', '?')}]")
+
+    def lua(self, code: str) -> str:
+        why = referee(code)
+        if why and self.valid:
+            self.n_invalid += 1
+            name = f"last-valid-{self.n_invalid}"
+            self._save(name, valid=True)
+            self.last_valid = name
+            self.valid = False
+            self._record(role="invalid", why=why, state=name)
+            out = self.server.lua(code)
+            return (f"{out}\n(note: {why}. The run doesn't count from here; state {name} is "
+                    f"the legit game from just before. load_state {name} to count again.)")
+        return self.server.lua(code)
+
+    def _save(self, name: str, valid: bool) -> dict:
+        path = self.server.save(f"st-{name}")
+        st = {"tick": self.server.tick(), "valid": valid,
+              "last_valid": None if valid else self.last_valid, "file": path}
+        self.states[name] = st
+        return st
+
+    def save_state(self, name: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,40}", name) or name.startswith("last-valid-"):
+            return "error: a state name is 1-40 letters, digits, _ . - (last-valid-N is the referee's)"
+        st = self._save(name, self.valid)
+        return f"saved state {name} at tick {st['tick']} ({'legit' if st['valid'] else 'testing'})"
+
+    def load_state(self, name: str) -> str:
+        st = self.states.get(name)
+        if st is None:
+            return f"error: no state {name}; list_states shows them"
+        tick = self.server.load(st["file"])
+        self.valid = st["valid"]
+        self.last_valid = st["last_valid"]
+        made = nodes.read_state(self.server)["made"]
+        self.ep_state["levels"] = cells.cell(made)
+        self._record(role="load", state=name, tick=tick, valid=self.valid)
+        return f"loaded state {name}: tick {tick}; goal: {goal_text(self.goal, made)}"
+
+    def list_states(self) -> str:
+        rows = [f"{n}: tick {s['tick']}, {'legit' if s['valid'] else 'testing'}"
+                for n, s in sorted(self.states.items(), key=lambda kv: kv[1]["tick"])]
+        return "\n".join(rows) or "(none)"
+
+    def evaluate(self, ticks: int) -> str:
+        cap = int(self.ep.get("eval_cap", 36000))
         ticks = max(1, min(ticks, cap))
-        left = self.tick_budget_end - self.server.tick()
-        if left <= 0:
-            return "no game time left in this episode: finish"
-        ticks = min(ticks, left)
+        end = self.ep_state["tick_end"]
+        now = self.server.tick()
+        if self.valid and now >= end:
+            return (f"this episode's game time is used up (tick {end}); finish, or load an earlier "
+                    "state to try another way")
+        if self.valid:
+            ticks = min(ticks, end - now)
         chunk = int(self.ep.get("check_every", 600))
         done = 0
         while done < ticks:
@@ -100,163 +176,219 @@ class Episode:
             done += step
             st = nodes.read_state(self.server)
             levels = cells.cell(st["made"])
-            if self.reached_tick is None and cells.reached(levels, self.goal):
-                self.reached_tick = st["tick"]
-            if (levels != self.last_levels
-                    and st["tick"] - self.last_snapshot_tick >= int(self.ep.get("snapshot_every", 7200))):
-                self._snapshot()
-            if self.reached_tick is not None:
+            if self.valid:
+                if self.ep_state["reached"] is None and cells.reached(levels, self.goal):
+                    self.ep_state["reached"] = st["tick"]
+                if (levels != self.ep_state["levels"] and st["tick"] - self.ep_state["snap_tick"]
+                        >= int(self.ep.get("snapshot_every", 7200))):
+                    self._snapshot()
+            self.ep_state["levels"] = levels
+            if self.valid and self.ep_state["reached"] is not None:
                 break
         st = nodes.read_state(self.server)
         cut = "" if done == ticks else f" (stopped after {done} of {ticks}: goal met)"
         line = f"tick {st['tick']}{cut}; goal: {goal_text(self.goal, st['made'])}"
-        if self.reached_tick is not None:
+        if self.valid and self.ep_state["reached"] is not None:
             line += "\nGOAL MET. Bring NOTES.md up to date for whoever continues from here, then finish."
         return line
 
-    def _snapshot(self):
-        node = nodes.snapshot(self.store, self.server, self.workdir, self.arm, self.start.id, self.id,
-                              self._ledger())
-        outcome = archive.offer(self.store, node)
-        self.offered.append({"node": node.id, "tick": node.tick, "height": cells.progress(node.levels),
-                             "outcome": outcome})
-        self.last_snapshot_tick = node.tick
-        self.last_levels = node.levels
-        self.log(f"  node {node.id} at tick {node.tick}: {outcome}")
-
+    # -- bookkeeping -----------------------------------------------------------------------------
     def _ledger(self) -> dict:
-        base = self.start.ledger
-        return {"usd": round(base.get("usd", 0.0) + self.usd, 6),
-                "turns": base.get("turns", 0) + self.turns,
+        base = self.ep_state["start"].ledger
+        return {"usd": round(base.get("usd", 0.0) + self.usd - self.ep_state["usd0"], 6),
+                "turns": base.get("turns", 0) + self.turns - self.ep_state["turns0"],
                 "tokens_in": base.get("tokens_in", 0) + self.tokens["in_hit"] + self.tokens["in_miss"],
                 "tokens_out": base.get("tokens_out", 0) + self.tokens["out"]}
 
+    def _snapshot(self):
+        node = nodes.snapshot(self.store, self.server, self.workdir, self.arm,
+                              self.ep_state["start"].id, self.ep_state["id"], self._ledger())
+        outcome = archive.offer(self.store, node)
+        self.ep_state["offered"].append({"node": node.id, "tick": node.tick,
+                                         "height": cells.progress(node.levels), "outcome": outcome})
+        self.ep_state["snap_tick"] = node.tick
+        self.log(f"  node {node.id} at tick {node.tick}: {outcome}")
+
     def _record(self, **kw):
-        self.steps_buf.append(json.dumps(dict(kw, t=round(time.time(), 2)), ensure_ascii=False))
+        kw.setdefault("episode", self.ep_state.get("id"))
+        self.steps.append(json.dumps(dict(kw, t=round(time.time(), 2)), ensure_ascii=False))
 
     def _ask(self, messages, tools=None):
         r = self.client.complete(messages, tools)
         self.usd += r.usd
         for k in self.tokens:
             self.tokens[k] += r.usage.get(k, 0)
+        self.prompt_tokens = r.usage.get("in_hit", 0) + r.usage.get("in_miss", 0)
         return r
 
-    # -- run ----------------------------------------------------------------------------------------
-    def run(self) -> dict:
+    def _pick_start(self, index: int) -> tuple[nodes.Node, str | None]:
+        if index == 0 and self.first_node:
+            return nodes.load(self.store, self.arm, self.first_node), None
+        arch = archive.get(self.store, self.arm)
+        k = archive.select(arch, self.rng)
+        if k is None:
+            raise RuntimeError(f"archive {self.arm} is empty: run `fresh` first")
+        archive.mark_chosen(self.store, self.arm, k)
+        return nodes.load(self.store, self.arm, arch["cells"][k]["node"]), k
+
+    # -- run -------------------------------------------------------------------------------------
+    def run(self) -> list[dict]:
         cap = float(self.spec.get("budget", {}).get("monthly_usd", 0) or 0)
         if cap:
-            ledger.check(self.store, self.provider, cap, reserve=float(self.ep.get("max_usd", 0)))
-        arch = archive.get(self.store, self.arm)
-        if self.start_node_id:
-            start_key = None
-            nid = self.start_node_id
-        else:
-            start_key = archive.select(arch, self.rng)
-            if start_key is None:
-                raise RuntimeError(f"archive {self.arm} is empty: run `fresh` first")
-            nid = arch["cells"][start_key]["node"]
-            archive.mark_chosen(self.store, self.arm, start_key)
-        self.start = nodes.load(self.store, self.arm, nid)
-        self.workdir = os.path.join(self.work, "work")
+            ledger.check(self.store, self.provider, cap, reserve=float(self.ses.get("max_usd", self.ep.get("max_usd", 0))))
         os.makedirs(self.work, exist_ok=True)
         self.server = new_server(self.spec, os.path.join(self.work, "server"))
-        started = time.time()
-        stop = "turns"
+        accepted, drawn = facts.sample(self.store, self.rng, float(self.spec["prompt"].get("facts_p", 0.5)),
+                                       facts.scopes_for(self.spec))
+        system = load_prompt(self.spec["prompt"]["layers"])
+        block = facts.prompt_block(accepted, drawn)
+        if block:
+            system += "\n\n" + block
+        self.messages = [{"role": "system", "content": system}]
+        self.facts_drawn = [f["id"] for f in drawn]
+        self.facts_accepted = [f["id"] for f in accepted]
+        self.box = Toolbox(self.server, self.workdir, self)
+        self._record(role="session", arm=self.arm, facts=self.facts_drawn, model=self.spec["agent"].get("model"))
         try:
-            tick0 = nodes.restore(self.store, self.start, self.server, self.workdir)
-            st = nodes.read_state(self.server)
-            self.last_levels = cells.cell(st["made"])
-            self.last_snapshot_tick = tick0
-            self.tick_budget_end = tick0 + int(self.ep.get("max_ticks", 216000))
-            self.goal = cells.make_goal(self.last_levels, st["can"], int(self.ep.get("goal_dist", 3)),
-                                        self.rng)
-            accepted, drawn = facts.sample(self.store, self.rng, float(self.spec["prompt"].get("facts_p", 0.5)),
-                                          facts.scopes_for(self.spec))
-            system = load_prompt(self.spec["prompt"]["layers"])
-            block = facts.prompt_block(accepted, drawn)
-            if block:
-                system += "\n\n" + block
-            tools = PROFILES[self.spec["toolkit"]["profile"]]
-            box = Toolbox(self.server, self.workdir, self)
-            notes = ""
-            if os.path.exists(os.path.join(self.workdir, "NOTES.md")):
-                with open(os.path.join(self.workdir, "NOTES.md"), encoding="utf-8") as fh:
-                    notes = fh.read()
-            first = (f"You continue a game at tick {tick0} ({tick0 / 216000:.2f} game hours in). "
-                     f"Research done: {st['researched']} technologies.\n\n"
-                     f"GOAL for this episode: produce, in total since the game began, at least: "
-                     f"{goal_text(self.goal, st['made'])}.\n"
-                     f"You have up to {self.tick_budget_end - tick0} game ticks and "
-                     f"{self.ep.get('max_turns', 60)} turns. Fewer game ticks is better.\n\n"
-                     f"Your work dir holds the notes the previous player left (NOTES.md):\n\n{notes}")
-            messages = [{"role": "system", "content": system}, {"role": "user", "content": first}]
-            self._record(role="start", node=self.start.id, tick=tick0, goal=self.goal,
-                         facts=[f["id"] for f in drawn])
-            self.log(f"episode {self.id}: from {self.start.id} (tick {tick0}), goal {self.goal}")
-            wrap = False
-            max_turns = int(self.ep.get("max_turns", 60))
-            while True:
-                if box.finished is not None:
-                    stop = "finished"
+            n_eps = int(self.ses.get("episodes", 1))
+            mode = self.ses.get("next", "select")
+            for i in range(n_eps):
+                if i > 0 and mode == "continue" and self.valid:
+                    start, start_key, moved = self._continue_node(), None, False
+                else:
+                    start, start_key = self._pick_start(i)
+                    moved = True
+                res = self._episode(i, start, start_key, moved)
+                self.results.append(res)
+                self.store.put_json(f"episodes/{self.arm}/{res['id']}.json", res)
+                if res["stop"] in ("context", "session_usd"):
                     break
-                if self.turns >= max_turns + (3 if wrap else 0):
-                    stop = "turns"
+                if self.usd >= float(self.ses.get("max_usd", 1e9)):
                     break
-                if self.usd >= float(self.ep.get("max_usd", 1e9)):
-                    stop = "usd"
-                    break
-                if self.turns == max_turns and not wrap:
-                    wrap = True
-                    messages.append({"role": "user", "content": "Out of turns: bring NOTES.md up to "
-                                     "date for whoever continues from here, then finish."})
-                r = self._ask(messages, tools)
-                self.turns += 1
-                messages.append(r.message)
-                calls = r.message.get("tool_calls") or []
-                self._record(role="assistant", turn=self.turns, content=r.message.get("content"),
-                             calls=[(c["function"]["name"], c["function"]["arguments"]) for c in calls],
-                             usage=r.usage, usd=r.usd)
-                if not calls:
-                    messages.append({"role": "user", "content": "Use the tools to act; call finish to end."})
-                    continue
-                for c in calls:
-                    try:
-                        args = json.loads(c["function"]["arguments"] or "{}")
-                    except ValueError:
-                        args = {}
-                    out = box.call(c["function"]["name"], args if isinstance(args, dict) else {})
-                    messages.append({"role": "tool", "tool_call_id": c["id"], "content": out})
-                    self._record(role="tool", turn=self.turns, name=c["function"]["name"], out=out[:4000])
-            # the knowledge step: facts for the bank
-            messages.append({"role": "user", "content": facts.KNOWLEDGE_PROMPT})
-            r = self._ask(messages)
-            cands = facts.parse_candidates(r.message.get("content", ""))
-            self._record(role="knowledge", content=r.message.get("content"), usd=r.usd)
-            st = nodes.read_state(self.server)
-            if cells.cell(st["made"]) != self.last_levels or not self.offered:
-                self._snapshot()
-            result = {
-                "id": self.id, "arm": self.arm, "start_node": self.start.id, "start_key": start_key,
-                "start_tick": tick0, "end_tick": st["tick"], "goal": self.goal,
-                "reached_tick": self.reached_tick, "stop": stop, "turns": self.turns,
-                "usd": round(self.usd, 6), "tokens": self.tokens, "offered": self.offered,
-                "refused_lua": box.refused, "facts_included": [f["id"] for f in drawn],
-                "facts_accepted": [f["id"] for f in accepted], "candidates": len(cands),
-                "model": self.spec["agent"].get("model"), "profile": self.spec["toolkit"]["profile"],
-                "layers": self.spec["prompt"]["layers"], "started": started, "ended": time.time(),
-                "summary": box.finished}
-            if cands:
-                self.store.put_json(f"facts/candidates/{self.arm}/{self.id}.json",
-                                    {"episode": self.id, "facts": cands})
-            return result
+            return self.results
         finally:
             self.server.stop()
             try:
-                self.store.put(f"steps/{self.arm}/{self.id}.jsonl", ("\n".join(self.steps_buf) + "\n").encode())
-                if "result" in locals():
-                    self.store.put_json(f"episodes/{self.arm}/{self.id}.json", result)
+                self.store.put(f"steps/{self.arm}/{self.id}.jsonl", ("\n".join(self.steps) + "\n").encode())
                 if self.usd:
                     ledger.add(self.store, self.provider, self.usd)
+                out = self.spec.get("_out")
+                if out:
+                    os.makedirs(out, exist_ok=True)
+                    with open(os.path.join(out, f"{self.id}.steps.jsonl"), "w") as fh:
+                        fh.write("\n".join(self.steps) + "\n")
+                    with open(os.path.join(out, f"{self.id}.results.json"), "w") as fh:
+                        json.dump(self.results, fh, indent=1)
             finally:
                 if not self.spec.get("_keep_work"):
                     shutil.rmtree(self.work, ignore_errors=True)
+
+    def _continue_node(self) -> nodes.Node:
+        """Freeze where the agent stands (legit) as the next episode's start."""
+        node = nodes.snapshot(self.store, self.server, self.workdir, self.arm,
+                              self.ep_state["start"].id, self.ep_state["id"], self._ledger())
+        archive.offer(self.store, node)
+        return node
+
+    def _episode(self, index: int, start: nodes.Node, start_key: str | None, moved: bool) -> dict:
+        eid = _uid()
+        if moved:
+            if os.path.isdir(self.workdir):
+                shutil.rmtree(self.workdir)
+            tick0 = nodes.restore(self.store, start, self.server, self.workdir)
+            self.valid, self.last_valid = True, None
+        else:
+            tick0 = self.server.tick()
+        st = nodes.read_state(self.server)
+        self.goal = cells.make_goal(cells.cell(st["made"]), st["can"], int(self.ep.get("goal_dist", 3)), self.rng)
+        self.ep_state = {"id": eid, "start": start, "tick_end": tick0 + int(self.ep.get("max_ticks", 216000)),
+                         "levels": cells.cell(st["made"]), "snap_tick": tick0, "reached": None,
+                         "offered": [], "usd0": self.usd, "turns0": self.turns, "invalid0": self.n_invalid}
+        self.states = {k: v for k, v in self.states.items() if not moved}
+        self._save("start", valid=True)
+        self.box.finished = None
+        notes = ""
+        if os.path.exists(os.path.join(self.workdir, "NOTES.md")):
+            with open(os.path.join(self.workdir, "NOTES.md"), encoding="utf-8") as fh:
+                notes = fh.read()
+        head = (f"EPISODE {index + 1}. " + ("" if index == 0 else
+                ("You are now in a different saved game. " if moved else "Continue from where you are. ")))
+        msg = (f"{head}The game is at tick {tick0} ({tick0 / 216000:.2f} game hours in); "
+               f"research done: {st['researched']} technologies.\n\n"
+               f"GOAL: produce, in total since the game began, at least: {goal_text(self.goal, st['made'])}.\n"
+               f"A legit run has up to {self.ep_state['tick_end'] - tick0} game ticks for it, and you "
+               f"have {self.ep.get('max_turns', 60)} turns. Fewer game ticks is better. State 'start' "
+               f"is saved.\n")
+        if moved:
+            msg += f"\nThe notes left in this game's work dir (NOTES.md):\n\n{notes}"
+        self.messages.append({"role": "user", "content": msg})
+        self._record(role="episode", index=index, node=start.id, tick=tick0, goal=self.goal, moved=moved)
+        self.log(f"session {self.id} episode {index + 1}: from {start.id} (tick {tick0}), goal {self.goal}")
+        tools = PROFILES[self.spec["toolkit"]["profile"]]
+        max_turns = int(self.ep.get("max_turns", 60))
+        turns = 0
+        wrap = False
+        stop = "turns"
+        while True:
+            if self.box.finished is not None:
+                stop = "finished"
+                break
+            if turns >= max_turns + (3 if wrap else 0):
+                break
+            if self.usd - self.ep_state["usd0"] >= float(self.ep.get("max_usd", 1e9)):
+                stop = "usd"
+                break
+            if self.usd >= float(self.ses.get("max_usd", 1e9)):
+                stop = "session_usd"
+                break
+            if self.prompt_tokens > int(self.ses.get("context_limit", 120000)):
+                stop = "context"
+                break
+            if turns == max_turns and not wrap:
+                wrap = True
+                self.messages.append({"role": "user", "content": "Out of turns for this episode: bring "
+                                      "NOTES.md up to date for whoever continues from here, then finish."})
+            r = self._ask(self.messages, tools)
+            turns += 1
+            self.turns += 1
+            self.messages.append(r.message)
+            calls = r.message.get("tool_calls") or []
+            self._record(role="assistant", turn=self.turns, content=r.message.get("content"),
+                         calls=[(c["function"]["name"], c["function"]["arguments"]) for c in calls],
+                         usage=r.usage, usd=r.usd)
+            if not calls:
+                self.messages.append({"role": "user", "content": "Use the tools to act; call finish to end the episode."})
+                continue
+            for c in calls:
+                try:
+                    args = json.loads(c["function"]["arguments"] or "{}")
+                except ValueError:
+                    args = {}
+                out = self.box.call(c["function"]["name"], args if isinstance(args, dict) else {})
+                self.messages.append({"role": "tool", "tool_call_id": c["id"], "content": out})
+                self._record(role="tool", turn=self.turns, name=c["function"]["name"], out=out[:4000])
+        # the knowledge step
+        self.messages.append({"role": "user", "content": facts.KNOWLEDGE_PROMPT})
+        r = self._ask(self.messages)
+        self.messages.append({"role": "assistant", "content": r.message.get("content") or ""})
+        cands = facts.parse_candidates(r.message.get("content", ""))
+        self._record(role="knowledge", content=r.message.get("content"), usd=r.usd)
+        if cands:
+            self.store.put_json(f"facts/candidates/{self.arm}/{eid}.json", {"episode": eid, "facts": cands})
+        end = nodes.read_state(self.server)
+        if self.valid and (cells.cell(end["made"]) != cells.cell(st["made"])) and not self.ep_state["offered"]:
+            self._snapshot()
+        return {
+            "id": eid, "session": self.id, "index": index, "arm": self.arm, "start_node": start.id,
+            "start_key": start_key, "moved": moved, "start_tick": tick0, "end_tick": end["tick"],
+            "end_valid": self.valid, "goal": self.goal, "reached_tick": self.ep_state["reached"],
+            "stop": stop, "turns": turns, "usd": round(self.usd - self.ep_state["usd0"], 6),
+            "offered": self.ep_state["offered"], "invalid_marks": self.n_invalid - self.ep_state["invalid0"],
+            "states_saved": len(self.states), "facts_included": self.facts_drawn,
+            "facts_accepted": self.facts_accepted, "candidates": len(cands),
+            "model": self.spec["agent"].get("model"), "profile": self.spec["toolkit"]["profile"],
+            "layers": self.spec["prompt"]["layers"], "ended": time.time(), "summary": self.box.finished}
+
+
+#: kept for callers of the single-episode API: a session of the arm's configured length
+Episode = Session

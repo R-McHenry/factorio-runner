@@ -13,6 +13,10 @@ provider = "scripted"
 provider_name = "scripted"
 script = "arms/test-script.json"
 
+[session]
+episodes = 2
+next = "select"
+
 [episode]
 max_turns = 12
 max_ticks = 36000

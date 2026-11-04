@@ -1,8 +1,8 @@
 """factorio-runner command line.
 
     python -m runner fresh   ARM.toml --store URL         the arm's root node: fresh map + kickoff kit
-    python -m runner episode ARM.toml --store URL [-n N]  N episodes, one after another
-    python -m runner smoke   ARM.toml --store URL [-n N]  fresh, then N episodes (one job, no shared store)
+    python -m runner episode ARM.toml --store URL [-n N]  N sessions (each several episodes), in a row
+    python -m runner smoke   ARM.toml --store URL [-n N]  fresh, then N sessions (one job, no shared store)
     python -m runner show    ARM.toml --store URL         the archive's frontier and the month's spend
     python -m runner ping    ARM.toml                     the model endpoint answers (lists models)
     python -m runner facts-import SEED.json --store URL   merge facts into the bank (by id)
@@ -30,6 +30,8 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int)
     ap.add_argument("--node", help="start from this node instead of selecting one")
     ap.add_argument("--keep-work", action="store_true")
+    ap.add_argument("--out", default="./out", help="each session's steps and results, also kept here")
+    ap.add_argument("--transcript", action="store_true", help="print a compact transcript")
     a = ap.parse_args(argv)
     if a.cmd == "facts-import":
         from . import facts
@@ -62,18 +64,41 @@ def main(argv=None) -> int:
         prov = spec["agent"].get("provider_name", spec["agent"].get("model"))
         print(f"spent this month on {prov}: ${ledger.spent(store, prov):.3f}")
         return 0
-    rc = 0
+    spec["_out"] = a.out
     for i in range(a.n):
         seed = None if a.seed is None else a.seed + i
+        ses = episode.Session(store, spec, a.work, seed=seed, start_node=a.node)
         try:
-            res = episode.Episode(store, spec, a.work, seed=seed, start_node=a.node).run()
+            results = ses.run()
         except ledger.OverBudget as e:
             print(f"stopped: {e}")
             return 3
-        print(json.dumps({k: res[k] for k in ("id", "start_tick", "end_tick", "reached_tick", "stop",
-                                                "turns", "usd", "candidates")}))
-        rc = 0
-    return rc
+        finally:
+            if a.transcript:
+                print_transcript(ses.steps)
+        for res in results:
+            print(json.dumps({k: res.get(k) for k in ("session", "index", "id", "start_tick", "end_tick",
+                                                       "reached_tick", "end_valid", "stop", "turns",
+                                                       "usd", "invalid_marks", "candidates")}))
+    return 0
+
+
+def print_transcript(steps: list[str], width: int = 300):
+    """A compact view of a session for the job log: each call and the start of its result."""
+    for line in steps:
+        s = json.loads(line)
+        r = s.get("role")
+        if r == "assistant":
+            say = (s.get("content") or "").strip().replace("\n", " ")
+            if say:
+                print(f"  [{s['turn']}] says: {say[:width]}")
+            for name, args in s.get("calls", []):
+                print(f"  [{s['turn']}] {name} {args[:width]}")
+        elif r == "tool":
+            print(f"      -> {s['out'][:width].replace(chr(10), ' | ')}")
+        elif r in ("episode", "invalid", "load", "knowledge"):
+            body = {k: v for k, v in s.items() if k not in ("t", "role")}
+            print(f"  == {r} {json.dumps(body)[:width]}")
 
 
 if __name__ == "__main__":

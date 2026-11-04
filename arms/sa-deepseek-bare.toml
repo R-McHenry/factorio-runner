@@ -35,3 +35,9 @@ goal_dist = 3
 
 [budget]
 monthly_usd = 10.0
+
+[session]
+episodes = 3
+next = "select"
+max_usd = 0.6
+context_limit = 100000

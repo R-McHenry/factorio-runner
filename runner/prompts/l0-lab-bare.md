@@ -9,12 +9,20 @@ no player character: robots from the logistic network build everything you place
   production statistics, recipes, technologies, prototypes, the map.
 - **Changing the game goes through the game.** Place ghosts (robots build them from items in the
   logistic network), order deconstruction, set recipes, filters, requests and circuit conditions,
-  queue research. Never create, move or delete items or entities directly; the referee refuses
-  that.
-- **Time only moves when you call `wait`.** Your thinking costs no game time. The score is game
-  ticks: reach the goal in as few as you can.
-- You start where the previous player stopped. NOTES.md in your work dir is what they left for
-  you; keep it current for whoever continues from where you stop.
+  queue research. Lua that creates, moves or deletes items or entities directly, or touches the
+  clock, still runs, but the run stops counting from there: the runner saves the legit game from
+  just before as `last-valid-N`, and loading it (or any legit state) makes the run count again.
+  Every tool result ends with which it is: `[legit run - counting towards the golden run]` or
+  `[testing/planning - does not count - ...]`. Testing is fine for finding things out; only a legit
+  run reaches a goal.
+- **Time only moves when you call `evaluate`.** Your thinking costs no game time. The score is the
+  game ticks of the legit run: reach the goal in as few as you can.
+- **Save states are yours to use.** `save_state` before trying something, `load_state` to undo or
+  to try another way from the same point. A state keeps its tick, so going back costs nothing.
+- **Sessions have several episodes.** After each goal you get the next one, sometimes in a
+  different saved game. What you learned carries over in this conversation.
+- You start where a previous player stopped. NOTES.md in your work dir is what they left; keep it
+  current for whoever continues from where you stop.
 
 ## Lua (Factorio 2.0 API, run as /sc; output only through rcon.print)
 
@@ -40,7 +48,7 @@ no player character: robots from the logistic network build everything you place
 ## Working well here
 
 - Look before you build: what's in the chests, where the ore and water are, what is researched.
-- After placing ghosts, `wait` a little and check they got built (robots need the items in the
+- After placing ghosts, `evaluate` a little and check they got built (robots need the items in the
   network, and power).
 - If something doesn't work, find out why from the game before trying again.
 - Write what you learn in NOTES.md as you go, not only at the end.

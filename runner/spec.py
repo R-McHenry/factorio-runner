@@ -8,7 +8,8 @@ import tomllib
 
 DEFAULTS = {
     "episode": {"max_turns": 60, "max_usd": 0.25, "max_ticks": 216000, "goal_dist": 3,
-                "wait_cap": 36000, "check_every": 600, "snapshot_every": 7200},
+                "eval_cap": 36000, "check_every": 600, "snapshot_every": 7200},
+    "session": {"episodes": 3, "next": "select", "max_usd": 1.0, "context_limit": 120000},
     "prompt": {"layers": ["l0-lab-bare"], "facts_p": 0.5},
     "toolkit": {"profile": "bare"},
     "budget": {"monthly_usd": 10.0},

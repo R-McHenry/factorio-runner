@@ -1,9 +1,12 @@
 [
  {"tool": "lua", "args": {"code": "local n = 0 for _, c in pairs(game.surfaces[1].find_entities_filtered{name = 'storage-chest'}) do n = n + 1 end rcon.print('chests ' .. n)"}},
- {"tool": "lua", "args": {"code": "game.surfaces[1].find_entities_filtered{name = 'storage-chest'}[1].insert{name = 'iron-plate', count = 100}"}},
+ {"tool": "save_state", "args": {"name": "before-test"}},
+ {"tool": "lua", "args": {"code": "game.surfaces[1].find_entities_filtered{name = 'storage-chest'}[1].insert{name = 'iron-plate', count = 100} rcon.print('inserted')"}},
+ {"tool": "list_states", "args": {}},
+ {"tool": "load_state", "args": {"name": "last-valid-1"}},
  {"tool": "research", "args": {"tech": "automation"}},
  {"tool": "lua", "args": {"code": "local s = game.surfaces[1] local g = s.create_entity{name = 'entity-ghost', inner_name = 'assembling-machine-1', position = {14.5, 4.5}, force = 'player'} rcon.print(g and 'ghost' or 'no')"}},
- {"tool": "wait", "args": {"ticks": 3600}},
+ {"tool": "evaluate", "args": {"ticks": 3600}},
  {"tool": "lua", "args": {"code": "rcon.print(game.surfaces[1].count_entities_filtered{name = 'assembling-machine-1'})"}},
  {"tool": "write_file", "args": {"path": "NOTES.md", "content": "# Notes\n\nScripted test: placed one assembler ghost at 14.5,4.5; robots built it.\n"}},
  {"tool": "finish", "args": {"summary": "scripted test done"}}
