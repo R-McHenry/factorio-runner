@@ -14,6 +14,21 @@ REQUIRED = os.environ.get("REQUIRE_GAME") == "1"   # CI: a missing server is a f
 
 @unittest.skipUnless(os.environ.get("FACTORIO_BIN") or REQUIRED, "FACTORIO_BIN not set")
 class GameTest(unittest.TestCase):
+    def test_stop_does_not_save(self):
+        """Stopping must not write the running game into the file it was loaded from (a Factorio
+        server does that on /quit, which overwrote restored nodes on 2026-11-04)."""
+        from runner.server import Server
+        with tempfile.TemporaryDirectory() as d:
+            srv = Server(os.environ["FACTORIO_BIN"], os.path.join(d, "srv"))
+            save = srv.create("t")
+            t0 = srv.start(save)
+            path = srv.save("base")
+            srv.load(path)
+            srv.run(600)
+            srv.stop()
+            self.assertEqual(srv.start(path), t0)
+            srv.stop()
+
     def test_fresh_and_session(self):
         spec = specs.load(os.path.join(ROOT, "arms", "test-scripted.toml"))
         spec["agent"]["script"] = os.path.join(ROOT, spec["agent"]["script"])
@@ -32,6 +47,8 @@ class GameTest(unittest.TestCase):
             self.assertTrue(first["end_valid"])                # loading last-valid-1 made it count again
             self.assertGreater(first["end_tick"], root.tick)
             self.assertEqual([r["index"] for r in results], [0, 1])
+            # both episodes restored the root: the first one's play must not leak into its save
+            self.assertEqual(results[1]["start_tick"], root.tick)
             self.assertEqual({r["session"] for r in results}, {ses.id})
             steps = [json.loads(l) for l in store.get(f"steps/{spec['arm']}/{ses.id}.jsonl").decode().splitlines()]
             tools = [s for s in steps if s.get("role") == "tool"]

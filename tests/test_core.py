@@ -67,7 +67,10 @@ class RefereeTest(unittest.TestCase):
     def test_rules(self):
         ok = ["rcon.print(game.tick)",
               "game.surfaces[1].create_entity{name = 'entity-ghost', inner_name = 'inserter', position = {1, 1}, force = 'player'}",
-              "game.forces.player.add_research('automation')"]
+              "game.forces.player.add_research('automation')",
+              "local t = {} table.insert(t, 1) rcon.print(#t)",
+              "for n, t in pairs(game.forces.player.technologies) do if t.researched == false then end end",
+              "rcon.print(game.speed)", "if e.amount == 0 then end"]
         bad = ["chest.insert{name = 'iron-plate', count = 5}",
                "game.surfaces[1].create_entity{name = 'inserter', position = {1, 1}, force = 'player'}",
                "for _, g in pairs(gs) do g.revive() end",

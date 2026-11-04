@@ -22,7 +22,7 @@ from ..node import read_state
 FORBIDDEN = [
     (r"\.create_entity\s*\{(?![^}]*['\"](entity|tile)-ghost['\"])", "create_entity of anything but a ghost (use name = 'entity-ghost')"),
     (r"\.revive\s*\(", "revive builds a ghost for free"),
-    (r"\.insert\s*[\({]", "insert creates items"),
+    (r"(?<!table)\.insert\s*[\({]", "insert creates items"),
     (r"\.insert_fluid\s*\(", "insert_fluid creates fluid"),
     (r"\.set_stack\s*\(|\.set_item\s*\(|\.transfer_stack\s*\(", "moves or creates items"),
     (r"\.remove_item\s*\(|\.clear_items_inside\s*\(|\.clear\s*\(\s*\)", "deletes items"),
@@ -30,9 +30,9 @@ FORBIDDEN = [
     (r"\.mine\s*\{|\.mine\s*\(", "mines by script"),
     (r"\.set_tiles\s*\(", "sets tiles by script (tile ghosts are fine)"),
     (r"\.teleport\s*\(", "moves entities by script"),
-    (r"researched\s*=|research_progress\s*=|\.research_all_technologies|\.enable_all", "sets research directly (use force.add_research or the research tool)"),
-    (r"game\.speed|ticks_to_run|tick_paused", "the clock belongs to the runner (use wait)"),
-    (r"\.amount\s*=|\.energy\s*=|\.temperature\s*=|\.health\s*=|\.fluidbox\s*\[", "sets entity state directly"),
+    (r"researched\s*=(?!=)|research_progress\s*=(?!=)|\.research_all_technologies|\.enable_all", "sets research directly (use force.add_research or the research tool)"),
+    (r"game\.speed\s*=(?!=)|ticks_to_run\s*=(?!=)|tick_paused\s*=(?!=)", "the clock belongs to the runner (use evaluate)"),
+    (r"\.amount\s*=(?!=)|\.energy\s*=(?!=)|\.temperature\s*=(?!=)|\.health\s*=(?!=)|\.fluidbox\s*\[[^\]]*\]\s*=(?!=)", "sets entity state directly"),
     (r"server_save|game\.reload|helpers\.write_file|game\.write_file", "server and file operations"),
     (r"\.create_inventory\s*\(", "script inventories"),
 ]

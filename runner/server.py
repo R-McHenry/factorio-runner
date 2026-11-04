@@ -152,19 +152,15 @@ class Server:
             return ""
 
     def stop(self):
+        """Kill the server without saving. A Factorio server saves into the file it loaded when it
+        quits (/quit, SIGTERM), which overwrote restored nodes and saved states; the runner always
+        saves explicitly, so it never needs that."""
         if self.rcon is not None:
-            try:
-                self.rcon.call("/quit")
-            except (OSError, RconError):
-                pass
             self.rcon.close()
             self.rcon = None
         if self.proc is not None:
-            try:
-                self.proc.wait(timeout=20)
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
-                self.proc.wait()
+            self.proc.kill()
+            self.proc.wait()
             self.proc = None
         if getattr(self, "_log", None) is not None:
             self._log.close()
