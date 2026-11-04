@@ -39,7 +39,7 @@ facts_p = 0.5
 mode = "ladder"
 
 [episode]
-max_turns = 120
+max_turns = 350
 max_usd = 0.6
 max_ticks = 1200000       # > 1M ticks: the ladder has room for a whole factory
 goal_dist = 3             # unused in ladder mode, kept so the spec is explicit
