@@ -4,6 +4,7 @@
     python -m runner episode ARM.toml --store URL [-n N]  N episodes, one after another
     python -m runner show    ARM.toml --store URL         the archive's frontier and the month's spend
     python -m runner ping    ARM.toml                     the model endpoint answers (lists models)
+    python -m runner facts-import SEED.json --store URL   merge facts into the bank (by id)
 
 --store: a directory, file:///dir, or s3://bucket/prefix. --work: scratch space (default ./work).
 """
@@ -20,8 +21,8 @@ from .store import open_store
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="runner")
-    ap.add_argument("cmd", choices=["fresh", "episode", "show", "ping"])
-    ap.add_argument("arm")
+    ap.add_argument("cmd", choices=["fresh", "episode", "show", "ping", "facts-import"])
+    ap.add_argument("arm", help="arm spec (for facts-import: the seed JSON)")
     ap.add_argument("--store", default=os.environ.get("RUNNER_STORE", "./store"))
     ap.add_argument("--work", default="./work")
     ap.add_argument("-n", type=int, default=1)
@@ -29,6 +30,11 @@ def main(argv=None) -> int:
     ap.add_argument("--node", help="start from this node instead of selecting one")
     ap.add_argument("--keep-work", action="store_true")
     a = ap.parse_args(argv)
+    if a.cmd == "facts-import":
+        from . import facts
+        with open(a.arm) as fh:
+            print(json.dumps(facts.import_seed(open_store(a.store), json.load(fh))))
+        return 0
     spec = specs.load(a.arm)
     spec["_keep_work"] = a.keep_work
 

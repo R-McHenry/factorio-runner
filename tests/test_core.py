@@ -96,6 +96,17 @@ class MiscTest(unittest.TestCase):
         self.assertEqual([f["text"] for f in got], ["Belts beat chests"])
         self.assertEqual(facts.parse_candidates("no json"), [])
 
+    def test_facts_import_and_scopes(self):
+        with tempfile.TemporaryDirectory() as d:
+            s = LocalStore(d)
+            seed = {"facts": [{"id": "a", "text": "x", "scope": "any", "status": "testing"},
+                              {"id": "b", "text": "y", "scope": "fk", "status": "testing"}]}
+            self.assertEqual(facts.import_seed(s, seed), {"added": 2, "total": 2})
+            self.assertEqual(facts.import_seed(s, seed)["added"], 0)
+            spec = {"toolkit": {"profile": "bare"}, "game": {"biters": False}}
+            _, drawn = facts.sample(s, random.Random(0), 1.0, facts.scopes_for(spec))
+            self.assertEqual([f["id"] for f in drawn], ["a"])
+
     def test_ledger(self):
         with tempfile.TemporaryDirectory() as d:
             s = LocalStore(d)

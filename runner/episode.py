@@ -170,7 +170,8 @@ class Episode:
             self.tick_budget_end = tick0 + int(self.ep.get("max_ticks", 216000))
             self.goal = cells.make_goal(self.last_levels, st["can"], int(self.ep.get("goal_dist", 3)),
                                         self.rng)
-            accepted, drawn = facts.sample(self.store, self.rng, float(self.spec["prompt"].get("facts_p", 0.5)))
+            accepted, drawn = facts.sample(self.store, self.rng, float(self.spec["prompt"].get("facts_p", 0.5)),
+                                          facts.scopes_for(self.spec))
             system = load_prompt(self.spec["prompt"]["layers"])
             block = facts.prompt_block(accepted, drawn)
             if block:

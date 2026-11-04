@@ -27,12 +27,43 @@ def bank(store) -> dict:
     return store.get_json("facts/bank.json") or {"facts": []}
 
 
-def sample(store, rng: random.Random, p: float) -> tuple[list[dict], list[dict]]:
+def scopes_for(spec: dict) -> set:
+    """The fact scopes an arm's episodes can use: any, kit, its toolkit profile, biters."""
+    s = {"any", "kit", spec["toolkit"]["profile"]}
+    if spec["game"].get("biters", True):
+        s.add("biters")
+    return s
+
+
+def sample(store, rng: random.Random, p: float, scopes: set | None = None) -> tuple[list[dict], list[dict]]:
     """-> (always-on accepted facts, the testing facts drawn for this episode)."""
-    facts = bank(store)["facts"]
+    facts = [f for f in bank(store)["facts"] if scopes is None or f.get("scope", "any") in scopes]
     accepted = [f for f in facts if f.get("status") == "accepted"]
     drawn = [f for f in facts if f.get("status") == "testing" and rng.random() < p]
     return accepted, drawn
+
+
+def import_seed(store, seed: dict) -> dict:
+    """Merge a seed file's facts into the bank by id; a fact already there keeps its status."""
+    out = {}
+
+    def fn(b):
+        b = b or {"facts": []}
+        have = {f["id"]: f for f in b["facts"]}
+        added = 0
+        for f in seed.get("facts", []):
+            if f["id"] in have:
+                keep = have[f["id"]].get("status")
+                have[f["id"]].update(f)
+                have[f["id"]]["status"] = keep
+            else:
+                b["facts"].append(dict(f))
+                added += 1
+        out["added"], out["total"] = added, len(b["facts"])
+        return b
+
+    store.update_json("facts/bank.json", fn)
+    return out
 
 
 def prompt_block(accepted: list[dict], drawn: list[dict]) -> str:

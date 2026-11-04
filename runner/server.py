@@ -116,8 +116,8 @@ class Server:
             "--rcon-bind", f"127.0.0.1:{self.rcon_port}", "--rcon-password", self.password,
             "--server-settings", os.path.join(self.root, "server-settings.json")]
         self.log_path = os.path.join(self.root, "server.log")
-        log = open(self.log_path, "w")
-        self.proc = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT,
+        self._log = open(self.log_path, "w")
+        self.proc = subprocess.Popen(args, stdout=self._log, stderr=subprocess.STDOUT,
                                      stdin=subprocess.DEVNULL)
         t0 = time.time()
         while time.time() - t0 < BOOT_S:
@@ -166,6 +166,9 @@ class Server:
                 self.proc.kill()
                 self.proc.wait()
             self.proc = None
+        if getattr(self, "_log", None) is not None:
+            self._log.close()
+            self._log = None
 
     def __enter__(self):
         return self
