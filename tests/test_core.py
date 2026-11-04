@@ -55,6 +55,49 @@ class ObjectiveTest(unittest.TestCase):
         self.assertIn("[ ] green science automated (0/32)  <- now", objective.ladder_text(st))
 
 
+class LadderEvaluateTest(unittest.TestCase):
+    """evaluate() must survive its own progress check: it once reused the tick counter for the
+    milestone list, so every ladder evaluate raised before returning."""
+
+    def test_multi_chunk_ladder_evaluate(self):
+        from unittest import mock
+        from runner.episode import Session
+
+        class FakeServer:
+            tick_ = 100
+
+            def tick(self):
+                return self.tick_
+
+            def run(self, n):
+                self.tick_ += n
+
+        class Dummy:
+            ep = {"check_every": 60, "eval_cap": 36000, "snapshot_every": 7200}
+            ep_state = {"tick_end": 1000, "milestones": [], "levels": {},
+                        "reached": None, "snap_tick": 0, "victory": False}
+            valid = True
+            ladder = True
+            goal = {"automation-science-pack": 4}
+            server = FakeServer()
+
+            def _sample(self, st):
+                pass
+
+            def _snapshot(self):
+                pass
+
+            def _record(self, **kw):
+                pass
+
+        state = {"tick": 100, "made": {"automation-science-pack": 1}, "silos": 0, "rockets": 0}
+        with mock.patch("runner.episode.nodes.read_state", return_value=state):
+            out = Session.evaluate(Dummy(), 120)
+        self.assertEqual(Dummy.server.tick_, 220)      # both 60-tick chunks ran
+        self.assertIn("red science automated", out)
+        self.assertIn("<- now", out)
+
+
 class StoreTest(unittest.TestCase):
     def test_blobs_and_cas(self):
         with tempfile.TemporaryDirectory() as d:

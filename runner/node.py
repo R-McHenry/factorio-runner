@@ -10,6 +10,7 @@ conversation from there.
 """
 from __future__ import annotations
 
+import gzip
 import io
 import json
 import os
@@ -53,21 +54,26 @@ class Node:
 
 
 def pack_dir(path: str) -> bytes:
-    """A deterministic tar.gz of a work dir (sorted, no mtimes, no owners)."""
+    """A deterministic tar.gz of a work dir (sorted, no mtimes, no owners).
+
+    The gzip wrapper needs mtime=0 too: tarfile's "w:gz" stamps the current time into
+    the gzip header, which made the same dir pack differently a second later.
+    """
     buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz", compresslevel=6) as tar:
-        for dirpath, dirs, files in os.walk(path):
-            dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
-            for f in sorted(files):
-                full = os.path.join(dirpath, f)
-                if os.path.getsize(full) > MAX_FILE:
-                    continue
-                info = tar.gettarinfo(full, arcname=os.path.relpath(full, path))
-                info.mtime = 0
-                info.uid = info.gid = 0
-                info.uname = info.gname = ""
-                with open(full, "rb") as fh:
-                    tar.addfile(info, fh)
+    with gzip.GzipFile(fileobj=buf, mode="wb", compresslevel=6, mtime=0) as gz:
+        with tarfile.open(fileobj=gz, mode="w:") as tar:
+            for dirpath, dirs, files in os.walk(path):
+                dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+                for f in sorted(files):
+                    full = os.path.join(dirpath, f)
+                    if os.path.getsize(full) > MAX_FILE:
+                        continue
+                    info = tar.gettarinfo(full, arcname=os.path.relpath(full, path))
+                    info.mtime = 0
+                    info.uid = info.gid = 0
+                    info.uname = info.gname = ""
+                    with open(full, "rb") as fh:
+                        tar.addfile(info, fh)
     return buf.getvalue()
 
 

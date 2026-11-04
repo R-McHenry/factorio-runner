@@ -267,11 +267,13 @@ class Session:
             levels = cells.cell(st["made"])
             if self.valid:
                 if self.ladder:
-                    done = [m["id"] for m in objective.status(st) if m["done"]]
-                    if done != self.ep_state["milestones"]:
-                        self.ep_state["milestones"] = done
+                    # NB: not `done` — that is this loop's tick counter, and clobbering it with
+                    # a list made every ladder evaluate raise before it could return.
+                    reached = [m["id"] for m in objective.status(st) if m["done"]]
+                    if reached != self.ep_state["milestones"]:
+                        self.ep_state["milestones"] = reached
                         self.goal = objective.next_goal(st)
-                        self._record(role="milestone", tick=st["tick"], done=done,
+                        self._record(role="milestone", tick=st["tick"], done=reached,
                                      next=objective.brief(st))
                     if objective.victory(st):
                         self.ep_state["reached"] = st["tick"]
