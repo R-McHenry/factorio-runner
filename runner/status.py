@@ -17,6 +17,7 @@ PAGE = os.path.join(os.path.dirname(__file__), "status_page.html")
 MAX_POINTS = 300          # per session series, after thinning
 TOP_ITEMS = 12            # items kept per session series (by final count)
 RUNNING_S = 300           # a session whose status is older than this is shown as stalled
+DETAIL_SESSIONS = 20      # sessions whose notes and recent actions the page carries
 
 
 def _thin(samples: list[dict], n: int) -> list[dict]:
@@ -87,6 +88,9 @@ def collect(store, stale_s: int = RUNNING_S) -> dict:
                                                   "invalid_marks", "ended", "candidates", "goal", "moved")})
         data["episodes"] += eps
     data["sessions"].sort(key=lambda s: -s.get("updated", 0))
+    for st in data["sessions"][DETAIL_SESSIONS:]:     # notes and recent actions only for recent sessions
+        st.pop("notes", None)
+        st.pop("recent", None)
     data["episodes"].sort(key=lambda e: -(e.get("ended") or 0))
     data["episodes"] = data["episodes"][:300]
     return data

@@ -36,7 +36,7 @@ rcon.print(helpers.table_to_json(out))
 """
 
 #: one surface's entities, written to script-output (too big for one RCON reply on a large base),
-#: one per line: type|name|x|y|w|h|ghost|force|recipe|status|r1|r2
+#: one per line: type|name|x|y|w|h|ghost|force|recipe|status|r1|r2|decon
 #: recipe: what a crafting machine makes; status: its defines.entity_status name; r1/r2: a
 #: roboport's logistic and construction radius, or a pole's supply-area distance (r1)
 LUA_DUMP = """
@@ -71,15 +71,36 @@ local function add(e, ghost)
       if ok4 and d then r1 = string.format('%%.1f', d) end
     end
   end
-  o[#o + 1] = string.format('%%s|%%s|%%.1f|%%.1f|%%.1f|%%.1f|%%d|%%s|%%s|%%s|%%s|%%s', t, n, e.position.x, e.position.y, w, h,
-    ghost and 1 or 0, e.force.name, recipe, status, r1, r2)
+  local decon = (not ghost) and e.to_be_deconstructed() and 1 or 0
+  o[#o + 1] = string.format('%%s|%%s|%%.1f|%%.1f|%%.1f|%%.1f|%%d|%%s|%%s|%%s|%%s|%%s|%%d', t, n, e.position.x, e.position.y, w, h,
+    ghost and 1 or 0, e.force.name, recipe, status, r1, r2, decon)
 end
 for _, e in pairs(s.find_entities_filtered{force = 'player'}) do
   if e.type == 'entity-ghost' then add(e, true) elseif e.type ~= 'character' then add(e, false) end
 end
 for _, e in pairs(s.find_entities_filtered{force = 'enemy', type = {'unit-spawner', 'turret'}}) do add(e, false) end
+local units = s.find_entities_filtered{force = 'enemy', type = 'unit', limit = 3000}
+for _, e in pairs(units) do add(e, false) end
 helpers.write_file(%s, table.concat(o, '\\n'), false)
 rcon.print(#o)
+"""
+
+#: pollution in each generated chunk of a window: [[chunk x, chunk y, amount], ...] (nonzero only)
+LUA_POLLUTION = """
+local s = game.surfaces[%s]
+local cx, cy, size = %s, %s, %s
+local x0, y0 = math.floor((cx - size / 2) / 32), math.floor((cy - size / 2) / 32)
+local x1, y1 = math.floor((cx + size / 2) / 32), math.floor((cy + size / 2) / 32)
+local o = {}
+for x = x0, x1 do
+  for y = y0, y1 do
+    if s.is_chunk_generated({x, y}) then
+      local p = s.get_pollution({x * 32 + 16, y * 32 + 16})
+      if p > 0.01 then o[#o + 1] = {x, y, math.floor(p * 10 + 0.5) / 10} end
+    end
+  end
+end
+rcon.print(helpers.table_to_json(o))
 """
 
 #: what the game's own map draws with, from data.raw (`--dump-data`)
@@ -105,25 +126,27 @@ def _window(rows: list, margin: int = 96) -> tuple[int, int, int]:
 
 
 def _parse(text: str) -> list:
-    """-> [(type, name, x, y, w, h, ghost, force, recipe, status, r1, r2)]; older 8-field lines too."""
+    """-> [(type, name, x, y, w, h, ghost, force, recipe, status, r1, r2, decon)]; older lines too."""
     rows = []
     for line in text.splitlines():
         p = line.split("|")
         if len(p) == 8:
             p += ["", "", "", ""]
-        if len(p) != 12:
+        if len(p) == 12:
+            p.append("0")
+        if len(p) != 13:
             continue
         try:
             r1 = float(p[10]) if p[10] else 0.0
             r2 = float(p[11]) if p[11] else 0.0
             rows.append((p[0], p[1], float(p[2]), float(p[3]), float(p[4]), float(p[5]), p[6] == "1", p[7],
-                         p[8], p[9], r1, r2))
+                         p[8], p[9], r1, r2, p[12] == "1"))
         except ValueError:
             continue
     return rows
 
 
-STRIDE = 7   # per entity in "types": x2, y2, w2, h2 (half tiles), name, recipe, status (-1: none)
+STRIDE = 8   # per entity in "types": x2, y2, w2, h2 (half tiles), name, recipe, status (-1: none), decon
 
 
 def _pack(rows: list) -> dict:
@@ -140,10 +163,10 @@ def _pack(rows: list) -> dict:
         return idx[v]
 
     out, cover = {}, {"roboport": [], "pole": []}
-    for t, n, x, y, w, h, ghost, force, recipe, status, r1, r2 in rows:
+    for t, n, x, y, w, h, ghost, force, recipe, status, r1, r2, decon in rows:
         key = "enemy:" + t if force == "enemy" else ("ghost:" if ghost else "") + t
         out.setdefault(key, []).extend([round(x * 2), round(y * 2), max(1, round(w * 2)), max(1, round(h * 2)),
-                                        ix(n), ix(recipe), ix(status)])
+                                        ix(n), ix(recipe), ix(status), 1 if decon else 0])
         if not ghost and force != "enemy":
             if t == "roboport" and (r1 or r2):
                 cover["roboport"].append([x, y, r1, r2])
@@ -269,12 +292,16 @@ def capture(store, server, arm: str, session: str, map_gen: str | None, work: st
         except OSError:
             continue
         window = _window([r for r in rows if r[7] != "enemy" and not r[0].endswith("-robot")] or rows)
+        try:
+            pollution = json.loads(server.lua(LUA_POLLUTION % (s["index"], window[0], window[1], window[2])) or "[]")
+        except (ValueError, Exception):
+            pollution = []
         tkey = None
         if not s.get("platform") and s.get("planet"):
             tkey = terrain(store, server.exe, server.mods, map_gen, work, s.get("seed"), s["planet"], window)
         safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in s["name"])
         ekey = f"maps/{arm}/{session}/{safe}.json"
-        store.put_json(ekey, dict(_pack(rows), surface=s["name"], tick=tick))
+        store.put_json(ekey, dict(_pack(rows), surface=s["name"], tick=tick, pollution=pollution))
         index["surfaces"].append({"name": s["name"], "planet": s.get("planet"), "platform": s.get("platform"),
                                   "seed": s.get("seed"), "entities": ekey, "terrain": tkey,
                                   "window": list(window), "count": len(rows)})

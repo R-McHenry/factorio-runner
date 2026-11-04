@@ -35,6 +35,37 @@ from .server import Server, ensure_factorio
 
 PROMPTS = os.path.join(os.path.dirname(__file__), "prompts")
 
+#: for the status page: research (current, progress, queue, done) and the main logistic network
+LUA_LIVE = """
+local f = game.forces.player
+local o = {research = {}, logistics = nil}
+local cr = f.current_research
+o.research.current = cr and cr.name or nil
+o.research.progress = cr and f.research_progress or 0
+o.research.queue = {}
+for _, t in pairs(f.research_queue or {}) do o.research.queue[#o.research.queue + 1] = t.name end
+local done = 0
+for _, t in pairs(f.technologies) do if t.researched then done = done + 1 end end
+o.research.done = done
+local best, bn = nil, -1
+for _, nets in pairs(f.logistic_networks) do
+  for _, n in pairs(nets) do
+    if n.all_construction_robots + n.all_logistic_robots > bn then best = n bn = n.all_construction_robots + n.all_logistic_robots end
+  end
+end
+if best then
+  local items = {}
+  for _, it in pairs(best.get_contents()) do items[#items + 1] = {it.name, it.count} end
+  table.sort(items, function(a, b) return a[2] > b[2] end)
+  local top = {}
+  for i = 1, math.min(12, #items) do top[i] = items[i] end
+  o.logistics = {construction = best.all_construction_robots, construction_free = best.available_construction_robots,
+                 logistic = best.all_logistic_robots, logistic_free = best.available_logistic_robots,
+                 items = top, kinds = #items}
+end
+rcon.print(helpers.table_to_json(o))
+"""
+
 
 def load_prompt(layers: list[str]) -> str:
     parts = []
@@ -239,16 +270,50 @@ class Session:
             tick = self.server.tick() if state == "running" else (self.series[-1]["tick"] if self.series else 0)
         except Exception:
             tick = self.series[-1]["tick"] if self.series else 0
+        live, made, notes = {}, None, ""
+        if self.server.proc is not None:     # the final push still has the game (it stops after)
+            try:
+                live = json.loads(self.server.lua(LUA_LIVE) or "{}")
+                made = nodes.read_state(self.server)["made"]
+                rs = live.get("research") or {}
+                rs["queue"] = rs.get("queue") if isinstance(rs.get("queue"), list) else []   # Lua's {} is an object
+                if isinstance((live.get("logistics") or {}).get("items"), dict):
+                    live["logistics"]["items"] = []
+            except Exception:
+                live, made = {}, None
+        try:
+            with open(os.path.join(self.workdir, "NOTES.md"), encoding="utf-8", errors="replace") as fh:
+                notes = fh.read(6000)
+        except OSError:
+            pass
+        goal = getattr(self, "goal", {}) or {}
+        recent = []
+        for line in self.steps[-40:]:
+            st = json.loads(line)
+            if st.get("role") == "assistant":
+                for name, args in st.get("calls", []):
+                    recent.append({"turn": st.get("turn"), "call": f"{name} {args}"[:240]})
+            elif st.get("role") == "tool" and recent:
+                recent[-1]["out"] = (st.get("out") or "")[:240]
+            elif st.get("role") in ("invalid", "load", "episode"):
+                recent.append({"event": st["role"], "detail": {k: v for k, v in st.items()
+                                                               if k in ("why", "state", "tick", "index", "goal")}})
         status = {
             "session": self.id, "arm": self.arm, "model": self.spec["agent"].get("model"),
             "profile": self.spec["toolkit"]["profile"], "state": state, "updated": now,
             "started": self.started, "tick": tick, "valid": self.valid, "last_valid": self.last_valid,
             "turns": self.turns, "usd": round(self.usd, 5), "tokens": self.tokens,
             "last_call": self.last_call[:300], "facts": len(getattr(self, "facts_drawn", [])),
-            "episode": {"index": es.get("index"), "id": es.get("id"), "goal": getattr(self, "goal", {}),
-                        "start_tick": es.get("tick0"), "reached_tick": es.get("reached")} if es else None,
+            "episode": {"index": es.get("index"), "id": es.get("id"), "goal": goal,
+                        "start_tick": es.get("tick0"), "reached_tick": es.get("reached"),
+                        "end_tick": es.get("tick_end"),
+                        "progress": {i: [int(made.get(i, 0)), cells.count_for(lv)] for i, lv in goal.items()}
+                        if made is not None else None} if es else None,
+            "research": live.get("research"), "logistics": live.get("logistics"),
+            "notes": notes, "recent": recent[-14:],
             "episodes_done": [{k: r.get(k) for k in ("index", "id", "reached_tick", "stop", "turns", "usd",
-                                                     "start_tick", "end_tick", "end_valid", "invalid_marks")}
+                                                     "start_tick", "end_tick", "end_valid", "invalid_marks",
+                                                     "goal", "facts_written")}
                               for r in self.results]}
         try:
             self.store.put_json(f"status/{self.arm}/{self.id}.json", status)
@@ -464,6 +529,7 @@ class Session:
             "offered": self.ep_state["offered"], "invalid_marks": self.n_invalid - self.ep_state["invalid0"],
             "states_saved": len(self.states), "facts_included": self.facts_drawn,
             "facts_accepted": self.facts_accepted, "candidates": len(cands),
+            "facts_written": [{"text": c["text"], "kind": c.get("kind", "")} for c in cands],
             "model": self.spec["agent"].get("model"), "profile": self.spec["toolkit"]["profile"],
             "layers": self.spec["prompt"]["layers"], "ended": time.time(), "summary": self.box.finished}
 

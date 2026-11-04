@@ -248,11 +248,13 @@ class MapsV2Test(unittest.TestCase):
                            "assembling-machine|assembling-machine-1|14.5|4.5|2.8|2.8|0|player|iron-gear-wheel|no_ingredients||\n"
                            "construction-robot|construction-robot|20.2|3.1|0.5|0.5|0|player||||")
         p = maps._pack(rows)
-        self.assertEqual(p["stride"], 7)
+        self.assertEqual(p["stride"], 8)
         n = p["names"]
         am = p["types"]["assembling-machine"]
         self.assertEqual((n[am[4]], n[am[5]], n[am[6]]), ("assembling-machine-1", "iron-gear-wheel", "no_ingredients"))
-        self.assertEqual(p["types"]["construction-robot"][5:7], [-1, -1])
+        self.assertEqual(p["types"]["construction-robot"][5:8], [-1, -1, 0])
+        d = maps._pack(maps._parse("wooden-chest|wooden-chest|1.5|1.5|0.7|0.7|0|player|||||1"))
+        self.assertEqual(d["types"]["wooden-chest"][7], 1)   # marked for deconstruction
         self.assertEqual(p["cover"], {"roboport": [[8.0, 8.0, 25.0, 55.0]], "pole": [[10.5, 14.5, 3.5]]})
         # robots don't stretch the terrain window
         self.assertEqual(maps._window([r for r in rows if not r[0].endswith("-robot")])[2], 256)

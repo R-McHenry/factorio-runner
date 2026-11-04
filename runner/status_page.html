@@ -50,6 +50,23 @@ select { font: inherit; color: var(--ink); background: var(--surface); border: 1
 .card { min-width: 0; }
 .chart { position: relative; }
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.det { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.det h3 { font-size: 13px; margin: 0 0 6px; color: var(--ink-2); font-weight: 600; }
+.det .box { min-width: 0; }
+.bar { height: 8px; background: var(--grid); border-radius: 4px; overflow: hidden; margin: 2px 0 8px; }
+.bar > span { display: block; height: 100%; background: var(--s1); border-radius: 4px; }
+.bar.done > span { background: var(--good); }
+.kv { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.kv b { font-variant-numeric: tabular-nums; }
+.notes { white-space: pre-wrap; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink-2);
+  max-height: 260px; overflow: auto; background: var(--page); border: 1px solid var(--ring); border-radius: 6px; padding: 8px; margin: 0; }
+.acts { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow: auto; font-size: 12px; }
+.acts li { padding: 4px 0; border-bottom: 1px solid var(--grid); }
+.acts .c { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); word-break: break-all; }
+.acts .o { color: var(--muted); word-break: break-word; }
+.facts { margin: 0; padding-left: 18px; font-size: 13px; }
+.facts li { margin-bottom: 4px; }
+.facts .k { color: var(--muted); font-size: 11px; }
 .maphead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 6px; }
 .maphead h2 { margin: 0; }
 .maphead label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
@@ -119,6 +136,11 @@ button { font: inherit; font-size: 12px; color: var(--ink-2); background: none; 
 <section class="card" style="margin-bottom:16px">
   <h2>Sessions</h2>
   <div class="scroll"><table id="sesTable"></table></div>
+</section>
+
+<section class="card" style="margin-bottom:16px">
+  <h2 id="detTitle">Session</h2>
+  <div class="det" id="det"></div>
 </section>
 
 <section class="card" style="margin-bottom:16px">
@@ -372,6 +394,62 @@ function render() {
 }
 
 
+
+// ---- the selected session in detail ------------------------------------------------------------
+function renderDetail() {
+  const det = document.getElementById("det"); det.replaceChildren();
+  const s = DATA.sessions.find(x => x.session === sel.session);
+  document.getElementById("detTitle").textContent = s ? `Session ${s.session}` : "Session";
+  if (!s) { det.append(el("div", {class: "empty", text: "No session selected."})); return; }
+  const box = (title, kids) => det.append(el("div", {class: "box"}, [el("h3", {text: title}), ...kids]));
+  // goal
+  const ep = s.episode || {};
+  const goalKids = [];
+  const prog = ep.progress || {};
+  for (const [item, lvl] of Object.entries(ep.goal || {})) {
+    const [have, need] = prog[item] || [null, 2 ** lvl];
+    const frac = have == null ? 0 : Math.min(1, have / need);
+    goalKids.push(el("div", {class: "kv"}, [el("span", {text: item}), el("b", {text: have == null ? `need ${need}` : `${have} / ${need}`})]),
+                  el("div", {class: "bar" + (frac >= 1 ? " done" : ""), role: "img", "aria-label": `${item} ${Math.round(frac * 100)}%`}, [el("span", {style: `width:${(frac * 100).toFixed(1)}%`})]));
+  }
+  if (ep.reached_tick != null) goalKids.push(el("div", {class: "badge"}, [el("span", {class: "dot", style: "background:var(--good)"}), el("span", {text: `✓ reached at ${gameTime(ep.reached_tick)}`})]));
+  if (ep.start_tick != null && ep.end_tick != null) goalKids.push(el("div", {class: "sub", text: `game time left: ${gameTime(Math.max(0, ep.end_tick - (s.tick || 0)))}`}));
+  box(`Episode ${(ep.index ?? 0) + 1} goal`, goalKids.length ? goalKids : [el("div", {class: "sub", text: "–"})]);
+  // research
+  const r = s.research;
+  const resKids = [];
+  if (r) {
+    resKids.push(el("div", {class: "kv"}, [el("span", {text: r.current || "nothing researching"}), el("b", {text: r.current ? `${Math.round((r.progress || 0) * 100)}%` : ""})]));
+    if (r.current) resKids.push(el("div", {class: "bar"}, [el("span", {style: `width:${((r.progress || 0) * 100).toFixed(1)}%`})]));
+    resKids.push(el("div", {class: "sub", text: r.queue && r.queue.length > 1 ? `queue: ${r.queue.slice(1).join(", ")}` : "queue empty after this"}));
+    resKids.push(el("div", {class: "sub", text: `${r.done} technologies done`}));
+  } else resKids.push(el("div", {class: "sub", text: "–"}));
+  box("Research", resKids);
+  // logistics
+  const l = s.logistics;
+  const logKids = [];
+  if (l) {
+    logKids.push(el("div", {class: "kv"}, [el("span", {text: "construction robots"}), el("b", {text: `${l.construction - l.construction_free} busy / ${l.construction}`})]));
+    logKids.push(el("div", {class: "kv"}, [el("span", {text: "logistic robots"}), el("b", {text: `${l.logistic - l.logistic_free} busy / ${l.logistic}`})]));
+    const t = el("table");
+    table(t, ["Item in the network", "Count"], (l.items || []).map(([n, c]) => [n, c]), [1]);
+    logKids.push(el("div", {class: "sub", text: `${l.kinds} kinds of item`}), t);
+  } else logKids.push(el("div", {class: "sub", text: "no logistic network"}));
+  box("Logistic network", logKids);
+  // notes, recent actions, facts
+  box("NOTES.md (the agent's own notes)", [el("pre", {class: "notes", text: s.notes || "(empty)"})]);
+  const acts = el("ul", {class: "acts"});
+  for (const a of (s.recent || []).slice().reverse()) {
+    if (a.event) acts.append(el("li", {}, [el("span", {class: "o", text: `— ${a.event} ${JSON.stringify(a.detail || {})}`})]));
+    else acts.append(el("li", {}, [el("div", {class: "c", text: `[${a.turn}] ${a.call}`}), el("div", {class: "o", text: a.out || ""})]));
+  }
+  box("Recent actions (newest first)", [acts]);
+  const fl = el("ol", {class: "facts"});
+  for (const e of s.episodes_done || []) for (const f of e.facts_written || [])
+    fl.append(el("li", {}, [el("span", {text: f.text + " "}), el("span", {class: "k", text: `${f.kind} · episode ${(e.index ?? 0) + 1}`})]));
+  box("Facts it wrote (knowledge steps)", [fl.childElementCount ? fl : el("div", {class: "sub", text: "none yet"})]);
+}
+
 // ---- map: terrain from Factorio's map-preview renderer, entities drawn on a canvas -------------
 const CATS = [
   {id: "inserters", label: "inserters", color: "--s1", types: ["inserter"]},
@@ -399,7 +477,7 @@ const ROBOT_TYPES = new Set(["construction-robot", "logistic-robot"]);
 const CAT_OF = {};
 for (const c of CATS) for (const t of c.types || []) CAT_OF[t] = c.id;
 const catOf = t => CAT_OF[t] || "other";
-const MAP = {sid: null, surf: null, key: null, ents: null, img: null, view: null, hidden: new Set(["power-cover"]), list: [],
+const MAP = {sid: null, surf: null, key: null, ents: null, img: null, view: null, hidden: new Set(["power-cover", "pollution"]), list: [],
              pal: null, palKey: null, mode: "game"};
 try { const h = localStorage.getItem("runner-map-hidden"); if (h) MAP.hidden = new Set(JSON.parse(h)); } catch (e) {}
 try { MAP.mode = localStorage.getItem("runner-map-mode") || "game"; } catch (e) {}
@@ -419,6 +497,7 @@ function colorOf(e, cats) {
   return cats[e.cat];
 }
 function shown(e) {
+  if (e.unit) return !MAP.hidden.has("biters");
   if (e.enemy) return !MAP.hidden.has("enemies");
   if (e.robot) return !MAP.hidden.has("robots");
   return !MAP.hidden.has(e.cat) && !(e.ghost && MAP.hidden.has("ghosts"));
@@ -441,11 +520,14 @@ function mapToggles() {
   }
   add("ghosts", "ghosts", el("i", {class: "ghost"}));
   add("enemies", "enemies", el("i", {class: "x"}));
+  add("biters", "biters (moving)", el("i", {style: "background:var(--critical); border-radius: 50%"}));
   add("robots", "robots", el("i", {style: `background:${MAP.mode === "game" && MAP.pal ? rgb(MAP.pal.chart_construction_robot_color) : "var(--ink)"}; border-radius: 50%`}));
   node.append(el("span", {class: "sep", "aria-hidden": "true"}));
   add("robo-cover", "roboport coverage", el("i", {class: "zone"}));
   add("power-cover", "power coverage", el("i", {class: "pzone"}));
   add("problems", "problems", el("i", {class: "ring"}));
+  add("decon", "marked for removal", el("i", {class: "x", style: "color:var(--critical)"}));
+  add("pollution", "pollution", el("i", {style: "background:rgba(235,104,52,.55)"}));
 }
 
 function mapEntities() {
@@ -459,7 +541,8 @@ function mapEntities() {
     for (let i = 0; i < arr.length; i += st)
       out.push({cat: catOf(type), ghost, enemy, robot: ROBOT_TYPES.has(type), type, x: arr[i] / 2, y: arr[i + 1] / 2,
         w: arr[i + 2] / 2, h: arr[i + 3] / 2, name: N[arr[i + 4]],
-        recipe: st > 5 && arr[i + 5] >= 0 ? N[arr[i + 5]] : null, status: st > 6 && arr[i + 6] >= 0 ? N[arr[i + 6]] : null});
+        recipe: st > 5 && arr[i + 5] >= 0 ? N[arr[i + 5]] : null, status: st > 6 && arr[i + 6] >= 0 ? N[arr[i + 6]] : null,
+        decon: st > 7 && arr[i + 7] === 1, unit: enemy && type === "unit"});
   }
   return out;
 }
@@ -493,6 +576,14 @@ function drawMap() {
   const cats = {}; for (const c of CATS) cats[c.id] = css(c.color);
   const ink = css("--ink");
   const cover = (MAP.ents && MAP.ents.cover) || {};
+  const pol = (MAP.ents && MAP.ents.pollution) || [];
+  if (!MAP.hidden.has("pollution") && pol.length) {
+    const top = Math.log1p(Math.max(...pol.map(p => p[2])));
+    for (const [px, py, amt] of pol) {
+      g.fillStyle = `rgba(235,104,52,${(0.12 + 0.55 * Math.log1p(amt) / top).toFixed(3)})`;
+      g.fillRect(ox + px * 32 * k, oy + py * 32 * k, 32 * k, 32 * k);
+    }
+  }
   if (!MAP.hidden.has("power-cover")) {
     g.fillStyle = MAP.pal && MAP.pal.electric_power_pole_color ? `rgba(${MAP.pal.electric_power_pole_color.join(",")},.18)` : "rgba(0,158,163,.18)";
     for (const [px, py, d] of cover.pole || []) g.fillRect(ox + (px - d) * k, oy + (py - d) * k, 2 * d * k, 2 * d * k);
@@ -515,6 +606,9 @@ function drawMap() {
       const r = Math.max(3, Math.min(w, h) / 2); const cx = x + w / 2, cy = y + h / 2;
       g.strokeStyle = "#000"; g.lineWidth = 4; g.beginPath(); g.moveTo(cx - r, cy - r); g.lineTo(cx + r, cy + r); g.moveTo(cx + r, cy - r); g.lineTo(cx - r, cy + r); g.stroke();
       g.strokeStyle = MAP.mode === "game" && MAP.pal ? col : "#fff"; g.lineWidth = 2; g.stroke();
+    } else if (e.unit) {
+      g.fillStyle = "#000"; g.beginPath(); g.arc(ox + e.x * k, oy + e.y * k, 3, 0, 7); g.fill();
+      g.fillStyle = css("--critical"); g.beginPath(); g.arc(ox + e.x * k, oy + e.y * k, 2, 0, 7); g.fill();
     } else if (e.robot) {
       g.fillStyle = "#000"; g.beginPath(); g.arc(ox + e.x * k, oy + e.y * k, 3, 0, 7); g.fill();
       g.fillStyle = col; g.beginPath(); g.arc(ox + e.x * k, oy + e.y * k, 2, 0, 7); g.fill();
@@ -523,6 +617,10 @@ function drawMap() {
     } else {
       g.fillStyle = col; g.fillRect(x, y, w, h);
       if (w >= 6 && h >= 6) { g.strokeStyle = "rgba(0,0,0,.55)"; g.lineWidth = 1; g.strokeRect(x + .5, y + .5, w - 1, h - 1); }
+    }
+    if (e.decon && !MAP.hidden.has("decon")) {
+      g.strokeStyle = css("--critical"); g.lineWidth = 2; g.beginPath();
+      g.moveTo(x, y); g.lineTo(x + w, y + h); g.moveTo(x + w, y); g.lineTo(x, y + h); g.stroke();
     }
     const sev = !e.enemy && !e.ghost && PROBLEM[e.status];
     if (sev && !MAP.hidden.has("problems")) rings.push([x + w / 2, y + h / 2, Math.max(w, h) / 2 + 3, sev]);
@@ -612,7 +710,8 @@ async function loadMap(force) {
     }
     if (!MAP.view) return;
     const [x, y] = local(e), wx = (x - MAP.view.ox) / MAP.view.k, wy = (y - MAP.view.oy) / MAP.view.k;
-    co.textContent = `x ${wx.toFixed(0)}, y ${wy.toFixed(0)}`;
+    const pc = ((MAP.ents && MAP.ents.pollution) || []).find(p => p[0] === Math.floor(wx / 32) && p[1] === Math.floor(wy / 32));
+    co.textContent = `x ${wx.toFixed(0)}, y ${wy.toFixed(0)}` + (pc && !MAP.hidden.has("pollution") ? ` · pollution ${pc[2]}` : "");
     // the entity under the pointer (or within a few pixels of it)
     const slop = 4 / MAP.view.k; let best = null, bd = Infinity;
     for (const en of MAP.list) {
@@ -625,6 +724,7 @@ async function loadMap(force) {
       const lines = [el("div", {class: "row"}, [el("b", {text: best.name})]),
         el("div", {class: "hd", text: `${best.enemy ? "enemy " : ""}${best.type}${best.ghost ? ", ghost (not built yet)" : ""} · ${best.x}, ${best.y}`})];
       if (best.recipe) lines.push(el("div", {text: `recipe: ${best.recipe}`}));
+      if (best.decon) lines.push(el("div", {text: "✕ marked for deconstruction"}));
       if (best.status && !best.enemy) { const sv = PROBLEM[best.status];
         lines.push(el("div", {class: "row"}, sv ? [el("span", {class: "dot", style: `background:var(${SEV[sv].color})`}), el("span", {text: `${SEV[sv].icon} ${best.status.replace(/_/g, " ")}`})]
                                                : [el("span", {text: best.status.replace(/_/g, " ")})])); }
@@ -650,7 +750,7 @@ async function loadMap(force) {
 })();
 mapToggles();
 const renderCharts = render;
-render = function () { renderCharts(); loadMap(false); };
+render = function () { renderCharts(); renderDetail(); loadMap(false); };
 
 document.getElementById("armSel").addEventListener("change", e => { sel.arm = e.target.value; sel.session = null; render(); });
 document.getElementById("sesSel").addEventListener("change", e => { sel.session = e.target.value; render(); });
