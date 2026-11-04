@@ -67,6 +67,9 @@ class GameTest(unittest.TestCase):
             self.assertTrue(store.get(nauvis["terrain"]).startswith(b"\x89PNG"))
             ents = store.get_json(nauvis["entities"])
             self.assertIn("roboport", ents["types"])
+            self.assertEqual(ents["cover"]["roboport"][0][2:], [25.0, 55.0])   # the game's own radii
+            pal = store.get_json(idx["palette"])                              # the game map's colours
+            self.assertIn("transport-belt", pal["by_type"])
 
 
 if __name__ == "__main__":

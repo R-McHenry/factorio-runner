@@ -238,3 +238,34 @@ class LengthRetryTest(unittest.TestCase):
         r = Fake("http://x", "m", max_tokens=16, max_tokens_ceiling=100).complete([])
         self.assertEqual(calls, [16, 64, 100])
         self.assertEqual(r.finish, "length")
+
+
+class MapsV2Test(unittest.TestCase):
+    def test_status_recipe_cover(self):
+        from runner import maps
+        rows = maps._parse("roboport|roboport|8.0|8.0|3.9|3.9|0|player||low_power|25.0|55.0\n"
+                           "electric-pole|medium-electric-pole|10.5|14.5|0.3|0.3|0|player|||3.5|\n"
+                           "assembling-machine|assembling-machine-1|14.5|4.5|2.8|2.8|0|player|iron-gear-wheel|no_ingredients||\n"
+                           "construction-robot|construction-robot|20.2|3.1|0.5|0.5|0|player||||")
+        p = maps._pack(rows)
+        self.assertEqual(p["stride"], 7)
+        n = p["names"]
+        am = p["types"]["assembling-machine"]
+        self.assertEqual((n[am[4]], n[am[5]], n[am[6]]), ("assembling-machine-1", "iron-gear-wheel", "no_ingredients"))
+        self.assertEqual(p["types"]["construction-robot"][5:7], [-1, -1])
+        self.assertEqual(p["cover"], {"roboport": [[8.0, 8.0, 25.0, 55.0]], "pole": [[10.5, 14.5, 3.5]]})
+        # robots don't stretch the terrain window
+        self.assertEqual(maps._window([r for r in rows if not r[0].endswith("-robot")])[2], 256)
+
+    def test_palette_from_dump(self):
+        from runner import maps
+        raw = {"utility-constants": {"default": {"chart": {
+                   "default_friendly_color": [0, 0.38, 0.57], "default_enemy_color": {"r": 1, "g": 0.1, "b": 0.1},
+                   "default_friendly_color_by_type": {"transport-belt": [0.8, 0.63, 0.28], "ammo-turret": [202, 167, 24]}}}},
+               "roboport": {"roboport": {"friendly_map_color": [0.9, 0.9, 0.5]}},
+               "tile": {"water": {"map_color": [0, 0, 1]}}}
+        pal = maps.palette_from_dump(raw)
+        self.assertEqual(pal["default_friendly_color"], [0, 97, 145])
+        self.assertEqual(pal["default_enemy_color"], [255, 26, 26])
+        self.assertEqual(pal["by_type"]["ammo-turret"], [202, 167, 24])      # already 0-255
+        self.assertEqual(pal["by_name"], {"roboport": [230, 230, 128]})       # tiles left out

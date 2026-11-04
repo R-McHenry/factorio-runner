@@ -59,6 +59,10 @@ select { font: inherit; color: var(--ink); background: var(--surface); border: 1
 .toggles i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
 .toggles i.ghost { background: none !important; border: 2px solid var(--muted); width: 10px; height: 10px; box-sizing: border-box; }
 .toggles i.x { background: none !important; position: relative; }
+.toggles .sep { width: 1px; background: var(--ring); margin: 0 2px; }
+.toggles i.ring { background: none !important; border: 2px solid var(--critical); border-radius: 50%; }
+.toggles i.zone { background: rgba(255, 200, 0, .25) !important; border: 1px dashed rgba(255, 140, 0, .9); }
+.toggles i.pzone { background: rgba(0, 158, 163, .3) !important; }
 .toggles i.x::before { content: "×"; position: absolute; left: -1px; top: -6px; font-size: 14px; color: var(--ink); }
 .mapvp { position: relative; height: min(70vh, 640px); min-height: 320px; border: 1px solid var(--ring); border-radius: 8px;
   overflow: hidden; background: #111; touch-action: none; cursor: grab; }
@@ -120,12 +124,14 @@ button { font: inherit; font-size: 12px; color: var(--ink-2); background: none; 
 <section class="card" style="margin-bottom:16px">
   <div class="maphead"><h2>Map</h2>
     <label>Surface <select id="surfSel"></select></label>
+    <label>Colours <select id="colSel"><option value="game">game map</option><option value="cats">categories</option></select></label>
     <span class="sub" id="mapMeta"></span></div>
   <div class="toggles" id="mapToggles"></div>
   <div class="mapvp" id="mapVp"><canvas id="mapCv" role="img" aria-label="Map of the selected surface"></canvas>
     <div class="ctl"><button type="button" id="mapIn" aria-label="Zoom in">+</button><button type="button" id="mapOut" aria-label="Zoom out">−</button><button type="button" id="mapFit" aria-label="Fit to view">□</button></div>
     <div class="coord" id="mapCo">x –, y –</div><div class="tip" id="mapTip"></div></div>
   <details><summary>Data table</summary><div class="scroll" id="mapTable"></div></details>
+  <details><summary>Problems</summary><div class="scroll" id="mapProblems"></div></details>
 </section>
 
 <section class="grid">
@@ -378,11 +384,45 @@ const CATS = [
   {id: "fluids", label: "fluids", color: "--s8", types: ["pipe", "pipe-to-ground", "pump", "storage-tank", "infinity-pipe"]},
   {id: "other", label: "other", color: "--ink-2", types: null},
 ];
+const PROBLEM = {
+  no_power: "critical", no_fuel: "critical",
+  no_ingredients: "serious", no_input_fluid: "serious", waiting_for_source_items: "serious",
+  no_minable_resources: "serious", missing_required_fluid: "serious", item_ingredient_shortage: "serious",
+  fluid_ingredient_shortage: "serious", missing_science_packs: "serious", no_ammo: "serious",
+  full_output: "warning", waiting_for_space_in_destination: "warning", low_power: "warning", no_recipe: "warning",
+  recipe_not_researched: "warning", no_research_in_progress: "warning", not_connected_to_rail: "warning",
+};
+const SEV = {critical: {color: "--critical", icon: "✕", label: "no power or fuel"},
+             serious: {color: "--serious", icon: "!", label: "missing input"},
+             warning: {color: "--warning", icon: "▲", label: "blocked or idle"}};
+const ROBOT_TYPES = new Set(["construction-robot", "logistic-robot"]);
 const CAT_OF = {};
 for (const c of CATS) for (const t of c.types || []) CAT_OF[t] = c.id;
 const catOf = t => CAT_OF[t] || "other";
-const MAP = {sid: null, surf: null, key: null, ents: null, img: null, view: null, hidden: new Set(), list: []};
-try { for (const h of JSON.parse(localStorage.getItem("runner-map-hidden") || "[]")) MAP.hidden.add(h); } catch (e) {}
+const MAP = {sid: null, surf: null, key: null, ents: null, img: null, view: null, hidden: new Set(["power-cover"]), list: [],
+             pal: null, palKey: null, mode: "game"};
+try { const h = localStorage.getItem("runner-map-hidden"); if (h) MAP.hidden = new Set(JSON.parse(h)); } catch (e) {}
+try { MAP.mode = localStorage.getItem("runner-map-mode") || "game"; } catch (e) {}
+const rgb = c => c ? `rgb(${c[0]},${c[1]},${c[2]})` : null;
+function gameColor(e) {
+  const p = MAP.pal; if (!p) return null;
+  if (e.enemy) return rgb(p.default_enemy_color) || "#ff1a1a";
+  if (e.type === "construction-robot") return rgb(p.chart_construction_robot_color);
+  if (e.type === "logistic-robot") return rgb(p.chart_logistic_robot_color);
+  if (e.ghost) return rgb(p.entity_ghost_color);
+  if (e.type === "electric-pole") return rgb(p.electric_power_pole_color) || rgb(p.by_name[e.name]);
+  return rgb(p.by_name[e.name]) || rgb(p.by_type[e.type]) || rgb(p.default_friendly_color);
+}
+function colorOf(e, cats) {
+  if (MAP.mode === "game" && MAP.pal) return gameColor(e);
+  if (e.robot) return css("--ink");
+  return cats[e.cat];
+}
+function shown(e) {
+  if (e.enemy) return !MAP.hidden.has("enemies");
+  if (e.robot) return !MAP.hidden.has("robots");
+  return !MAP.hidden.has(e.cat) && !(e.ghost && MAP.hidden.has("ghosts"));
+}
 
 function mapToggles() {
   const node = document.getElementById("mapToggles"); node.replaceChildren();
@@ -393,20 +433,33 @@ function mapToggles() {
       mapToggles(); drawMap(); });
     node.append(b);
   };
-  for (const c of CATS) add(c.id, c.label, el("i", {style: `background:var(${c.color})`}));
+  for (const c of CATS) {
+    let bg = `var(${c.color})`;
+    if (MAP.mode === "game" && MAP.pal) { const t = (c.types || ["__other"])[0];
+      bg = rgb(MAP.pal.by_type[t]) || rgb(MAP.pal.default_friendly_color) || bg; }
+    add(c.id, c.label, el("i", {style: `background:${bg}`}));
+  }
   add("ghosts", "ghosts", el("i", {class: "ghost"}));
   add("enemies", "enemies", el("i", {class: "x"}));
+  add("robots", "robots", el("i", {style: `background:${MAP.mode === "game" && MAP.pal ? rgb(MAP.pal.chart_construction_robot_color) : "var(--ink)"}; border-radius: 50%`}));
+  node.append(el("span", {class: "sep", "aria-hidden": "true"}));
+  add("robo-cover", "roboport coverage", el("i", {class: "zone"}));
+  add("power-cover", "power coverage", el("i", {class: "pzone"}));
+  add("problems", "problems", el("i", {class: "ring"}));
 }
 
 function mapEntities() {
   // flatten the packed lists: [{cat, ghost, enemy, x, y, w, h, name, type}] in metres
   const out = [];
   if (!MAP.ents) return out;
+  const st = MAP.ents.stride || 5, N = MAP.ents.names;
   for (const [key, arr] of Object.entries(MAP.ents.types)) {
     const enemy = key.startsWith("enemy:"), ghost = key.startsWith("ghost:");
     const type = key.replace(/^(enemy|ghost):/, "");
-    for (let i = 0; i < arr.length; i += 5)
-      out.push({cat: catOf(type), ghost, enemy, type, x: arr[i] / 2, y: arr[i + 1] / 2, w: arr[i + 2] / 2, h: arr[i + 3] / 2, name: MAP.ents.names[arr[i + 4]]});
+    for (let i = 0; i < arr.length; i += st)
+      out.push({cat: catOf(type), ghost, enemy, robot: ROBOT_TYPES.has(type), type, x: arr[i] / 2, y: arr[i + 1] / 2,
+        w: arr[i + 2] / 2, h: arr[i + 3] / 2, name: N[arr[i + 4]],
+        recipe: st > 5 && arr[i + 5] >= 0 ? N[arr[i + 5]] : null, status: st > 6 && arr[i + 6] >= 0 ? N[arr[i + 6]] : null});
   }
   return out;
 }
@@ -437,22 +490,46 @@ function drawMap() {
     g.imageSmoothingEnabled = false;
     g.drawImage(MAP.img, ox + k * (cx - size / 2), oy + k * (cy - size / 2), k * size, k * size);
   }
-  const colors = {}; for (const c of CATS) colors[c.id] = css(c.color);
+  const cats = {}; for (const c of CATS) cats[c.id] = css(c.color);
   const ink = css("--ink");
+  const cover = (MAP.ents && MAP.ents.cover) || {};
+  if (!MAP.hidden.has("power-cover")) {
+    g.fillStyle = MAP.pal && MAP.pal.electric_power_pole_color ? `rgba(${MAP.pal.electric_power_pole_color.join(",")},.18)` : "rgba(0,158,163,.18)";
+    for (const [px, py, d] of cover.pole || []) g.fillRect(ox + (px - d) * k, oy + (py - d) * k, 2 * d * k, 2 * d * k);
+  }
+  if (!MAP.hidden.has("robo-cover")) {
+    for (const [rx, ry, lr, cr] of cover.roboport || []) {
+      if (cr) { g.strokeStyle = "rgba(255,140,0,.75)"; g.lineWidth = 1.5; g.setLineDash([6, 4]);
+        g.strokeRect(ox + (rx - cr) * k, oy + (ry - cr) * k, 2 * cr * k, 2 * cr * k); g.setLineDash([]); }
+      if (lr) { g.fillStyle = "rgba(255,200,0,.12)"; g.fillRect(ox + (rx - lr) * k, oy + (ry - lr) * k, 2 * lr * k, 2 * lr * k);
+        g.strokeStyle = "rgba(255,200,0,.7)"; g.lineWidth = 1; g.strokeRect(ox + (rx - lr) * k, oy + (ry - lr) * k, 2 * lr * k, 2 * lr * k); }
+    }
+  }
+  const rings = [];
   for (const e of MAP.list) {
-    if (e.enemy ? MAP.hidden.has("enemies") : (MAP.hidden.has(e.cat) || (e.ghost && MAP.hidden.has("ghosts")))) continue;
+    if (!shown(e)) continue;
     const w = Math.max(3, e.w * k), h = Math.max(3, e.h * k), x = ox + e.x * k - w / 2, y = oy + e.y * k - h / 2;
     if (x > W || y > H || x + w < 0 || y + h < 0) continue;
+    const col = colorOf(e, cats);
     if (e.enemy) {
       const r = Math.max(3, Math.min(w, h) / 2); const cx = x + w / 2, cy = y + h / 2;
       g.strokeStyle = "#000"; g.lineWidth = 4; g.beginPath(); g.moveTo(cx - r, cy - r); g.lineTo(cx + r, cy + r); g.moveTo(cx + r, cy - r); g.lineTo(cx - r, cy + r); g.stroke();
-      g.strokeStyle = "#fff"; g.lineWidth = 2; g.stroke();
+      g.strokeStyle = MAP.mode === "game" && MAP.pal ? col : "#fff"; g.lineWidth = 2; g.stroke();
+    } else if (e.robot) {
+      g.fillStyle = "#000"; g.beginPath(); g.arc(ox + e.x * k, oy + e.y * k, 3, 0, 7); g.fill();
+      g.fillStyle = col; g.beginPath(); g.arc(ox + e.x * k, oy + e.y * k, 2, 0, 7); g.fill();
     } else if (e.ghost) {
-      g.strokeStyle = colors[e.cat]; g.lineWidth = 1.5; g.setLineDash([3, 2]); g.strokeRect(x + .75, y + .75, w - 1.5, h - 1.5); g.setLineDash([]);
+      g.strokeStyle = col; g.lineWidth = 1.5; g.setLineDash([3, 2]); g.strokeRect(x + .75, y + .75, w - 1.5, h - 1.5); g.setLineDash([]);
     } else {
-      g.fillStyle = colors[e.cat]; g.fillRect(x, y, w, h);
+      g.fillStyle = col; g.fillRect(x, y, w, h);
       if (w >= 6 && h >= 6) { g.strokeStyle = "rgba(0,0,0,.55)"; g.lineWidth = 1; g.strokeRect(x + .5, y + .5, w - 1, h - 1); }
     }
+    const sev = !e.enemy && !e.ghost && PROBLEM[e.status];
+    if (sev && !MAP.hidden.has("problems")) rings.push([x + w / 2, y + h / 2, Math.max(w, h) / 2 + 3, sev]);
+  }
+  for (const [cx, cy, r, sev] of rings) {
+    g.strokeStyle = "#000"; g.lineWidth = 4; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.stroke();
+    g.strokeStyle = css(SEV[sev].color); g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.stroke();
   }
   if (MAP.mark) { const mx = ox + MAP.mark.x * k, my = oy + MAP.mark.y * k;
     g.strokeStyle = ink; g.lineWidth = 2; g.strokeRect(mx - MAP.mark.w * k / 2 - 2, my - MAP.mark.h * k / 2 - 2, MAP.mark.w * k + 4, MAP.mark.h * k + 4); }
@@ -480,6 +557,7 @@ async function loadMap(force) {
   const info = m.surfaces.find(s => s.name === MAP.surf);
   const key = `${sel.session}|${MAP.surf}|${m.time}`;
   meta.textContent = `${info.count} entities · captured at game time ${gameTime(m.tick || 0)}, ${ago(m.time)}`;
+  document.getElementById("colSel").value = MAP.mode;
   if (key === MAP.key && !force) return;
   const sameView = MAP.key && MAP.key.split("|").slice(0, 2).join("|") === `${sel.session}|${MAP.surf}`;
   MAP.key = key; MAP.surfInfo = info;
@@ -488,6 +566,10 @@ async function loadMap(force) {
     MAP.ents = r.ok ? await r.json() : null;
   } catch (e) { MAP.ents = null; }
   MAP.list = mapEntities();
+  if (m.palette && m.palette !== MAP.palKey) {
+    try { const r = await fetch(m.palette); MAP.pal = r.ok ? await r.json() : null; MAP.palKey = m.palette; } catch (e) { MAP.pal = null; }
+    mapToggles();
+  }
   MAP.img = null;
   if (info.terrain) {
     await new Promise(res => { const im = new Image(); im.onload = () => { MAP.img = im; res(); }; im.onerror = () => res(); im.src = info.terrain; });
@@ -499,6 +581,15 @@ async function loadMap(force) {
   for (const e of MAP.list) { const k2 = `${e.enemy ? "enemies" : e.cat}|${e.type}${e.ghost ? " (ghost)" : ""}`; counts[k2] = (counts[k2] || 0) + 1; }
   const t = el("table"); document.getElementById("mapTable").replaceChildren(t);
   table(t, ["Category", "Type", "Count"], Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k2, n]) => [...k2.split("|"), n]), [2]);
+  const probs = MAP.list.filter(e => !e.enemy && !e.ghost && PROBLEM[e.status]);
+  const order = {critical: 0, serious: 1, warning: 2};
+  probs.sort((a, b) => order[PROBLEM[a.status]] - order[PROBLEM[b.status]]);
+  const pt = el("table"); document.getElementById("mapProblems").replaceChildren(pt);
+  table(pt, ["Problem", "Entity", "Recipe", "Status", "Position"], probs.map(e => {
+    const v = SEV[PROBLEM[e.status]];
+    return [el("span", {class: "badge"}, [el("span", {class: "dot", style: `background:var(${v.color})`}), el("span", {text: `${v.icon} ${v.label}`})]),
+      e.name, e.recipe || "–", e.status.replace(/_/g, " "), `${e.x}, ${e.y}`];
+  }));
 }
 
 (function mapInput() {
@@ -525,14 +616,21 @@ async function loadMap(force) {
     // the entity under the pointer (or within a few pixels of it)
     const slop = 4 / MAP.view.k; let best = null, bd = Infinity;
     for (const en of MAP.list) {
-      if (en.enemy ? MAP.hidden.has("enemies") : (MAP.hidden.has(en.cat) || (en.ghost && MAP.hidden.has("ghosts")))) continue;
+      if (!shown(en)) continue;
       const dx = Math.max(0, Math.abs(wx - en.x) - en.w / 2), dy = Math.max(0, Math.abs(wy - en.y) - en.h / 2), d = Math.hypot(dx, dy);
       if (d <= slop && d < bd) { bd = d; best = en; }
     }
     if (best !== MAP.mark) { MAP.mark = best; drawMap(); }
     if (best) {
-      tip.replaceChildren(el("div", {class: "row"}, [el("b", {text: best.name})]),
-        el("div", {class: "hd", text: `${best.enemy ? "enemy " : ""}${best.type}${best.ghost ? ", ghost (not built yet)" : ""} · ${best.x}, ${best.y}`}));
+      const lines = [el("div", {class: "row"}, [el("b", {text: best.name})]),
+        el("div", {class: "hd", text: `${best.enemy ? "enemy " : ""}${best.type}${best.ghost ? ", ghost (not built yet)" : ""} · ${best.x}, ${best.y}`})];
+      if (best.recipe) lines.push(el("div", {text: `recipe: ${best.recipe}`}));
+      if (best.status && !best.enemy) { const sv = PROBLEM[best.status];
+        lines.push(el("div", {class: "row"}, sv ? [el("span", {class: "dot", style: `background:var(${SEV[sv].color})`}), el("span", {text: `${SEV[sv].icon} ${best.status.replace(/_/g, " ")}`})]
+                                               : [el("span", {text: best.status.replace(/_/g, " ")})])); }
+      const rc = best.type === "roboport" && ((MAP.ents.cover || {}).roboport || []).find(c => c[0] === best.x && c[1] === best.y);
+      if (rc) lines.push(el("div", {text: `logistic radius ${rc[2]}, construction ${rc[3]}`}));
+      tip.replaceChildren(...lines);
       tip.style.display = "block";
       tip.style.left = Math.min(cv.clientWidth - tip.offsetWidth - 4, x + 14) + "px";
       tip.style.top = Math.min(cv.clientHeight - tip.offsetHeight - 4, y + 14) + "px";
@@ -546,6 +644,8 @@ async function loadMap(force) {
   document.getElementById("mapOut").addEventListener("click", () => zoom(1 / 1.5, ...mid()));
   document.getElementById("mapFit").addEventListener("click", () => { mapFitView(); drawMap(); });
   document.getElementById("surfSel").addEventListener("change", e => { MAP.surf = e.target.value; loadMap(true); });
+  document.getElementById("colSel").addEventListener("change", e => { MAP.mode = e.target.value;
+    try { localStorage.setItem("runner-map-mode", MAP.mode); } catch (er) {} mapToggles(); drawMap(); });
   addEventListener("resize", () => drawMap());
 })();
 mapToggles();

@@ -35,25 +35,57 @@ end
 rcon.print(helpers.table_to_json(out))
 """
 
-#: one surface's entities, written to script-output (too big for one RCON reply on a large base):
-#: type|name|x|y|w|h|ghost|force per line
+#: one surface's entities, written to script-output (too big for one RCON reply on a large base),
+#: one per line: type|name|x|y|w|h|ghost|force|recipe|status|r1|r2
+#: recipe: what a crafting machine makes; status: its defines.entity_status name; r1/r2: a
+#: roboport's logistic and construction radius, or a pole's supply-area distance (r1)
 LUA_DUMP = """
 local s = game.surfaces[%s]
 local o = {}
+local ST = {}
+for k, v in pairs(defines.entity_status) do ST[v] = k end
 local function add(e, ghost)
   local b = e.bounding_box
   local w, h = b.right_bottom.x - b.left_top.x, b.right_bottom.y - b.left_top.y
   local t = ghost and e.ghost_type or e.type
   local n = ghost and e.ghost_name or e.name
-  o[#o + 1] = string.format('%%s|%%s|%%.1f|%%.1f|%%.1f|%%.1f|%%d|%%s', t, n, e.position.x, e.position.y, w, h, ghost and 1 or 0, e.force.name)
+  local recipe, status, r1, r2 = '', '', '', ''
+  if not ghost then
+    local ok, r = pcall(function() return e.get_recipe() end)
+    if ok and r then recipe = r.name end
+    if recipe == '' and t == 'furnace' then
+      local ok2, pr = pcall(function() return e.previous_recipe end)
+      if ok2 and pr then
+        local nm = pr.name
+        if type(nm) == 'table' then nm = nm.name end
+        if type(nm) == 'string' then recipe = nm end
+      end
+    end
+    local ok3, st = pcall(function() return e.status end)
+    if ok3 and st then status = ST[st] or '' end
+    if t == 'roboport' and e.logistic_cell then
+      r1 = string.format('%%.1f', e.logistic_cell.logistic_radius)
+      r2 = string.format('%%.1f', e.logistic_cell.construction_radius)
+    elseif t == 'electric-pole' then
+      local ok4, d = pcall(function() return e.prototype.get_supply_area_distance(e.quality) end)
+      if ok4 and d then r1 = string.format('%%.1f', d) end
+    end
+  end
+  o[#o + 1] = string.format('%%s|%%s|%%.1f|%%.1f|%%.1f|%%.1f|%%d|%%s|%%s|%%s|%%s|%%s', t, n, e.position.x, e.position.y, w, h,
+    ghost and 1 or 0, e.force.name, recipe, status, r1, r2)
 end
 for _, e in pairs(s.find_entities_filtered{force = 'player'}) do
-  if e.type == 'entity-ghost' then add(e, true) elseif e.type ~= 'character' and e.type ~= 'construction-robot' and e.type ~= 'logistic-robot' then add(e, false) end
+  if e.type == 'entity-ghost' then add(e, true) elseif e.type ~= 'character' then add(e, false) end
 end
 for _, e in pairs(s.find_entities_filtered{force = 'enemy', type = {'unit-spawner', 'turret'}}) do add(e, false) end
 helpers.write_file(%s, table.concat(o, '\\n'), false)
 rcon.print(#o)
 """
+
+#: what the game's own map draws with, from data.raw (`--dump-data`)
+PALETTE_KEYS = ("default_friendly_color", "default_enemy_color", "default_friendly_color_by_type",
+                "default_color_by_type", "entity_ghost_color", "electric_power_pole_color",
+                "chart_construction_robot_color", "chart_logistic_robot_color", "rail_color")
 
 
 def _window(rows: list, margin: int = 96) -> tuple[int, int, int]:
@@ -73,29 +105,114 @@ def _window(rows: list, margin: int = 96) -> tuple[int, int, int]:
 
 
 def _parse(text: str) -> list:
+    """-> [(type, name, x, y, w, h, ghost, force, recipe, status, r1, r2)]; older 8-field lines too."""
     rows = []
     for line in text.splitlines():
         p = line.split("|")
-        if len(p) != 8:
+        if len(p) == 8:
+            p += ["", "", "", ""]
+        if len(p) != 12:
             continue
         try:
-            rows.append((p[0], p[1], float(p[2]), float(p[3]), float(p[4]), float(p[5]), p[6] == "1", p[7]))
+            r1 = float(p[10]) if p[10] else 0.0
+            r2 = float(p[11]) if p[11] else 0.0
+            rows.append((p[0], p[1], float(p[2]), float(p[3]), float(p[4]), float(p[5]), p[6] == "1", p[7],
+                         p[8], p[9], r1, r2))
         except ValueError:
             continue
     return rows
 
 
+STRIDE = 7   # per entity in "types": x2, y2, w2, h2 (half tiles), name, recipe, status (-1: none)
+
+
 def _pack(rows: list) -> dict:
-    """Compact entity lists for the page: names indexed, coordinates in half tiles."""
+    """Compact entity lists for the page: names, recipes and statuses indexed into `names`,
+    coordinates in half tiles. Roboport and pole coverage separately, in metres."""
     names, idx = [], {}
-    out = {}
-    for t, n, x, y, w, h, ghost, force in rows:
-        if n not in idx:
-            idx[n] = len(names)
-            names.append(n)
+
+    def ix(v):
+        if not v:
+            return -1
+        if v not in idx:
+            idx[v] = len(names)
+            names.append(v)
+        return idx[v]
+
+    out, cover = {}, {"roboport": [], "pole": []}
+    for t, n, x, y, w, h, ghost, force, recipe, status, r1, r2 in rows:
         key = "enemy:" + t if force == "enemy" else ("ghost:" if ghost else "") + t
-        out.setdefault(key, []).extend([round(x * 2), round(y * 2), max(1, round(w * 2)), max(1, round(h * 2)), idx[n]])
-    return {"names": names, "types": out}
+        out.setdefault(key, []).extend([round(x * 2), round(y * 2), max(1, round(w * 2)), max(1, round(h * 2)),
+                                        ix(n), ix(recipe), ix(status)])
+        if not ghost and force != "enemy":
+            if t == "roboport" and (r1 or r2):
+                cover["roboport"].append([x, y, r1, r2])
+            elif t == "electric-pole" and r1:
+                cover["pole"].append([x, y, r1])
+    return {"names": names, "types": out, "stride": STRIDE, "cover": cover}
+
+
+def _rgb(c) -> list | None:
+    """A data.raw colour ({r,g,b}, [r,g,b] in 0-1 or 0-255) -> [r, g, b] in 0-255."""
+    if isinstance(c, dict):
+        c = [c.get("r", 0), c.get("g", 0), c.get("b", 0)]
+    if not isinstance(c, (list, tuple)) or len(c) < 3:
+        return None
+    c = [float(v) for v in c[:3]]
+    if max(c) <= 1.0:
+        c = [v * 255 for v in c]
+    return [int(round(v)) for v in c]
+
+
+def palette_from_dump(raw: dict) -> dict:
+    """The game map's colours from data.raw: chart constants, colours by entity type, and each
+    entity prototype's own friendly_map_color / map_color."""
+    chart = (raw.get("utility-constants", {}).get("default", {}) or {}).get("chart", {})
+    out = {"by_type": {}, "by_name": {}}
+    for k in PALETTE_KEYS:
+        v = chart.get(k)
+        if isinstance(v, dict) and k.endswith("_by_type"):
+            out["by_type"].update({t: _rgb(c) for t, c in v.items() if _rgb(c)})
+        elif _rgb(v):
+            out[k] = _rgb(v)
+    for t, protos in raw.items():
+        if not isinstance(protos, dict):
+            continue
+        for n, p in protos.items():
+            if isinstance(p, dict) and ("friendly_map_color" in p or "map_color" in p) and t != "tile":
+                c = _rgb(p.get("friendly_map_color") or p.get("map_color"))
+                if c:
+                    out["by_name"][n] = c
+    return out
+
+
+def palette(store, exe: str, mods: str | None, work: str) -> str | None:
+    """The store key of the game map's palette for this binary and mod set, dumping it if missing."""
+    mh = ""
+    if mods and os.path.isdir(mods):
+        h = hashlib.sha256()
+        for f in sorted(os.listdir(mods)):
+            h.update(f.encode())
+        mh = h.hexdigest()[:12]
+    key = f"maps/palette/{hashlib.sha256(f'{exe}|{mh}'.encode()).hexdigest()[:20]}.json"
+    if store.get_versioned(key)[1] is not None:
+        return key
+    root = os.path.join(work, "dump")
+    os.makedirs(root, exist_ok=True)
+    cfg = os.path.join(root, "config.ini")
+    with open(cfg, "w") as fh:
+        fh.write(f"[path]\nread-data=__PATH__executable__/../../data\nwrite-data={os.path.join(root, 'write')}\n")
+    args = [exe, "-c", cfg, "--dump-data"] + (["--mod-directory", mods] if mods else [])
+    try:
+        subprocess.run(args, capture_output=True, timeout=300, check=True)
+        path = os.path.join(root, "write", "script-output", "data-raw-dump.json")
+        with open(path) as fh:
+            pal = palette_from_dump(json.load(fh))
+        os.remove(path)
+        store.put_json(key, pal)
+        return key
+    except (subprocess.SubprocessError, OSError, ValueError):
+        return None
 
 
 def terrain(store, exe: str, mods: str | None, map_gen: str | None, work: str, seed, planet: str,
@@ -139,7 +256,8 @@ def capture(store, server, arm: str, session: str, map_gen: str | None, work: st
     surfaces = json.loads(server.lua(LUA_SURFACES) or "[]")
     tick = server.tick()
     out_dir = os.path.join(server.write, "script-output")
-    index = {"tick": tick, "time": time.time(), "surfaces": []}
+    index = {"tick": tick, "time": time.time(), "surfaces": [],
+             "palette": palette(store, server.exe, server.mods, work)}
     for s in surfaces:
         if not s.get("entities") and not s.get("enemies"):
             continue
@@ -150,7 +268,7 @@ def capture(store, server, arm: str, session: str, map_gen: str | None, work: st
                 rows = _parse(fh.read())
         except OSError:
             continue
-        window = _window([r for r in rows if r[7] != "enemy"] or rows)
+        window = _window([r for r in rows if r[7] != "enemy" and not r[0].endswith("-robot")] or rows)
         tkey = None
         if not s.get("platform") and s.get("planet"):
             tkey = terrain(store, server.exe, server.mods, map_gen, work, s.get("seed"), s["planet"], window)

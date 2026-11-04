@@ -128,7 +128,20 @@ def _copy_maps(store, site: str, data: dict):
             surfaces.append({"name": s["name"], "planet": s.get("planet"), "platform": s.get("platform"),
                              "entities": ename, "terrain": tname, "window": s.get("window"),
                              "count": s.get("count")})
-        data["maps"][sid] = {"tick": idx.get("tick"), "time": idx.get("time"), "surfaces": surfaces}
+        pal = None
+        if idx.get("palette"):
+            pal = f"maps/palette/{os.path.basename(idx['palette'])}"
+            ppath = os.path.join(site, pal)
+            if not os.path.exists(ppath):
+                raw = store.get(idx["palette"])
+                if raw is not None:
+                    os.makedirs(os.path.dirname(ppath), exist_ok=True)
+                    with open(ppath, "wb") as fh:
+                        fh.write(raw)
+                else:
+                    pal = None
+        data["maps"][sid] = {"tick": idx.get("tick"), "time": idx.get("time"), "surfaces": surfaces,
+                             "palette": pal}
 
 
 def write_site(store, site: str):
