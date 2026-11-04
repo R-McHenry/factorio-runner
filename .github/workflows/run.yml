@@ -22,6 +22,9 @@ on:
       prefix:
         description: "store prefix inside the bucket"
         default: "v0"
+      store:
+        description: "s3 (when the repo variables are set) or local (one job, uploaded as an artifact)"
+        default: "s3"
 permissions:
   contents: read
   id-token: write
@@ -37,7 +40,7 @@ jobs:
       - id: m
         run: |
           J=${{ inputs.jobs }}
-          if [ -z "${{ vars.STORE_BUCKET }}" ] || [ "${{ inputs.cmd }}" != episode ]; then J=1; fi
+          if [ -z "${{ vars.STORE_BUCKET }}" ] || [ "${{ inputs.store }}" = local ] || [ "${{ inputs.cmd }}" != episode ]; then J=1; fi
           echo "matrix=$(python3 -c "import json; print(json.dumps(list(range(int('$J')))))")" >> "$GITHUB_OUTPUT"
   run:
     needs: plan
@@ -63,13 +66,13 @@ jobs:
         shell: bash
         run: python -c "import os; from runner.server import ensure_factorio as e; print(e('2.0.77', os.path.expanduser('~/.cache/factorio')))" | tee factorio-bin
       - name: OIDC claims (what the AWS trust policy must match; not secret)
-        if: ${{ vars.AWS_ROLE_ARN != '' && inputs.cmd != 'ping' }}
+        if: ${{ vars.AWS_ROLE_ARN != '' && inputs.cmd != 'ping' && inputs.store != 'local' }}
         shell: bash
         run: |
           T=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | python3 -c "import json,sys; print(json.load(sys.stdin)['value'])")
           python3 -c "import base64,json,sys; p=sys.argv[1].split('.')[1]; p+='='*(-len(p)%4); c=json.loads(base64.urlsafe_b64decode(p)); print(json.dumps({k: c.get(k) for k in ('iss','aud','sub','repository','repository_owner','ref','job_workflow_ref')}, indent=1))" "$T"
       - name: AWS (OIDC)
-        if: ${{ vars.AWS_ROLE_ARN != '' && inputs.cmd != 'ping' }}
+        if: ${{ vars.AWS_ROLE_ARN != '' && inputs.cmd != 'ping' && inputs.store != 'local' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
@@ -78,7 +81,7 @@ jobs:
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: |
-          if [ -n "${{ vars.STORE_BUCKET }}" ] && [ "${{ inputs.cmd }}" != ping ]; then STORE="s3://${{ vars.STORE_BUCKET }}/${{ inputs.prefix }}"; else STORE=./store; fi
+          if [ -n "${{ vars.STORE_BUCKET }}" ] && [ "${{ inputs.cmd }}" != ping ] && [ "${{ inputs.store }}" != local ]; then STORE="s3://${{ vars.STORE_BUCKET }}/${{ inputs.prefix }}"; else STORE=./store; fi
           FACTORIO_BIN=$(cat factorio-bin) python -m runner ${{ inputs.cmd }} ${{ inputs.arm }} \
             --store "$STORE" -n ${{ inputs.n }} --transcript --out ./out
       - name: Upload the sessions' steps and results
@@ -90,7 +93,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
       - name: Upload the local store (no S3 yet)
-        if: ${{ always() && vars.STORE_BUCKET == '' && inputs.cmd != 'ping' }}
+        if: ${{ always() && (vars.STORE_BUCKET == '' || inputs.store == 'local') && inputs.cmd != 'ping' }}
         uses: actions/upload-artifact@v4
         with:
           name: store-${{ github.run_id }}-${{ matrix.job }}
