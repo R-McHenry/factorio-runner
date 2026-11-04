@@ -388,6 +388,52 @@ class TrimTest(unittest.TestCase):
         self.assertTrue(all(len(a) < 300 for a in args))
 
 
+class ClaudeProviderTest(unittest.TestCase):
+    """Claude Code is a CLI, not an HTTP endpoint: check the session flags and the structured
+    one-tool-call reply without needing a login."""
+    tools = [{"type": "function", "function": {"name": "evaluate", "description": "run", "parameters": {}}},
+             {"type": "function", "function": {"name": "finish", "description": "end", "parameters": {}}}]
+
+    def test_session_flags_and_one_tool_call(self):
+        import json as _json
+        from types import SimpleNamespace
+        from unittest import mock
+        from runner.agent.llm import ClaudeCLI
+
+        def reply(tool):
+            out = {"thought": "t", "tool": tool, "args": {"ticks": 60} if tool == "evaluate" else {"summary": "s"}}
+            return SimpleNamespace(returncode=0, stderr="", stdout=_json.dumps({
+                "type": "result", "subtype": "success", "is_error": False, "result": _json.dumps(out),
+                "structured_output": out, "usage": {"input_tokens": 10, "cache_read_input_tokens": 90,
+                "cache_creation_input_tokens": 5, "output_tokens": 7}, "total_cost_usd": 0.01}))
+
+        c = ClaudeCLI(model="opus", billing="subscription")
+        msgs = [{"role": "system", "content": "play"}, {"role": "user", "content": "start"}]
+        with mock.patch("runner.agent.llm.subprocess.run", return_value=reply("evaluate")) as run:
+            r = c.complete(msgs, self.tools)
+        cmd = run.call_args[0][0]
+        self.assertIn("--session-id", cmd)
+        self.assertNotIn("--resume", cmd)
+        self.assertEqual(r.message["tool_calls"][0]["function"]["name"], "evaluate")
+        self.assertEqual(r.usage, {"in_hit": 90, "in_miss": 15, "out": 7, "reasoning": 0})
+        self.assertEqual(r.usd, 0.0)                    # subscription, not per-token dollars
+
+        msgs += [r.message, {"role": "tool", "tool_call_id": "x", "content": "tick 60"}]
+        with mock.patch("runner.agent.llm.subprocess.run", return_value=reply("finish")) as run:
+            r2 = c.complete(msgs, self.tools)
+        cmd = run.call_args[0][0]
+        self.assertIn("--resume", cmd)
+        self.assertEqual(r2.message["tool_calls"][0]["function"]["name"], "finish")
+
+    def test_no_tool_call_is_plain_text(self):
+        from runner.agent.llm import ClaudeCLI
+        c = ClaudeCLI()
+        usage = c._usage({"usage": {"input_tokens": 1}})
+        r = c._reply({"result": "FACT: a fact"}, None, usage)
+        self.assertEqual(r.message["content"], "FACT: a fact")
+        self.assertFalse(r.message.get("tool_calls"))
+
+
 class ModSettingsTest(unittest.TestCase):
     def test_early_bots_settings_file_matches_its_source(self):
         import json

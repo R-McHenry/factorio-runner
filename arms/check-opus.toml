@@ -1,0 +1,52 @@
+# Cheap Opus check: prove the Claude CLI authenticates in Actions, the runner's structured
+# tool call parses, and the ladder prompt reaches the model. Four turns, one session.
+arm = "check-opus"
+
+[game]
+factorio = "2.0.77"
+mods = "../game/space-age-early/mods"
+map_gen = "../game/space-age/map-gen-settings.json"
+map_settings = "../game/space-age/map-settings.json"
+seed = 1
+kit = "kickoff-early-bots"
+codebase = "../game/space-age-early/codebase"
+
+[agent]
+provider = "claude"
+provider_name = "claude"
+model = "opus"
+binary = "claude"
+billing = "subscription"
+timeout = 1200
+max_retries = 2
+
+[toolkit]
+profile = "fk"
+pack = "sa-early"
+timeout_s = 900
+
+[prompt]
+layers = ["l0-lab-fk", "l2-scalable"]
+facts_p = 0.5
+
+[objective]
+mode = "ladder"
+
+[episode]
+max_turns = 4
+max_usd = 1000.0
+max_ticks = 1200000
+goal_dist = 3
+check_every = 600
+eval_cap = 36000
+snapshot_every = 7200
+
+[budget]
+monthly_usd = 0.0
+hard_usd = 0.0
+
+[session]
+episodes = 1
+next = "select"
+max_usd = 1000.0
+context_limit = 50000
