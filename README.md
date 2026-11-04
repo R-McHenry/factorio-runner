@@ -13,3 +13,16 @@ python -m runner show    arms/test-scripted.toml --store ./store
 
 Arms are TOML files in `arms/`. Store: a directory or `s3://bucket/prefix`. In CI the `run`
 workflow dispatches `fresh`, `episode`, `show` or `ping` for an arm.
+
+## Objectives
+
+By default an episode gets a production-cell goal (`goal_dist` steps up from what the force can
+make). An arm can instead play to win:
+
+```toml
+[objective]
+mode = "ladder"      # red/green/blue science -> rocket silo -> first rocket
+```
+
+`runner/objective.py` holds the ladder. The episode ends on a legit `rockets_launched >= 1`, and
+`episode.max_ticks` sets the game-time horizon (`arms/sa-deepseek-fk-win.toml` uses 1.2M ticks).

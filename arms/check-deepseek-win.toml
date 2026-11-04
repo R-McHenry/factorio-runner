@@ -1,0 +1,54 @@
+# A cheap look at the win arm: one short session that should prove the ladder is in the prompt,
+# the agent works the first rung, and the victory check reads a real game (store prefix cloud-checks).
+arm = "check-deepseek-win"
+
+[game]
+factorio = "2.0.77"
+mods = "../game/space-age-early/mods"
+map_gen = "../game/space-age/map-gen-settings.json"
+map_settings = "../game/space-age/map-settings.json"
+seed = 1
+kit = "kickoff-early-bots"
+codebase = "../game/space-age-early/codebase"
+
+[agent]
+provider = "openai"
+provider_name = "deepseek"
+base_url = "https://api.deepseek.com"
+model = "deepseek-flash"
+api_key_env = "DEEPSEEK_API_KEY"
+temperature = 0.7
+max_tokens = 16384
+max_tokens_ceiling = 65536
+price = { in_hit = 0.003, in_miss = 0.15, out = 0.60 }
+
+[toolkit]
+profile = "fk"
+pack = "sa-early"
+timeout_s = 900
+
+[prompt]
+layers = ["l0-lab-fk", "l2-scalable"]
+facts_p = 0.5
+
+[objective]
+mode = "ladder"
+
+[episode]
+max_turns = 20
+max_usd = 0.12
+max_ticks = 1200000
+goal_dist = 3
+check_every = 600
+eval_cap = 36000
+snapshot_every = 7200
+
+[budget]
+monthly_usd = 10.0
+hard_usd = 100.0
+
+[session]
+episodes = 1
+next = "select"
+max_usd = 0.2
+context_limit = 100000

@@ -28,7 +28,7 @@ import shutil
 import time
 import uuid
 
-from . import archive, cell as cells, facts, fk, kit, ledger, maps, node as nodes
+from . import archive, cell as cells, facts, fk, kit, ledger, maps, node as nodes, objective
 from .agent import llm as llms
 from .agent.tools import PROFILES, Toolbox, goal_text, referee
 from .server import Server, ensure_factorio
@@ -129,6 +129,7 @@ class Session:
         self.arm = spec["arm"]
         self.ep = spec["episode"]
         self.ses = spec.get("session", {})
+        self.ladder = (spec.get("objective", {}) or {}).get("mode") == "ladder"
         self.id = _uid()
         self.work = os.path.join(work, self.id)
         self.workdir = os.path.join(self.work, "work")
@@ -265,7 +266,17 @@ class Session:
             self._sample(st)
             levels = cells.cell(st["made"])
             if self.valid:
-                if self.ep_state["reached"] is None and cells.reached(levels, self.goal):
+                if self.ladder:
+                    done = [m["id"] for m in objective.status(st) if m["done"]]
+                    if done != self.ep_state["milestones"]:
+                        self.ep_state["milestones"] = done
+                        self.goal = objective.next_goal(st)
+                        self._record(role="milestone", tick=st["tick"], done=done,
+                                     next=objective.brief(st))
+                    if objective.victory(st):
+                        self.ep_state["reached"] = st["tick"]
+                        self.ep_state["victory"] = True
+                elif self.ep_state["reached"] is None and cells.reached(levels, self.goal):
                     self.ep_state["reached"] = st["tick"]
                 if (levels != self.ep_state["levels"] and st["tick"] - self.ep_state["snap_tick"]
                         >= int(self.ep.get("snapshot_every", 7200))):
@@ -275,9 +286,16 @@ class Session:
                 break
         st = nodes.read_state(self.server)
         cut = "" if done == ticks else f" (stopped after {done} of {ticks}: goal met)"
-        line = f"tick {st['tick']}{cut}; goal: {goal_text(self.goal, st['made'])}"
-        if self.valid and self.ep_state["reached"] is not None:
-            line += "\nGOAL MET. Bring NOTES.md up to date for whoever continues from here, then finish."
+        if self.ladder:
+            line = f"tick {st['tick']}{cut}; {objective.brief(st)}\n{objective.ladder_text(st)}"
+            if self.ep_state.get("victory"):
+                line += ("\nVICTORY: the rocket is away. Bring NOTES.md up to date for whoever "
+                         "continues from here, then finish.")
+        else:
+            line = f"tick {st['tick']}{cut}; goal: {goal_text(self.goal, st['made'])}"
+            if self.valid and self.ep_state["reached"] is not None:
+                line += ("\nGOAL MET. Bring NOTES.md up to date for whoever continues from here, "
+                         "then finish.")
         return line
 
     # -- bookkeeping -----------------------------------------------------------------------------
@@ -321,17 +339,18 @@ class Session:
             tick = self.server.tick() if state == "running" else (self.series[-1]["tick"] if self.series else 0)
         except Exception:
             tick = self.series[-1]["tick"] if self.series else 0
-        live, made, notes = {}, None, ""
+        live, made, notes, gst = {}, None, "", {}
         if self.server.proc is not None:     # the final push still has the game (it stops after)
             try:
                 live = json.loads(self.server.lua(LUA_LIVE) or "{}")
-                made = nodes.read_state(self.server)["made"]
+                gst = nodes.read_state(self.server)
+                made = gst["made"]
                 rs = live.get("research") or {}
                 rs["queue"] = rs.get("queue") if isinstance(rs.get("queue"), list) else []   # Lua's {} is an object
                 if isinstance((live.get("logistics") or {}).get("items"), dict):
                     live["logistics"]["items"] = []
             except Exception:
-                live, made = {}, None
+                live, made, gst = {}, None, {}
         try:
             with open(os.path.join(self.workdir, "NOTES.md"), encoding="utf-8", errors="replace") as fh:
                 notes = fh.read(6000)
@@ -346,9 +365,10 @@ class Session:
                     recent.append({"turn": st.get("turn"), "call": f"{name} {args}"[:240]})
             elif st.get("role") == "tool" and recent:
                 recent[-1]["out"] = (st.get("out") or "")[:240]
-            elif st.get("role") in ("invalid", "load", "episode"):
+            elif st.get("role") in ("invalid", "load", "episode", "milestone"):
                 recent.append({"event": st["role"], "detail": {k: v for k, v in st.items()
-                                                               if k in ("why", "state", "tick", "index", "goal")}})
+                                                               if k in ("why", "state", "tick", "index",
+                                                                        "goal", "done", "next")}})
         status = {
             "session": self.id, "arm": self.arm, "model": self.spec["agent"].get("model"),
             "profile": self.spec["toolkit"]["profile"], "state": state, "updated": now,
@@ -357,14 +377,17 @@ class Session:
             "last_call": self.last_call[:300], "facts": len(getattr(self, "facts_drawn", [])),
             "episode": {"index": es.get("index"), "id": es.get("id"), "goal": goal,
                         "start_tick": es.get("tick0"), "reached_tick": es.get("reached"),
-                        "end_tick": es.get("tick_end"),
+                        "end_tick": es.get("tick_end"), "ladder": es.get("ladder"),
+                        "victory": bool(es.get("victory")),
+                        "milestones": objective.status(gst) if (es.get("ladder") and gst.get("made") is not None)
+                        else None,
                         "progress": {i: [int(made.get(i, 0)), cells.count_for(lv)] for i, lv in goal.items()}
                         if made is not None else None} if es else None,
             "research": live.get("research"), "logistics": live.get("logistics"),
             "notes": notes, "recent": recent[-14:],
             "episodes_done": [{k: r.get(k) for k in ("index", "id", "reached_tick", "stop", "turns", "usd",
                                                      "start_tick", "end_tick", "end_valid", "invalid_marks",
-                                                     "goal", "facts_written")}
+                                                     "goal", "victory", "milestones", "facts_written")}
                               for r in self.results]}
         try:
             self.store.put_json(f"status/{self.arm}/{self.id}.json", status)
@@ -519,11 +542,17 @@ class Session:
         else:
             tick0 = self.server.tick()
         st = nodes.read_state(self.server)
-        self.goal = cells.make_goal(cells.cell(st["made"]), st["can"], int(self.ep.get("goal_dist", 3)), self.rng)
+        if self.ladder:
+            self.goal = objective.next_goal(st)
+        else:
+            self.goal = cells.make_goal(cells.cell(st["made"]), st["can"],
+                                        int(self.ep.get("goal_dist", 3)), self.rng)
         self.ep_state = {"id": eid, "start": start, "tick_end": tick0 + int(self.ep.get("max_ticks", 216000)),
                          "levels": cells.cell(st["made"]), "snap_tick": tick0, "reached": None,
                          "offered": [], "usd0": self.usd, "turns0": self.turns, "invalid0": self.n_invalid,
-                         "index": index, "tick0": tick0}
+                         "index": index, "tick0": tick0, "ladder": self.ladder,
+                         "victory": False, "milestones": [m["id"] for m in objective.status(st) if m["done"]]
+                         if self.ladder else []}
         self._sample(st, force=True)
         self.states = {k: v for k, v in self.states.items() if not moved}
         self._save("start", valid=True)
@@ -534,12 +563,25 @@ class Session:
                 notes = fh.read()
         head = (f"EPISODE {index + 1}. " + ("" if index == 0 else
                 ("You are now in a different saved game. " if moved else "Continue from where you are. ")))
-        msg = (f"{head}The game is at tick {tick0} ({tick0 / 216000:.2f} game hours in); "
-               f"research done: {st['researched']} technologies.\n\n"
-               f"GOAL: produce, in total since the game began, at least: {goal_text(self.goal, st['made'])}.\n"
-               f"A legit run has up to {self.ep_state['tick_end'] - tick0} game ticks for it, and you "
-               f"have {self.ep.get('max_turns', 60)} turns. Fewer game ticks is better. State 'start' "
-               f"is saved.\n")
+        if self.ladder:
+            cur = objective.current(st)
+            target = (goal_text(self.goal, st["made"]) if self.goal
+                      else (cur["label"] if cur else "none"))
+            msg = (f"{head}The game is at tick {tick0} ({tick0 / 216000:.2f} game hours in); "
+                   f"research done: {st['researched']} technologies.\n\n"
+                   f"WIN OBJECTIVE: launch the first rocket. Milestones, in order:\n"
+                   f"{objective.ladder_text(st)}\n"
+                   f"Your target now: {target}.\n"
+                   f"A legit run has up to {self.ep_state['tick_end'] - tick0} game ticks, and you "
+                   f"have {self.ep.get('max_turns', 60)} turns. Fewer game ticks to the launch is "
+                   f"better. State 'start' is saved.\n")
+        else:
+            msg = (f"{head}The game is at tick {tick0} ({tick0 / 216000:.2f} game hours in); "
+                   f"research done: {st['researched']} technologies.\n\n"
+                   f"GOAL: produce, in total since the game began, at least: {goal_text(self.goal, st['made'])}.\n"
+                   f"A legit run has up to {self.ep_state['tick_end'] - tick0} game ticks for it, and you "
+                   f"have {self.ep.get('max_turns', 60)} turns. Fewer game ticks is better. State 'start' "
+                   f"is saved.\n")
         if moved:
             msg += f"\nThe notes left in this game's work dir (NOTES.md):\n\n{notes}"
         if index > 0:
@@ -614,6 +656,8 @@ class Session:
             "id": eid, "session": self.id, "index": index, "arm": self.arm, "start_node": start.id,
             "start_key": start_key, "moved": moved, "start_tick": tick0, "end_tick": end["tick"],
             "end_valid": self.valid, "goal": self.goal, "reached_tick": self.ep_state["reached"],
+            "ladder": self.ladder, "victory": bool(self.ep_state.get("victory")),
+            "milestones": self.ep_state.get("milestones", []),
             "stop": stop, "turns": turns, "usd": round(self.usd - self.ep_state["usd0"], 6),
             "offered": self.ep_state["offered"], "invalid_marks": self.n_invalid - self.ep_state["invalid0"],
             "states_saved": len(self.states), "facts_included": self.facts_drawn,

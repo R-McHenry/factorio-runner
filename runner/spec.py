@@ -13,6 +13,7 @@ DEFAULTS = {
                 "trim_at": 40000, "trim_keep": 8},
     "prompt": {"layers": ["l0-lab-bare"], "facts_p": 0.5},
     "toolkit": {"profile": "bare"},
+    "objective": {"mode": "cells"},   # "cells": open-ended production goals; "ladder": win a rocket
     "budget": {"monthly_usd": 10.0, "hard_usd": 0},   # target (shown) and limit (0: none)
 }
 

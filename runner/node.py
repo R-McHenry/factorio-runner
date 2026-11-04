@@ -78,11 +78,12 @@ def unpack_dir(data: bytes, path: str):
 
 
 def read_state(server) -> dict:
-    """{tick, made, can, researched} from the game (reads are free in the lab)."""
+    """{tick, made, can, researched, silos, rockets} from the game (reads are free in the lab)."""
     got = json.loads(server.lua(cells.LUA_MADE) or "{}")
     made = got.get("made") or {}
     return {"tick": int(got.get("tick", 0)), "made": made if isinstance(made, dict) else {},
-            "can": list(got.get("can") or []), "researched": int(got.get("researched", 0))}
+            "can": list(got.get("can") or []), "researched": int(got.get("researched", 0)),
+            "silos": int(got.get("silos", 0)), "rockets": int(got.get("rockets", 0))}
 
 
 def snapshot(store, server, workdir: str, arm: str, parent: str | None, episode: str | None,

@@ -5,7 +5,7 @@ import tempfile
 import threading
 import unittest
 
-from runner import archive, cell, facts, ledger
+from runner import archive, cell, facts, ledger, objective
 from runner.agent.tools import referee
 from runner.node import Node, pack_dir, unpack_dir
 from runner.store import LocalStore
@@ -20,6 +20,39 @@ class CellTest(unittest.TestCase):
         self.assertTrue(goal)
         self.assertFalse(cell.reached(lv, goal))
         self.assertEqual(cell.count_for(10), 1024)
+
+
+class ObjectiveTest(unittest.TestCase):
+    def state(self, made=None, silos=0, rockets=0):
+        return {"made": made or {}, "silos": silos, "rockets": rockets}
+
+    def test_ladder_walks_in_order(self):
+        st = self.state()
+        self.assertEqual(objective.next_goal(st), {"automation-science-pack": 4})
+        self.assertFalse(objective.victory(st))
+        st["made"]["automation-science-pack"] = 16
+        self.assertEqual(objective.next_goal(st), {"logistic-science-pack": 5})
+        st["made"]["logistic-science-pack"] = 32
+        self.assertEqual(objective.next_goal(st), {"chemical-science-pack": 5})
+        st["made"]["chemical-science-pack"] = 32
+        self.assertEqual(objective.next_goal(st), {})          # silo: no production count
+        self.assertEqual(objective.current(st)["id"], "silo")
+        st["silos"] = 1
+        self.assertEqual(objective.current(st)["id"], "rocket")
+        self.assertEqual(objective.next_goal(st), {})
+        st["rockets"] = 1
+        self.assertIsNone(objective.current(st))
+        self.assertTrue(objective.victory(st))
+        self.assertIn("VICTORY", objective.brief(st))
+
+    def test_ladder_text_marks_progress(self):
+        st = self.state({"automation-science-pack": 3})
+        text = objective.ladder_text(st)
+        self.assertIn("[ ] red science automated (3/16)  <- now", text)
+        self.assertIn("[ ] rocket launched (0/1)", text)
+        st["made"]["automation-science-pack"] = 16
+        self.assertIn("[x] red science automated (16/16)", objective.ladder_text(st))
+        self.assertIn("[ ] green science automated (0/32)  <- now", objective.ladder_text(st))
 
 
 class StoreTest(unittest.TestCase):

@@ -25,7 +25,12 @@ local list = {}
 for name in pairs(can) do list[#list + 1] = name end
 local done = 0
 for _, t in pairs(f.technologies) do if t.researched then done = done + 1 end end
-rcon.print(helpers.table_to_json({tick = game.tick, made = made, can = list, researched = done}))
+local silos = 0
+for _, s in pairs(game.surfaces) do
+  silos = silos + s.count_entities_filtered{name = 'rocket-silo', force = 'player'}
+end
+rcon.print(helpers.table_to_json({tick = game.tick, made = made, can = list, researched = done,
+                                  silos = silos, rockets = f.rockets_launched or 0}))
 """
 
 
