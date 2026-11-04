@@ -1,5 +1,9 @@
 data:extend({
   { type = "bool-setting", name = "fk-early-bots", setting_type = "startup", default_value = true, order = "a" },
+  -- 0.5 (Rory, 11-04: "the price to craft them should be a lot higher, like 10x"): the robots' and
+  -- roboport's ingredients times this; 1 keeps 0.4's recipes
+  { type = "int-setting", name = "fk-early-bots-cost", setting_type = "startup", default_value = 1,
+    minimum_value = 1, maximum_value = 100, order = "a2" },
   { type = "bool-setting", name = "fk-loot-chests", setting_type = "runtime-global", default_value = true, order = "b" },
   -- one chest per SPACING x SPACING chunks, never inside the first ring around spawn
   { type = "int-setting", name = "fk-loot-spacing", setting_type = "runtime-global", default_value = 5, minimum_value = 2, order = "c" },

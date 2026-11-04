@@ -23,7 +23,12 @@ local function icons_of(proto)
   return { { icon = proto.icon, icon_size = proto.icon_size or 64, tint = TINT } }
 end
 
-local function clone(kind, from, name, entity_tweak, ingredients)
+local COST = settings.startup["fk-early-bots-cost"] and settings.startup["fk-early-bots-cost"].value or 1
+
+local function clone(kind, from, name, entity_tweak, base_ingredients)
+  -- a fresh list: the robots share BOT_COST, so scaling it in place would scale it twice
+  local ingredients = {}
+  for _, i in pairs(base_ingredients) do ingredients[#ingredients + 1] = { type = i.type, name = i.name, amount = i.amount * COST } end
   local e = table.deepcopy(data.raw[kind][from])
   local item = table.deepcopy(data.raw.item[from])
   e.name = name

@@ -1,7 +1,8 @@
 {
-  "note": "source of mod-settings.dat (runner.modsettings.write); loot chests off for a land map, worms removed as in the mod's default",
+  "note": "source of mod-settings.dat (runner.modsettings.write); robots and roboport cost 10x (Rory, 11-04), loot chests off for a land map, worms removed as in the mod's default",
   "startup": {
-    "fk-early-bots": true
+    "fk-early-bots": true,
+    "fk-early-bots-cost": 10
   },
   "runtime-global": {
     "fk-loot-chests": false,

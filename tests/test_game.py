@@ -100,3 +100,8 @@ class EarlyBotsTest(unittest.TestCase):
                 got = srv.lua("local s = game.surfaces[1] local n = s.find_entity('fk-early-roboport', {8, 8}).logistic_network "
                               "rcon.print(s.count_entities_filtered{name = 'assembling-machine-1'} .. ' ' .. n.all_construction_robots)")
                 self.assertEqual(got, "1 50")
+                # 10x the 0.4 recipes (mod-settings fk-early-bots-cost = 10), each robot scaled once
+                costs = srv.lua("local o = {} for _, n in pairs({'fk-early-construction-robot', 'fk-early-logistic-robot', "
+                                "'fk-early-roboport'}) do o[#o + 1] = prototypes.recipe[n].ingredients[1].amount end "
+                                "rcon.print(table.concat(o, ' '))")
+                self.assertEqual(costs, "80 80 300")
