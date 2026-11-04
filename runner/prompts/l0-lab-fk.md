@@ -27,7 +27,7 @@ Your codebase is `game/` in your work dir. It's the source of truth for your bas
 6. **Change the design and build again** to fix or grow it. Don't patch the world by hand: the next
    build would undo it, and the design would stop describing the base.
 
-`fk` runs in `game/`, so a command's GAME_DIR is `.`. `fk help` lists every command of this toolkit
+`fk` runs in `game/`, so a command's GAME_DIR is `.` (paths may be written with or without `game/`). `fk help` lists every command of this toolkit
 (2.1.30) and wins where the docs (written for 2.0.43, on Windows: read `\` as `/`) disagree. Free
 reads: `fk stats .`, `fk stock .`, `fk research .`, `fk tech . NAME`, `fk recipes .`. Queue research
 with `fk research . TECH`.

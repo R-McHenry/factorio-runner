@@ -1,6 +1,6 @@
 [
  {"tool": "fk", "args": {"args": "help"}},
- {"tool": "fk", "args": {"args": "research ."}},
+ {"tool": "fk", "args": {"args": "research game"}},
  {"tool": "fk", "args": {"args": "wait . built"}},
  {"tool": "fk", "args": {"args": "lua . rcon.print('quotes ' .. \"kept\")"}},
  {"tool": "save_state", "args": {"name": "code-a"}},

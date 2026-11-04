@@ -66,6 +66,10 @@ def run(args: str, cwd: str, server, pack: str | None, timeout: float = 900) -> 
         argv = parts if len(parts) == 3 else shlex.split(raw)
     else:
         argv = shlex.split(raw)
+    # fk runs in game/, while the file tools take paths from the work dir: accept both spellings
+    # (game/docs/x.fk and docs/x.fk name the same file here; the first DeepSeek toolkit session
+    # lost turns to the doubled game/game/...)
+    argv = [a[len("game/"):] if a.startswith("game/") else ("." if a == "game" else a) for a in argv]
     if not argv or argv[0] in ("help", "-h", "--help"):
         return 0, help_text()
     if argv[0] in REDIRECT:
