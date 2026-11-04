@@ -28,7 +28,7 @@ import shutil
 import time
 import uuid
 
-from . import archive, cell as cells, facts, kit, ledger, node as nodes
+from . import archive, cell as cells, facts, kit, ledger, maps, node as nodes
 from .agent import llm as llms
 from .agent.tools import PROFILES, Toolbox, goal_text, referee
 from .server import Server, ensure_factorio
@@ -108,6 +108,7 @@ class Session:
         self.started = time.time()
         self.last_call = ""
         self._pushed = 0.0
+        self._mapped = 0.0
 
     # -- what the tools call ---------------------------------------------------------------------
     def status_tag(self) -> str:
@@ -255,6 +256,20 @@ class Session:
                                                                       "samples": self.series})
         except Exception as e:  # the page is a nicety; a store hiccup must not end the session
             self.log(f"  status push failed: {e}")
+        self._map(force=force and state == "running")
+
+    def _map(self, force: bool = False):
+        """Maps of every surface for the status page, at most every `session.map_every_s` (120 s)."""
+        every = float(self.ses.get("map_every_s", 120))
+        now = time.time()
+        if every <= 0 or (not force and now - self._mapped < every):
+            return
+        self._mapped = now
+        try:
+            maps.capture(self.store, self.server, self.arm, self.id, self.spec["_paths"].get("map_gen"),
+                         os.path.join(self.work, "maps"))
+        except Exception as e:  # a map is a nicety too
+            self.log(f"  map capture failed: {e}")
 
     def _ask(self, messages, tools=None):
         r = self.client.complete(messages, tools)
@@ -319,6 +334,7 @@ class Session:
             except Exception:
                 pass
             self._push(final, force=True)
+            self._map(force=True)
             self.server.stop()
             try:
                 self.store.put(f"steps/{self.arm}/{self.id}.jsonl", ("\n".join(self.steps) + "\n").encode())
@@ -423,6 +439,7 @@ class Session:
                 self._record(role="tool", turn=self.turns, name=c["function"]["name"], out=out[:4000])
                 self.last_call = f"{c['function']['name']} {c['function']['arguments'] or ''}"
                 self._push()
+        self._map(force=True)
         # the knowledge step
         self.messages.append({"role": "user", "content": facts.KNOWLEDGE_PROMPT})
         r = self._ask(self.messages)

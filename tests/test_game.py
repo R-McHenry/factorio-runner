@@ -60,6 +60,13 @@ class GameTest(unittest.TestCase):
             self.assertTrue(built.startswith("1\n"), built)    # robots built the ghost
             arch = archive.get(store, spec["arm"])
             self.assertEqual(arch["episodes"], 2)
+            # maps for the status page: nauvis with the kit on it, on a cached terrain preview
+            idx = store.get_json(f"maps/{spec['arm']}/{ses.id}/index.json")
+            nauvis = next(s for s in idx["surfaces"] if s["name"] == "nauvis")
+            self.assertGreaterEqual(nauvis["count"], 16)
+            self.assertTrue(store.get(nauvis["terrain"]).startswith(b"\x89PNG"))
+            ents = store.get_json(nauvis["entities"])
+            self.assertIn("roboport", ents["types"])
 
 
 if __name__ == "__main__":

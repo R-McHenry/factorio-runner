@@ -92,9 +92,49 @@ def collect(store, stale_s: int = RUNNING_S) -> dict:
     return data
 
 
+MAP_SESSIONS = 12        # sessions whose latest maps the site carries (the most recently updated)
+
+
+def _copy_maps(store, site: str, data: dict):
+    """Each recent session's latest maps into DIR/maps/, with site-relative paths in data["maps"].
+    Terrain previews are copied once (their names are content keys); entity files every run."""
+    data["maps"] = {}
+    for st in data["sessions"][:MAP_SESSIONS]:
+        arm, sid = st["arm"], st["session"]
+        idx = store.get_json(f"maps/{arm}/{sid}/index.json")
+        if not idx:
+            continue
+        surfaces = []
+        for s in idx.get("surfaces", []):
+            ent = store.get(s["entities"])
+            if ent is None:
+                continue
+            ename = f"maps/{sid}/{os.path.basename(s['entities'])}"
+            os.makedirs(os.path.join(site, os.path.dirname(ename)), exist_ok=True)
+            with open(os.path.join(site, ename), "wb") as fh:
+                fh.write(ent)
+            tname = None
+            if s.get("terrain"):
+                tname = f"maps/terrain/{os.path.basename(s['terrain'])}"
+                tpath = os.path.join(site, tname)
+                if not os.path.exists(tpath):
+                    png = store.get(s["terrain"])
+                    if png is not None:
+                        os.makedirs(os.path.dirname(tpath), exist_ok=True)
+                        with open(tpath, "wb") as fh:
+                            fh.write(png)
+                    else:
+                        tname = None
+            surfaces.append({"name": s["name"], "planet": s.get("planet"), "platform": s.get("platform"),
+                             "entities": ename, "terrain": tname, "window": s.get("window"),
+                             "count": s.get("count")})
+        data["maps"][sid] = {"tick": idx.get("tick"), "time": idx.get("time"), "surfaces": surfaces}
+
+
 def write_site(store, site: str):
     os.makedirs(site, exist_ok=True)
     data = collect(store)
+    _copy_maps(store, site, data)
     tmp = os.path.join(site, "data.json.tmp")
     with open(tmp, "w") as fh:
         json.dump(data, fh, separators=(",", ":"))

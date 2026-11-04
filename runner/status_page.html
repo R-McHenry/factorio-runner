@@ -10,6 +10,7 @@
   --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
   --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10);
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
   --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
 }
 @media (prefers-color-scheme: dark) {
@@ -18,6 +19,7 @@
     --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
     --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
   }
 }
 :root[data-theme="dark"] {
@@ -25,6 +27,7 @@
   --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
   --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--page); color: var(--ink);
@@ -47,6 +50,25 @@ select { font: inherit; color: var(--ink); background: var(--surface); border: 1
 .card { min-width: 0; }
 .chart { position: relative; }
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.maphead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 6px; }
+.maphead h2 { margin: 0; }
+.maphead label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
+.toggles { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 8px; }
+.toggles button { display: inline-flex; align-items: center; gap: 6px; }
+.toggles button[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
+.toggles i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.toggles i.ghost { background: none !important; border: 2px solid var(--muted); width: 10px; height: 10px; box-sizing: border-box; }
+.toggles i.x { background: none !important; position: relative; }
+.toggles i.x::before { content: "×"; position: absolute; left: -1px; top: -6px; font-size: 14px; color: var(--ink); }
+.mapvp { position: relative; height: min(70vh, 640px); min-height: 320px; border: 1px solid var(--ring); border-radius: 8px;
+  overflow: hidden; background: #111; touch-action: none; cursor: grab; }
+.mapvp.drag { cursor: grabbing; }
+.mapvp canvas { display: block; width: 100%; height: 100%; }
+.mapvp .ctl { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; }
+.mapvp .ctl button { width: 32px; height: 32px; padding: 0; font-size: 16px; background: var(--surface); color: var(--ink); }
+.mapvp .coord { position: absolute; right: 8px; bottom: 8px; background: var(--surface); color: var(--ink-2);
+  border: 1px solid var(--ring); border-radius: 6px; padding: 3px 8px; font-size: 12px; font-variant-numeric: tabular-nums; pointer-events: none; }
+.mapvp .empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #bbb; }
 .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--ring);
   border-radius: 8px; padding: 6px 8px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.12);
   white-space: nowrap; display: none; z-index: 2; }
@@ -93,6 +115,17 @@ button { font: inherit; font-size: 12px; color: var(--ink-2); background: none; 
 <section class="card" style="margin-bottom:16px">
   <h2>Sessions</h2>
   <div class="scroll"><table id="sesTable"></table></div>
+</section>
+
+<section class="card" style="margin-bottom:16px">
+  <div class="maphead"><h2>Map</h2>
+    <label>Surface <select id="surfSel"></select></label>
+    <span class="sub" id="mapMeta"></span></div>
+  <div class="toggles" id="mapToggles"></div>
+  <div class="mapvp" id="mapVp"><canvas id="mapCv" role="img" aria-label="Map of the selected surface"></canvas>
+    <div class="ctl"><button type="button" id="mapIn" aria-label="Zoom in">+</button><button type="button" id="mapOut" aria-label="Zoom out">−</button><button type="button" id="mapFit" aria-label="Fit to view">□</button></div>
+    <div class="coord" id="mapCo">x –, y –</div><div class="tip" id="mapTip"></div></div>
+  <details><summary>Data table</summary><div class="scroll" id="mapTable"></div></details>
 </section>
 
 <section class="grid">
@@ -331,6 +364,193 @@ function render() {
       e.reached_tick != null ? el("span", {class: "badge"}, [el("span", {class: "dot", style: "background:var(--good)"}), el("span", {text: `✓ reached at ${gameTime(e.reached_tick)}`})]) : e.stop,
       gameTime(Math.max(0, (e.end_tick || 0) - (e.start_tick || 0))), e.turns, usd(e.usd), e.invalid_marks || 0]), [2, 6, 7, 8]);
 }
+
+
+// ---- map: terrain from Factorio's map-preview renderer, entities drawn on a canvas -------------
+const CATS = [
+  {id: "inserters", label: "inserters", color: "--s1", types: ["inserter"]},
+  {id: "furnaces", label: "furnaces", color: "--s2", types: ["furnace"]},
+  {id: "crafting", label: "crafting", color: "--s3", types: ["assembling-machine", "lab", "rocket-silo", "agricultural-tower"]},
+  {id: "belts", label: "belts", color: "--s4", types: ["transport-belt", "underground-belt", "splitter", "loader", "loader-1x1", "linked-belt", "lane-splitter"]},
+  {id: "mining", label: "mining", color: "--s5", types: ["mining-drill", "offshore-pump"]},
+  {id: "power", label: "power", color: "--s6", types: ["electric-pole", "solar-panel", "accumulator", "boiler", "generator", "reactor", "heat-pipe", "burner-generator", "fusion-reactor", "fusion-generator", "lightning-attractor", "power-switch", "electric-energy-interface"]},
+  {id: "logistics", label: "logistics", color: "--s7", types: ["roboport", "container", "logistic-container", "cargo-landing-pad", "space-platform-hub", "linked-container", "infinity-container"]},
+  {id: "fluids", label: "fluids", color: "--s8", types: ["pipe", "pipe-to-ground", "pump", "storage-tank", "infinity-pipe"]},
+  {id: "other", label: "other", color: "--ink-2", types: null},
+];
+const CAT_OF = {};
+for (const c of CATS) for (const t of c.types || []) CAT_OF[t] = c.id;
+const catOf = t => CAT_OF[t] || "other";
+const MAP = {sid: null, surf: null, key: null, ents: null, img: null, view: null, hidden: new Set(), list: []};
+try { for (const h of JSON.parse(localStorage.getItem("runner-map-hidden") || "[]")) MAP.hidden.add(h); } catch (e) {}
+
+function mapToggles() {
+  const node = document.getElementById("mapToggles"); node.replaceChildren();
+  const add = (id, label, icon) => {
+    const b = el("button", {type: "button", "aria-pressed": String(!MAP.hidden.has(id))}, [icon, el("span", {text: label})]);
+    b.addEventListener("click", () => { MAP.hidden.has(id) ? MAP.hidden.delete(id) : MAP.hidden.add(id);
+      try { localStorage.setItem("runner-map-hidden", JSON.stringify([...MAP.hidden])); } catch (e) {}
+      mapToggles(); drawMap(); });
+    node.append(b);
+  };
+  for (const c of CATS) add(c.id, c.label, el("i", {style: `background:var(${c.color})`}));
+  add("ghosts", "ghosts", el("i", {class: "ghost"}));
+  add("enemies", "enemies", el("i", {class: "x"}));
+}
+
+function mapEntities() {
+  // flatten the packed lists: [{cat, ghost, enemy, x, y, w, h, name, type}] in metres
+  const out = [];
+  if (!MAP.ents) return out;
+  for (const [key, arr] of Object.entries(MAP.ents.types)) {
+    const enemy = key.startsWith("enemy:"), ghost = key.startsWith("ghost:");
+    const type = key.replace(/^(enemy|ghost):/, "");
+    for (let i = 0; i < arr.length; i += 5)
+      out.push({cat: catOf(type), ghost, enemy, type, x: arr[i] / 2, y: arr[i + 1] / 2, w: arr[i + 2] / 2, h: arr[i + 3] / 2, name: MAP.ents.names[arr[i + 4]]});
+  }
+  return out;
+}
+
+function mapFitView() {
+  const cv = document.getElementById("mapCv"), W = cv.clientWidth, H = cv.clientHeight;
+  let x0, y0, x1, y1;
+  const s = MAP.surfInfo;
+  if (s && s.window && MAP.img) { const [cx, cy, size] = s.window; x0 = cx - size / 2; y0 = cy - size / 2; x1 = x0 + size; y1 = y0 + size; }
+  else if (MAP.list.length) { x0 = Math.min(...MAP.list.map(e => e.x)) - 16; x1 = Math.max(...MAP.list.map(e => e.x)) + 16;
+    y0 = Math.min(...MAP.list.map(e => e.y)) - 16; y1 = Math.max(...MAP.list.map(e => e.y)) + 16; }
+  else { x0 = -64; y0 = -64; x1 = 64; y1 = 64; }
+  const k = Math.min(W / (x1 - x0), H / (y1 - y0));
+  MAP.view = {k, ox: W / 2 - k * (x0 + x1) / 2, oy: H / 2 - k * (y0 + y1) / 2};
+}
+
+function drawMap() {
+  const cv = document.getElementById("mapCv"), dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = "#111"; g.fillRect(0, 0, W, H);
+  if (!MAP.view) return;
+  const {k, ox, oy} = MAP.view;
+  const s = MAP.surfInfo;
+  if (MAP.img && s && s.window) {
+    const [cx, cy, size] = s.window;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(MAP.img, ox + k * (cx - size / 2), oy + k * (cy - size / 2), k * size, k * size);
+  }
+  const colors = {}; for (const c of CATS) colors[c.id] = css(c.color);
+  const ink = css("--ink");
+  for (const e of MAP.list) {
+    if (e.enemy ? MAP.hidden.has("enemies") : (MAP.hidden.has(e.cat) || (e.ghost && MAP.hidden.has("ghosts")))) continue;
+    const w = Math.max(3, e.w * k), h = Math.max(3, e.h * k), x = ox + e.x * k - w / 2, y = oy + e.y * k - h / 2;
+    if (x > W || y > H || x + w < 0 || y + h < 0) continue;
+    if (e.enemy) {
+      const r = Math.max(3, Math.min(w, h) / 2); const cx = x + w / 2, cy = y + h / 2;
+      g.strokeStyle = "#000"; g.lineWidth = 4; g.beginPath(); g.moveTo(cx - r, cy - r); g.lineTo(cx + r, cy + r); g.moveTo(cx + r, cy - r); g.lineTo(cx - r, cy + r); g.stroke();
+      g.strokeStyle = "#fff"; g.lineWidth = 2; g.stroke();
+    } else if (e.ghost) {
+      g.strokeStyle = colors[e.cat]; g.lineWidth = 1.5; g.setLineDash([3, 2]); g.strokeRect(x + .75, y + .75, w - 1.5, h - 1.5); g.setLineDash([]);
+    } else {
+      g.fillStyle = colors[e.cat]; g.fillRect(x, y, w, h);
+      if (w >= 6 && h >= 6) { g.strokeStyle = "rgba(0,0,0,.55)"; g.lineWidth = 1; g.strokeRect(x + .5, y + .5, w - 1, h - 1); }
+    }
+  }
+  if (MAP.mark) { const mx = ox + MAP.mark.x * k, my = oy + MAP.mark.y * k;
+    g.strokeStyle = ink; g.lineWidth = 2; g.strokeRect(mx - MAP.mark.w * k / 2 - 2, my - MAP.mark.h * k / 2 - 2, MAP.mark.w * k + 4, MAP.mark.h * k + 4); }
+}
+
+async function loadMap(force) {
+  const maps = (DATA && DATA.maps) || {};
+  const m = maps[sel.session];
+  const surfSel = document.getElementById("surfSel");
+  const meta = document.getElementById("mapMeta");
+  const vp = document.getElementById("mapVp");
+  vp.querySelectorAll(".empty").forEach(n => n.remove());
+  if (!m || !m.surfaces.length) {
+    surfSel.replaceChildren(); MAP.ents = null; MAP.img = null; MAP.list = []; MAP.view = null; MAP.key = null;
+    meta.textContent = ""; drawMap();
+    vp.append(el("div", {class: "empty", text: sel.session ? "No map captured for this session yet." : "No session selected."}));
+    document.getElementById("mapTable").replaceChildren();
+    return;
+  }
+  const names = m.surfaces.map(s => s.name);
+  if (!names.includes(MAP.surf)) MAP.surf = names.includes("nauvis") ? "nauvis" : names[0];
+  surfSel.replaceChildren();
+  for (const s of m.surfaces) surfSel.append(el("option", {value: s.name, text: s.platform ? `${s.platform} (platform)` : s.planet && s.planet !== s.name ? `${s.name} (${s.planet})` : s.name}));
+  surfSel.value = MAP.surf;
+  const info = m.surfaces.find(s => s.name === MAP.surf);
+  const key = `${sel.session}|${MAP.surf}|${m.time}`;
+  meta.textContent = `${info.count} entities · captured at game time ${gameTime(m.tick || 0)}, ${ago(m.time)}`;
+  if (key === MAP.key && !force) return;
+  const sameView = MAP.key && MAP.key.split("|").slice(0, 2).join("|") === `${sel.session}|${MAP.surf}`;
+  MAP.key = key; MAP.surfInfo = info;
+  try {
+    const r = await fetch(info.entities + "?" + m.time, {cache: "no-store"});
+    MAP.ents = r.ok ? await r.json() : null;
+  } catch (e) { MAP.ents = null; }
+  MAP.list = mapEntities();
+  MAP.img = null;
+  if (info.terrain) {
+    await new Promise(res => { const im = new Image(); im.onload = () => { MAP.img = im; res(); }; im.onerror = () => res(); im.src = info.terrain; });
+  }
+  if (!sameView || !MAP.view) mapFitView();
+  drawMap();
+  // the table view: counts by category and type
+  const counts = {};
+  for (const e of MAP.list) { const k2 = `${e.enemy ? "enemies" : e.cat}|${e.type}${e.ghost ? " (ghost)" : ""}`; counts[k2] = (counts[k2] || 0) + 1; }
+  const t = el("table"); document.getElementById("mapTable").replaceChildren(t);
+  table(t, ["Category", "Type", "Count"], Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k2, n]) => [...k2.split("|"), n]), [2]);
+}
+
+(function mapInput() {
+  const vp = document.getElementById("mapVp"), cv = document.getElementById("mapCv");
+  const co = document.getElementById("mapCo"), tip = document.getElementById("mapTip");
+  const pts = new Map(); let pinch = 0;
+  const zoom = (f, cx, cy) => { if (!MAP.view) return; const v = MAP.view, k = Math.min(64, Math.max(0.05, v.k * f)); f = k / v.k;
+    v.ox = cx - (cx - v.ox) * f; v.oy = cy - (cy - v.oy) * f; v.k = k; drawMap(); };
+  const local = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  vp.addEventListener("wheel", e => { e.preventDefault(); const [x, y] = local(e); zoom(e.deltaY < 0 ? 1.2 : 1 / 1.2, x, y); }, {passive: false});
+  vp.addEventListener("pointerdown", e => { if (e.target.closest(".ctl")) return; pts.set(e.pointerId, e); vp.setPointerCapture(e.pointerId); vp.classList.add("drag"); pinch = 0; });
+  vp.addEventListener("pointermove", e => {
+    const p = pts.get(e.pointerId);
+    if (p && MAP.view) {
+      if (pts.size === 2) { const o = [...pts.values()].find(q => q.pointerId !== e.pointerId); pts.set(e.pointerId, e);
+        const d = Math.hypot(e.clientX - o.clientX, e.clientY - o.clientY);
+        if (pinch) { const [x, y] = local({clientX: (e.clientX + o.clientX) / 2, clientY: (e.clientY + o.clientY) / 2}); zoom(d / pinch, x, y); }
+        pinch = d; return; }
+      MAP.view.ox += e.clientX - p.clientX; MAP.view.oy += e.clientY - p.clientY; pts.set(e.pointerId, e); drawMap();
+    }
+    if (!MAP.view) return;
+    const [x, y] = local(e), wx = (x - MAP.view.ox) / MAP.view.k, wy = (y - MAP.view.oy) / MAP.view.k;
+    co.textContent = `x ${wx.toFixed(0)}, y ${wy.toFixed(0)}`;
+    // the entity under the pointer (or within a few pixels of it)
+    const slop = 4 / MAP.view.k; let best = null, bd = Infinity;
+    for (const en of MAP.list) {
+      if (en.enemy ? MAP.hidden.has("enemies") : (MAP.hidden.has(en.cat) || (en.ghost && MAP.hidden.has("ghosts")))) continue;
+      const dx = Math.max(0, Math.abs(wx - en.x) - en.w / 2), dy = Math.max(0, Math.abs(wy - en.y) - en.h / 2), d = Math.hypot(dx, dy);
+      if (d <= slop && d < bd) { bd = d; best = en; }
+    }
+    if (best !== MAP.mark) { MAP.mark = best; drawMap(); }
+    if (best) {
+      tip.replaceChildren(el("div", {class: "row"}, [el("b", {text: best.name})]),
+        el("div", {class: "hd", text: `${best.enemy ? "enemy " : ""}${best.type}${best.ghost ? ", ghost (not built yet)" : ""} · ${best.x}, ${best.y}`}));
+      tip.style.display = "block";
+      tip.style.left = Math.min(cv.clientWidth - tip.offsetWidth - 4, x + 14) + "px";
+      tip.style.top = Math.min(cv.clientHeight - tip.offsetHeight - 4, y + 14) + "px";
+    } else tip.style.display = "none";
+  });
+  const up = e => { pts.delete(e.pointerId); pinch = 0; if (!pts.size) vp.classList.remove("drag"); };
+  vp.addEventListener("pointerup", up); vp.addEventListener("pointercancel", up);
+  vp.addEventListener("pointerleave", () => { tip.style.display = "none"; co.textContent = "x –, y –"; if (MAP.mark) { MAP.mark = null; drawMap(); } });
+  const mid = () => [cv.clientWidth / 2, cv.clientHeight / 2];
+  document.getElementById("mapIn").addEventListener("click", () => zoom(1.5, ...mid()));
+  document.getElementById("mapOut").addEventListener("click", () => zoom(1 / 1.5, ...mid()));
+  document.getElementById("mapFit").addEventListener("click", () => { mapFitView(); drawMap(); });
+  document.getElementById("surfSel").addEventListener("change", e => { MAP.surf = e.target.value; loadMap(true); });
+  addEventListener("resize", () => drawMap());
+})();
+mapToggles();
+const renderCharts = render;
+render = function () { renderCharts(); loadMap(false); };
 
 document.getElementById("armSel").addEventListener("change", e => { sel.arm = e.target.value; sel.session = null; render(); });
 document.getElementById("sesSel").addEventListener("change", e => { sel.session = e.target.value; render(); });

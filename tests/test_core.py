@@ -178,3 +178,21 @@ class ReadOnlyTest(unittest.TestCase):
                 cli.open_store = orig
             self.assertEqual(rc, 0)
             self.assertIn("test-scripted: 0 cells", out.getvalue())
+
+
+class MapsTest(unittest.TestCase):
+    def test_parse_pack_window(self):
+        from runner import maps
+        rows = maps._parse("roboport|roboport|8.0|8.0|3.9|3.9|0|player\n"
+                           "entity-ghost|bad\n"
+                           "assembling-machine|assembling-machine-1|14.5|4.5|2.8|2.8|1|player\n"
+                           "unit-spawner|biter-spawner|300.0|-200.0|4.8|4.8|0|enemy")
+        self.assertEqual(len(rows), 3)
+        packed = maps._pack(rows)
+        self.assertEqual(set(packed["types"]), {"roboport", "ghost:assembling-machine", "enemy:unit-spawner"})
+        self.assertEqual(packed["types"]["roboport"][:4], [16, 16, 8, 8])     # half tiles
+        cx, cy, size = maps._window([r for r in rows if r[7] != "enemy"])
+        self.assertEqual((cx, cy, size), (0, 0, 256))
+        cx, cy, size = maps._window(rows)                                      # spans 300 m -> 512
+        self.assertEqual(size, 512)
+        self.assertEqual(cx % 64, 0)
