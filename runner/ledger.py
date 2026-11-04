@@ -1,8 +1,9 @@
-"""Monthly spend, kept in the store, and the guard that refuses work past the cap.
+"""Monthly spend, kept in the store.
 
-DeepSeek keys have no spending cap of their own, so the runner enforces the budget: every episode
-adds its cost to `ledger/<YYYY-MM>.json`, and `check` refuses a new episode once the month's spend
-for that provider has reached its cap.
+Every session adds its cost to `ledger/<YYYY-MM>.json`. An arm's `budget.monthly_usd` is a target:
+the status page shows spend against it and nothing stops at it. `budget.hard_usd`, if set, is a
+limit: `check` refuses a new session once the month's spend for that provider has reached it
+(DeepSeek keys have no spending cap of their own).
 """
 from __future__ import annotations
 

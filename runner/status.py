@@ -60,6 +60,7 @@ def collect(store, stale_s: int = RUNNING_S) -> dict:
             "model": spec.get("agent", {}).get("model"),
             "provider": spec.get("agent", {}).get("provider_name"),
             "cap": spec.get("budget", {}).get("monthly_usd"),
+            "hard": spec.get("budget", {}).get("hard_usd"),
             "best": max((e["height"] for e in arch["cells"].values()), default=0)}
         for k in store.list(f"status/{arm}/"):
             st = store.get_json(k)

@@ -276,7 +276,7 @@ class Session:
 
     # -- run -------------------------------------------------------------------------------------
     def run(self) -> list[dict]:
-        cap = float(self.spec.get("budget", {}).get("monthly_usd", 0) or 0)
+        cap = float(self.spec.get("budget", {}).get("hard_usd", 0) or 0)
         if cap:
             ledger.check(self.store, self.provider, cap, reserve=float(self.ses.get("max_usd", self.ep.get("max_usd", 0))))
         os.makedirs(self.work, exist_ok=True)

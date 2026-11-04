@@ -12,7 +12,7 @@ DEFAULTS = {
     "session": {"episodes": 3, "next": "select", "max_usd": 1.0, "context_limit": 120000},
     "prompt": {"layers": ["l0-lab-bare"], "facts_p": 0.5},
     "toolkit": {"profile": "bare"},
-    "budget": {"monthly_usd": 10.0},
+    "budget": {"monthly_usd": 10.0, "hard_usd": 0},   # target (shown) and limit (0: none)
 }
 
 

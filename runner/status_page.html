@@ -288,7 +288,7 @@ function render() {
   tile("Episodes", String(arm.episodes || eps.length), `${eps.length} with results`);
   tile("Goals reached (legit)", String(reached), eps.length ? `${Math.round(100 * reached / eps.length)}% of episodes` : "");
   tile("Archive cells", String(arm.cells || 0), `best height ${arm.best || 0}`);
-  tile(`Spend, ${DATA.month}`, usd(spent), arm.cap ? `cap $${arm.cap} for ${prov}` : prov || "");
+  tile(`Spend, ${DATA.month}`, usd(spent), arm.cap ? `target $${arm.cap}${arm.hard ? `, limit $${arm.hard}` : ""} · ${prov}` : prov || "");
 
   // sessions table
   table(document.getElementById("sesTable"), ["State", "Session", "Episode", "Game time", "Run", "Last action", "Turns", "Spent", "Updated"],
