@@ -130,7 +130,7 @@ RESEARCH_GREEN = dict(RESEARCH)
 RESEARCH_GREEN.update({t: True for t in (
     "automation", "logistics", "logistic-science-pack", "fast-inserter", "steel-processing",
     "electric-mining-drill", "automation-2", "logistics-2", "advanced-material-processing",
-    "optics", "military", "stone-wall", "turrets", "repair-pack")})
+    "lamp", "military", "stone-wall", "gun-turret", "repair-pack")})
 ROBOTS_GREEN = {"fk-early-construction-robot": 100, "fk-early-logistic-robot": 50}
 KIT_GREEN = [("fk-early-roboport", 10), ("assembling-machine-1", 20), ("assembling-machine-2", 10),
              ("electric-mining-drill", 30), ("stone-furnace", 40), ("steel-furnace", 0), ("lab", 10),
