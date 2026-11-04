@@ -1,0 +1,137 @@
+{
+ "source": "run:41750830498 (first DeepSeek smoke, 2026-11-04)",
+ "note": "Candidate facts from the first real DeepSeek session; two bug-derived candidates dropped, the requester-chest one retired as known-wrong.",
+ "facts": [
+  {
+   "id": "c001",
+   "text": "The kickoff kit's 50 construction robots can out-build no handcrafting: belts, assemblers, furnaces and miners are all already in the logistic network, so nothing needs to be crafted from scratch.",
+   "when": "A fresh map with a kickoff logistic network (roboport + storage chests full of parts).",
+   "kind": "process",
+   "scope": "kit",
+   "status": "testing",
+   "source": "run:41750830498/20261104-005937-e9e328",
+   "evidence": "At tick 45 the network at (8,8) held 50 construction and 50 logistic robots plus 3 assembling-machine-1, insorter/pole/pipes, 200 iron-plate, 200 stone, ore and coal; a storage-chest ghost placed at (-9.5,2.5) without the map advancing was still a ghost, so robots do the building once time runs."
+  },
+  {
+   "id": "c002",
+   "text": "Ore and stone are far from the kickoff roboport: iron-ore roughly x -89..-61 y 7..39, copper-ore x -98..-79 y 7..28, stone x -80..-65 y 35..45, coal x -97..-72 y 40..63, all west of the starter roboport at (8,8) whose logistic radius is 25.",
+   "when": "Planning where to place furnaces/drills on this map.",
+   "kind": "game",
+   "scope": "kit",
+   "status": "testing",
+   "source": "run:41750830498/20261104-005937-e9e328",
+   "evidence": "Resource scan of area (-150..150) gave exactly those bounding boxes; the roboport prototype has logistic_radius 25 and construction_radius 55, so mining outposts are outside logistic coverage."
+  },
+  {
+   "id": "c003",
+   "text": "All three goal items are already gated open: firearm-magazine, stone-brick and transport-belt have their recipes enabled at start (firearm-magazine needs no military research here).",
+   "when": "Checking whether a goal needs research first on this map.",
+   "kind": "game",
+   "scope": "kit",
+   "status": "testing",
+   "source": "run:41750830498/20261104-005937-e9e328",
+   "evidence": "force.recipes showed transport-belt, stone-brick and firearm-magazine all ENABLED at tick 45, while automation-science-pack, gun-turret and stone-wall were off."
+  },
+  {
+   "id": "c004",
+   "text": "Goal recipes and times: firearm-magazine = 4 iron-plate, 1s, crafting category; stone-brick = 2 stone, 3.2s, smelting; transport-belt = 1 iron-plate + 1 iron-gear-wheel, 0.5s, pressing (2 belts out). Iron plate is 1 iron-ore, 3.2s, smelting. Assembling-machine-1 can do crafting/pressing/electronics; stone-furnace can only do smelting.",
+   "when": "Deciding which machine goes where for these goals.",
+   "kind": "game",
+   "scope": "kit",
+   "status": "testing",
+   "source": "run:41750830498/20261104-005937-e9e328",
+   "evidence": "prototypes.recipe ingredients/energy and the crafting_categories lists from prototypes.entity."
+  },
+  {
+   "id": "c005",
+   "text": "In this kickoff kit there are no construction materials shortage, but nothing arrives without calling evaluate: ghosts placed at tick 45 stayed ghosts until evaluate was called.",
+   "when": "Placing ghosts while thinking between tool calls.",
+   "kind": "process",
+   "scope": "kit",
+   "status": "testing",
+   "source": "run:41750830498/20261104-011524-5e47bd",
+   "evidence": "An assembling-machine-1 ghost stood at (-4.5,2.5) at tick 45 and 105; after evaluate(600) the machine existed at tick 705, and a 3-item kit chest lost one assembling-machine-1."
+  },
+  {
+   "id": "c006",
+   "text": "A machine placed away from the starter network is built (robots fly out) but shows status 54 (no_power) and electric_network_id nil, so it never crafts; only area within reach of the existing medium-electric-pole line is powered.",
+   "when": "Siting the first assembling machine in a kickoff-kit start.",
+   "kind": "process",
+   "scope": "kit",
+   "status": "testing",
+   "source": "run:41750830498/20261104-011524-5e47bd",
+   "evidence": "Assembling machine at (-4.5,2.5) was built by tick 705 but had status 54, net=nil, get_recipe() nil and crafting_progress 0, while all poles at (8.5-21.5, 11.5-18.5) shared net 1."
+  },
+  {
+   "id": "c007",
+   "text": "The goal items here need no new research: wooden-chest (2 wood, 0.5s) and lab (10 iron-gear-wheel + 10 electronic-circuit + 4 transport-belt, 2s) are both enabled at start, but wood is not in the kit, so wooden-chest depends on trees and a deconstruction order.",
+   "when": "Planning the wooden-chest/lab goal from a fresh map.",
+   "kind": "game",
+   "scope": "kit",
+   "status": "testing",
+   "source": "run:41750830498/20261104-011524-5e47bd",
+   "evidence": "force.recipes showed wooden-chest enabled; prototypes.recipe gave those ingredients; network contents had no wood and production statistics for wood were empty."
+  },
+  {
+   "id": "c008",
+   "text": "Trees are far from the starter roboport on this map: the nearest tree is ~40 tiles out at (44.5,25.4), beyond the roboport's 25-tile logistic radius, so collecting wood needs the construction area (55 tiles) or manual placement of the drop-off.",
+   "when": "Gathering wood with construction robots near the starting roboport.",
+   "kind": "game",
+   "scope": "kit",
+   "status": "testing",
+   "source": "run:41750830498/20261104-011524-5e47bd",
+   "evidence": "Tree search sorted by distance to (8,8) gave nearest at d=40.4; roboport prototype logistic_radius=25, construction_radius=55."
+  },
+  {
+   "id": "c009",
+   "text": "Passive-provider and requester chests provided in the kit are not placed and the network's storage chests keep their stock; to feed a machine you place a chest ghost within 25 tiles of the roboport, or belt from where the items are.",
+   "when": "Getting ingredients into a machine built outside the logistic supply area.",
+   "kind": "process",
+   "scope": "kit",
+   "status": "testing",
+   "source": "run:41750830498/20261104-011524-5e47bd",
+   "evidence": "Network contents still listed iron-platex200, copper-platex200 and assembling-machine-1x2 at tick 1905; storage chests in the network held those items and the station's two empty chests never filled."
+  },
+  {
+   "id": "c010",
+   "text": "Machines placed on the network's copper-pole coverage get power (network 1) and build/fly normally; the pole grid around (8.5..21.5, 11.5..18.5) only powers a modest area, and extending it with a few medium-electric-pole ghosts is enough to run a row of assemblers at y=10.5 spanning x=23..43.",
+   "when": "Adding crafting machines near the starter solar/roboport block.",
+   "kind": "process",
+   "scope": "kit",
+   "status": "testing",
+   "source": "run:41750830498/20261104-013325-6d783a",
+   "evidence": "Assemblers at (26.5,10.5) and (34.5,10.5) got net=1 and status 19 (no_recipe/disconnected before a recipe was set) while a far machine was status 54; inserters next to them showed status 32/34/14, i.e. powered and running."
+  },
+  {
+   "id": "c011",
+   "text": "Inserter direction matters: an inserter pointing west (direction west) picks up from the tile to its east and drops into the tile west of it, confirmed with pickup_position/drop_position, so you can place with create_entity{name='entity-ghost', inner_name='inserter', direction=defines.direction.west}.",
+   "when": "Wiring chests to machines with ghost inserters via Lua.",
+   "kind": "method",
+   "scope": "kit",
+   "status": "testing",
+   "source": "run:41750830498/20261104-013325-6d783a",
+   "evidence": "Inserter at (11.5,9.5) facing east reported pick=(12.5,9.5) drop=(10.3,9.5); the west-facing inserters at (24.5,10.5) etc. ran with status 32/34."
+  },
+  {
+   "id": "c012",
+   "text": "Wood in this kit comes only from trees, and the nearest tree is ~40 tiles from the roboport (44.5,25.4): a deconstruct order on trees makes robots harvest wood and deliver it to the network (36 wood banked after a 43..52 x 19..26 order), taking roughly 30+ seconds of game time for the wood to reach the storage chests.",
+   "when": "Needing wood for small-electric-pole (1 wood each) in a tree-sparse start.",
+   "kind": "game",
+   "scope": "kit",
+   "status": "testing",
+   "source": "run:41750830498/20261104-013325-6d783a",
+   "evidence": "Deconstruct of 43..52/19..26 marked 8 entities; bots carried woodx4 each at tick 2805 and still in transit back at 2925; network held wood=36 at tick 3525."
+  },
+  {
+   "id": "c013",
+   "text": "You cannot set requester-chest requests through Lua here: the logistic container control behavior exposes no set_slot/sections API and the chest entity has no set_request_slot, so plan to feed machines from storage chests, provider chests, or belts instead.",
+   "when": "Trying to configure requester chests with a script.",
+   "kind": "game",
+   "scope": "kit",
+   "status": "retired",
+   "source": "run:41750830498/20261104-013325-6d783a",
+   "evidence": "At tick 4725 pcall of cb.set_slot failed with 'LuaLogisticContainerControlBehavior doesn't contain key set_slot', and a scan of 20 candidate keys showed only circuit_condition exists.",
+   "retired_reason": "contradicted: Factorio 2.0 sets requester requests through the entity's logistic sections"
+  }
+ ]
+}
