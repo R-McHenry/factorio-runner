@@ -17,6 +17,7 @@ provider_name = "claude"
 model = "claude-opus-5-5"
 binary = "claude"
 billing = "subscription"
+auto_compact_window = 400000   # Claude Code compacts at 400k; the runner ceiling is higher
 timeout = 1200
 max_retries = 2
 

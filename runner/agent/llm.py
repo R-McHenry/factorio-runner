@@ -136,7 +136,8 @@ class ClaudeCLI:
 
     def __init__(self, model: str = "opus", binary: str = "claude", config_dir: str | None = None,
                  billing: str = "subscription", price: dict | None = None, timeout: float = 900.0,
-                 max_retries: int = 2, cwd: str | None = None):
+                 max_retries: int = 2, cwd: str | None = None,
+                 auto_compact_window: int | None = None):
         self.model = model
         self.binary = binary
         self.config_dir = os.path.expanduser(config_dir) if config_dir else None
@@ -144,6 +145,7 @@ class ClaudeCLI:
         self.prices = price or {}
         self.timeout = timeout
         self.max_retries = max_retries
+        self.auto_compact_window = auto_compact_window
         self.session_id = str(uuid.uuid4())
         self.started = False
         self.cursor = 0
@@ -158,6 +160,8 @@ class ClaudeCLI:
                if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL")}
         if self.config_dir:
             env["CLAUDE_CONFIG_DIR"] = self.config_dir
+        if self.auto_compact_window:
+            env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(self.auto_compact_window)
         env.setdefault("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
         return env
 
@@ -327,7 +331,8 @@ def from_spec(agent: dict):
         return ClaudeCLI(model=agent.get("model", "opus"), binary=agent.get("binary", "claude"),
                          config_dir=agent.get("config_dir"), billing=agent.get("billing", "subscription"),
                          price=agent.get("price"), timeout=float(agent.get("timeout", 900)),
-                         max_retries=int(agent.get("max_retries", 2)))
+                         max_retries=int(agent.get("max_retries", 2)),
+                         auto_compact_window=agent.get("auto_compact_window"))
     return OpenAICompat(base_url=agent["base_url"], model=agent["model"],
                         api_key_env=agent.get("api_key_env"),
                         temperature=float(agent.get("temperature", 0.7)),

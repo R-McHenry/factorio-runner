@@ -433,6 +433,12 @@ class ClaudeProviderTest(unittest.TestCase):
         self.assertEqual(r.message["content"], "FACT: a fact")
         self.assertFalse(r.message.get("tool_calls"))
 
+    def test_auto_compact_window_env(self):
+        from runner.agent.llm import ClaudeCLI
+        self.assertEqual(ClaudeCLI(auto_compact_window=400000)._env()["CLAUDE_CODE_AUTO_COMPACT_WINDOW"],
+                         "400000")
+        self.assertNotIn("CLAUDE_CODE_AUTO_COMPACT_WINDOW", ClaudeCLI()._env())
+
 
 class ModSettingsTest(unittest.TestCase):
     def test_early_bots_settings_file_matches_its_source(self):
