@@ -16,7 +16,10 @@ Your codebase is `game/` in your work dir. It's the source of truth for your bas
    example shows. **Start from a whole example, not hand-written cells:** `red.fk` is a working
    red-science plot and `busbase.fk` a 116-machine bus base; put one in `world.fk`, `fk check` it,
    `build`, `evaluate`, then extend it. Composing from the library's cells costs dozens of turns
-   before the first build lands.
+   before the first build lands. Watch the chests: `Chest<requester>` needs `logistic-system` and
+   `Chest<provider>` needs `logistic-robotics`, so on this early start they stay ghosts and their
+   row never gets fed. Belt the machines in from miners and furnaces (or from a storage chest by
+   inserter) and swap the chest cells in once the research is done.
 2. **Place them in `game/world.fk`**, your base's plot: `import Gears from "gears.fk"` and
    `gears = Gears @(1030, 1000) size 16x16`. world.fk's coordinates are the map's plus 1000, so
    `@(1030, 1000)` is map 30,0. The starter kit is already declared there (`kit.fk`).
