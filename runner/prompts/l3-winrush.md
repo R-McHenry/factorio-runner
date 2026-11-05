@@ -9,6 +9,9 @@ rung or defend what already stands.
 - **Blue's chain is the critical path:** pumpjack on the crude patch, a refinery, plastic for
   advanced circuits, sulfur for chemical packs, then `blue6.fk`. If blue is still 0/32, the
   oil chain is the next build — not a new district, not a mall, not a roboport grid.
+- **Power before plumbing.** Check steam-engine saturation and accumulator charge before adding
+  machines: a refinery or chemical plant sitting at `full_output` is usually a brownout, not a bad
+  recipe, and every assembler marked `no_power` is a rung you are not climbing. Fix the grid first.
 - **Research is a machine:** 3 red and 3 green assemblers feeding 4 or more labs. Keep that
   block standing and fed before you queue the oil techs; one lab cannot research the ladder in
   the turns you have.
