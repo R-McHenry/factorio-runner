@@ -4,6 +4,10 @@ This arm's only score is a legit rocket launch inside the episode's turn budget.
 base that never reaches blue science scores nothing. Every turn should move the next ladder
 rung or defend what already stands.
 
+- **The tick budget is extra time, not a wall at a round number.** Read the exact end tick in
+  the episode brief. A game that starts at tick 1,220,436 still has its full 1,300,000 ticks
+  (until 2,520,436); never finish early because the clock number looks past a million. Only
+  the printed end tick ends the run, and finishing before it with no launch scores nothing.
 - **Read the ladder before you act.** Red and green are usually already done; blue science is
   the next gate, then the real climb: production and utility science, rocket-silo research, the
   silo, then 100 rocket parts and the launch. Work the lowest unfinished gate and nothing else.

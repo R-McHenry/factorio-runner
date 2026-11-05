@@ -569,20 +569,26 @@ class Session:
             cur = objective.current(st)
             target = (goal_text(self.goal, st["made"]) if self.goal
                       else (cur["label"] if cur else "none"))
+            budget = self.ep_state['tick_end'] - tick0
             msg = (f"{head}The game is at tick {tick0} ({tick0 / 216000:.2f} game hours in); "
                    f"research done: {st['researched']} technologies.\n\n"
                    f"WIN OBJECTIVE: launch the first rocket. Milestones, in order:\n"
                    f"{objective.ladder_text(st)}\n"
                    f"Your target now: {target}.\n"
-                   f"A legit run has up to {self.ep_state['tick_end'] - tick0} game ticks, and you "
-                   f"have {self.ep.get('max_turns', 60)} turns. Fewer game ticks to the launch is "
+                   f"A legit run has up to {budget:,} more game ticks from here, ending at tick "
+                   f"{self.ep_state['tick_end']:,}: that end tick is the deadline, not the global "
+                   f"tick count (a run started at tick 1.2M still gets its whole budget).\n"
+                   f"You have {self.ep.get('max_turns', 60)} turns. Fewer game ticks to the launch is "
                    f"better. State 'start' is saved.\n")
         else:
+            budget = self.ep_state['tick_end'] - tick0
             msg = (f"{head}The game is at tick {tick0} ({tick0 / 216000:.2f} game hours in); "
                    f"research done: {st['researched']} technologies.\n\n"
                    f"GOAL: produce, in total since the game began, at least: {goal_text(self.goal, st['made'])}.\n"
-                   f"A legit run has up to {self.ep_state['tick_end'] - tick0} game ticks for it, and you "
-                   f"have {self.ep.get('max_turns', 60)} turns. Fewer game ticks is better. State 'start' "
+                   f"A legit run has up to {budget:,} more game ticks from here, ending at tick "
+                   f"{self.ep_state['tick_end']:,}: that end tick is the deadline, not the global "
+                   f"tick count.\n"
+                   f"You have {self.ep.get('max_turns', 60)} turns. Fewer game ticks is better. State 'start' "
                    f"is saved.\n")
         if moved:
             msg += f"\nThe notes left in this game's work dir (NOTES.md):\n\n{notes}"
