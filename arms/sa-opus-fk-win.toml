@@ -41,9 +41,13 @@ facts_p = 0.5
 mode = "ladder"
 
 [episode]
-max_turns = 350
+# 1000 turns, not 350: every episode restarts at tick 36 and rebuilds the base, and
+# runs 41937118725/41946204641/41951412382 all died on the turn cap around green
+# science, never reaching blue. The ladder horizon (~1.30M ticks) allows ~1000 turns
+# at the observed ~1.2k ticks/turn, so give the agent the whole horizon.
+max_turns = 1000
 max_usd = 1000.0          # subscription: not dollars, just a rail that never trips
-max_ticks = 1200000       # > 1M ticks: the ladder has room for a whole factory
+max_ticks = 1300000       # the ladder's own horizon is 1,297,836; do not stop short of it
 goal_dist = 3             # unused in ladder mode, kept so the spec is explicit
 check_every = 600
 eval_cap = 36000
