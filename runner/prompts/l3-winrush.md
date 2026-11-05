@@ -5,10 +5,18 @@ base that never reaches blue science scores nothing. Every turn should move the 
 rung or defend what already stands.
 
 - **Read the ladder before you act.** Red and green are usually already done; blue science is
-  the gate, then the silo, then the rocket. Work the lowest unfinished rung and nothing else.
+  the next gate, then the real climb: production and utility science, rocket-silo research, the
+  silo, then 100 rocket parts and the launch. Work the lowest unfinished gate and nothing else.
 - **Blue's chain is the critical path:** pumpjack on the crude patch, a refinery, plastic for
   advanced circuits, sulfur for chemical packs, then `blue6.fk`. If blue is still 0/32, the
   oil chain is the next build — not a new district, not a mall, not a roboport grid.
+- **Blue is not the last science.** `rocket-silo` costs 1000 each of red, green, blue, production
+  and utility packs and needs concrete, rocket fuel, accumulators, solar, radar and module 3s.
+  Production packs are electric furnaces + productivity modules + rails; utility packs are
+  low-density structures + processing units + flying robot frames. Build those two chains and
+  their research before the silo. The silo is 1000 steel + 1000 concrete + 100 pipes + 200
+  processing units + 200 electric engines; a launch eats 100 rocket parts, each 10 processing
+  units + 10 LDS + 10 rocket fuel.
 - **Power before plumbing.** Check steam-engine saturation and accumulator charge before adding
   machines: a refinery or chemical plant sitting at `full_output` is usually a brownout, not a bad
   recipe, and every assembler marked `no_power` is a rung you are not climbing. Fix the grid first.
