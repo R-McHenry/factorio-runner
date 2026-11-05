@@ -8,7 +8,7 @@ import unittest
 from runner import archive, cell, facts, ledger, objective
 from runner.agent.tools import referee
 from runner.node import Node, pack_dir, unpack_dir
-from runner.store import LocalStore
+from runner.store import LocalStore, S3Store
 
 
 class CellTest(unittest.TestCase):
@@ -457,3 +457,37 @@ class ModSettingsTest(unittest.TestCase):
         from runner import kit
         self.assertEqual(kit.KITS["kickoff-early-bots"][0][0][0], "fk-early-roboport")   # roboport first
         self.assertNotIn("nuclear-reactor", dict(kit.KITS["kickoff-early-bots"][2]))
+
+
+class StoreRefreshTest(unittest.TestCase):
+    """configure-aws-credentials gives the job a 1h STS session; long episodes need a refresh."""
+
+    def store(self, fail_code):
+        from botocore.exceptions import ClientError
+        st = S3Store.__new__(S3Store)      # no boto3 client / no AWS calls
+        st.ClientError = ClientError
+        st.bucket, st.prefix = "b", ""
+        calls = []
+
+        class FakeS3:
+            def put_object(self, **kw):
+                calls.append("put")
+                if len(calls) == 1 and fail_code:
+                    raise ClientError({"Error": {"Code": fail_code}}, "PutObject")
+                return {}
+
+        st.s3 = FakeS3()
+        st._reclient = lambda: calls.append("refresh")
+        return st, calls
+
+    def test_expired_token_refreshes_and_retries(self):
+        st, calls = self.store("ExpiredToken")
+        st.put("k", b"x")
+        self.assertEqual(calls, ["put", "refresh", "put"])
+
+    def test_other_errors_are_not_retried(self):
+        st, calls = self.store("AccessDenied")
+        with self.assertRaises(Exception):
+            st.put("k", b"x")
+        self.assertEqual(calls, ["put"])
+

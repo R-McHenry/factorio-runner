@@ -122,6 +122,13 @@ class LocalStore(Store):
 
 
 class S3Store(Store):
+    # STS sessions handed to the job by aws-actions/configure-aws-credentials last one hour.
+    # A 1000-turn episode runs for hours, so once the session expires every store call fails
+    # (and the final node is never saved). The job still has its OIDC request URL and token,
+    # so the store mints a fresh session on the first expiry and retries the call.
+    EXPIRED = {"ExpiredToken", "ExpiredTokenException", "RequestExpired",
+               "InvalidClientTokenId", "TokenRefreshRequired"}
+
     def __init__(self, bucket: str, prefix: str = ""):
         import boto3  # only needed for S3
         from botocore.exceptions import ClientError
@@ -129,19 +136,62 @@ class S3Store(Store):
         self.ClientError = ClientError
         self.bucket = bucket
         self.prefix = prefix.strip("/") + "/" if prefix.strip("/") else ""
+        # The role to re-assume when the session expires. The workflow does not pass it to
+        # the job, so read it off our own assumed-role ARN now, while the session still works.
+        self.role_arn = os.environ.get("AWS_ROLE_ARN") or self._caller_role_arn()
+
+    def _caller_role_arn(self):
+        try:
+            import boto3
+            arn = boto3.client("sts").get_caller_identity()["Arn"]
+            if ":assumed-role/" in arn:
+                account = arn.split(":")[4]
+                name = arn.split(":assumed-role/", 1)[1].split("/", 1)[0]
+                return f"arn:aws:iam::{account}:role/{name}"
+        except Exception:
+            pass
+        return None
+
 
     def _k(self, key):
         return self.prefix + key
+
+    def _expired(self, e) -> bool:
+        return e.response.get("Error", {}).get("Code") in self.EXPIRED
+
+    def _reclient(self):
+        import boto3
+        c = refresh_role_credentials(self.role_arn)
+        kw = dict(aws_access_key_id=c["access_key"], aws_secret_access_key=c["secret_key"],
+                  aws_session_token=c["token"])
+        if os.environ.get("AWS_REGION"):
+            kw["region_name"] = os.environ["AWS_REGION"]
+        self.s3 = boto3.client("s3", **kw)
+
+    def _run(self, fn):
+        """Run an S3 call; on an expired STS session, refresh once and retry it."""
+        try:
+            return fn()
+        except self.ClientError as e:
+            if not self._expired(e):
+                raise
+            try:
+                self._reclient()
+            except Exception as re:
+                raise e from re
+            return fn()
 
     def get(self, key):
         return self.get_versioned(key)[0]
 
     def put(self, key, data):
-        self.s3.put_object(Bucket=self.bucket, Key=self._k(key), Body=data)
+        self._run(lambda: self.s3.put_object(Bucket=self.bucket, Key=self._k(key), Body=data))
 
     def get_versioned(self, key):
+        def get():
+            return self.s3.get_object(Bucket=self.bucket, Key=self._k(key))
         try:
-            r = self.s3.get_object(Bucket=self.bucket, Key=self._k(key))
+            r = self._run(get)
             return r["Body"].read(), r["ETag"]
         except self.ClientError as e:
             if e.response["Error"]["Code"] in ("NoSuchKey", "404"):
@@ -150,8 +200,10 @@ class S3Store(Store):
 
     def put_if(self, key, data, version):
         cond = {"IfNoneMatch": "*"} if version is None else {"IfMatch": version}
+        def put():
+            return self.s3.put_object(Bucket=self.bucket, Key=self._k(key), Body=data, **cond)
         try:
-            self.s3.put_object(Bucket=self.bucket, Key=self._k(key), Body=data, **cond)
+            self._run(put)
         except self.ClientError as e:
             if e.response["Error"]["Code"] in ("PreconditionFailed", "ConditionalRequestConflict",
                                                "412", "409"):
@@ -159,11 +211,40 @@ class S3Store(Store):
             raise
 
     def list(self, prefix):
-        out = []
-        pag = self.s3.get_paginator("list_objects_v2")
-        for page in pag.paginate(Bucket=self.bucket, Prefix=self._k(prefix)):
-            out += [o["Key"][len(self.prefix):] for o in page.get("Contents", [])]
-        return sorted(out)
+        def ls():
+            out = []
+            pag = self.s3.get_paginator("list_objects_v2")
+            for page in pag.paginate(Bucket=self.bucket, Prefix=self._k(prefix)):
+                out += [o["Key"][len(self.prefix):] for o in page.get("Contents", [])]
+            return sorted(out)
+        return self._run(ls)
+
+
+def refresh_role_credentials(role: str | None = None) -> dict:
+    """Assume the workflow role again from a fresh GitHub OIDC token.
+
+    Only works inside an Actions job (the OIDC request env is set there); outside one the
+    caller re-raises the original expired-session error.
+    """
+    import urllib.request
+    import boto3
+    url = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL")
+    tok = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+    role = role or os.environ.get("AWS_ROLE_ARN")
+    if not (url and tok and role):
+        raise RuntimeError("no OIDC request env or role ARN; cannot refresh the AWS session")
+    sep = "&" if "?" in url else "?"
+    req = urllib.request.Request(f"{url}{sep}audience=sts.amazonaws.com",
+                                 headers={"Authorization": f"bearer {tok}"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        web = json.loads(r.read())["value"]
+    sts = boto3.client("sts")
+    c = sts.assume_role_with_web_identity(
+        RoleArn=role, RoleSessionName="factorio-runner-store-refresh",
+        WebIdentityToken=web, DurationSeconds=3600)["Credentials"]
+    return {"access_key": c["AccessKeyId"], "secret_key": c["SecretAccessKey"],
+            "token": c["SessionToken"]}
+
 
 
 def open_store(url: str) -> Store:
