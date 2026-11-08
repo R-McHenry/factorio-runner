@@ -1,23 +1,11 @@
-# compact-mall.fk: a mall laid out the way Rory prescribed (2026-10-21): machines in rows, no gap
-# between chains, a 1-tile gap inside a chain (that gap holds the one inserter that links a maker to
-# what takes its output: no belt). Two rows face one 4-tile corridor (y 5..8) that carries the iron
-# in and the products out. One iron net, one copper net and one products net into one chest
-# (Rory: "one copper net and one products net, to save on logistics chests"): 1 provider chest
-# instead of one per product, 172 route carriers in all (152 belts), 17 of its 20 nets single
-# inserters.
-#
-# A maker whose product also feeds a neighbour stays on that link (a machine is on one net per item
-# and direction), so the products belt gets its pipes and yellow belts from makers of their own
-# (pipe, yb3). The products belt is sushi. The chest has no limit=: when a mixed belt's chest is
-# full the whole belt stops, so a slot limit only brings that sooner (SUSHI_LIMIT). What keeps it
-# from filling is a property on each maker's output hand (2.0.27): `set yu.out:
-# logistic=underground-belt<50` waits while the logistic network holds 50; with one on every maker,
-# `net products limited:` quiets CLOG.
-#
-# In a base the plates come from your smelting or a bus tap, not from these requesters: name your
-# smelter row (or the tap) as the driver of `fe` and `cu`, and the router brings that belt to the
-# corridor's middle (x 24) and to row B's underside (x 49, y 13).
-
+# compact-mall.fk: a mall laid out the way Rory prescribed (2026-10-21). Plot 50x16. Rows with no
+# gap between chains and a 1-tile gap inside a chain (that gap holds the one inserter linking a
+# maker to what takes its output); two rows face one 4-tile corridor (y 5..8) carrying the iron in
+# and the products out. One iron net, one copper net, one sushi products net into one unlimited
+# chest, the limit on each maker's output hand (`set yu.out: logistic=underground-belt<50`).
+# Run:  fk check compact-mall.fk    fk build --to report_checks
+# Expect: four `could-pair` lines, `advice limited-why net products`; `compact-mall: 20 nets: 20
+# connected, 0 open, 0 unrouted`, 17 of them single inserters, 152 belts.
 # row A at y 2: belts and undergrounds, pipes and pipes-to-ground, splitters
 ga     = Assembler<recipe=iron-gear-wheel>        @(2, 2)
 yb     = Assembler<recipe=transport-belt>         @(6, 2)

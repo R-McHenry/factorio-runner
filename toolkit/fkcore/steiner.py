@@ -10,9 +10,8 @@ carriers. Changes since the copy:
 - For a tree laid reversed (a collector), set on its Grid by route.py: ``Grid.keep_clear``, tiles a
   split may not leave its spare output on (reversed, every splitter is a merge facing back, whose
   second output points at the tile beside the split's feed; a foreign belt there would take half
-  the merged items, a SPILL); ``Grid.drop_taps``: a tap's inserter drops onto its belt, and an
-  underground exit takes no drop (fkcore.connect, v4 B-120), so a tapped belt never starts a
-  tunnel (which, reversed, is an exit).
+  the merged items, a SPILL); ``Grid.drop_taps``: a tap's inserter drops onto its belt, an
+  underground exit included (measured on 2.0.77; v4's B-120 said an exit takes no drop).
 - A start state may name the tiles its move takes (a splitter's two, 2.0.77): the goal test picks
   no tap on them. The 10-30 run's Sci0 copper split one tile short of red2, the search planned
   red2's inserter on the splitter's second tile, the attach found it taken and laid no tap, and
@@ -62,9 +61,13 @@ Pure, stdlib only.
 """
 from __future__ import annotations
 
+import contextlib
 import heapq
 import math
+import os
 import time
+
+from . import arms as armsmod
 
 __all__ = ["Grid", "Tree", "FixedSink", "TapSink", "grow", "dw", "COSTS", "ribbon"]
 
@@ -87,10 +90,30 @@ def _axis(h):
 
 
 # -- the ground ---------------------------------------------------------------------------------
+#: The soft ground of a negotiated route (``soft_ground``): {tile: extra cost} for tiles other nets
+#: hold this round. A Grid made while it is set takes it as ``Grid.soft``.
+_SOFT = None
+
+
+@contextlib.contextmanager
+def soft_ground(soft):
+    """Grids made inside take ``soft`` ({tile: extra cost}): a belt may step onto such a tile,
+    paying its extra cost; no splitter and no tap goes there (route's negotiation)."""
+    global _SOFT
+    old, _SOFT = _SOFT, (soft or None)
+    try:
+        yield
+    finally:
+        _SOFT = old
+
+
 class Grid:
     """Blocked tiles, plus the tiles a foreign belt points into (a belt there would get its items
     side-loaded) and the hidden spans of foreign undergrounds per axis (no same-axis tunnel may
-    overlap one: fk.route has the same interleave rule in fkc.build._fix_ug_interleave)."""
+    overlap one: fk.route has the same interleave rule in fkc.build._fix_ug_interleave).
+    ``soft``: {tile: extra cost} a belt step pays there (empty but in a negotiated route)."""
+
+    soft = {}
 
     def __init__(self, blocked, fronts=(), spans=None):
         self.occ = set(blocked)
@@ -98,6 +121,13 @@ class Grid:
         self.spans = spans or {0: set(), 1: set()}
         self.keep_clear = set()      # no split's spare (reversed) output may point at these
         self.drop_taps = False       # laid reversed: taps drop onto their belt
+        if _SOFT:
+            self.soft = _SOFT
+        # PLAN-LANES phase 2: tile -> lanephys.tile_mask, the carriers a fed tile (a pair's join)
+        # may hold; the search puts nothing else there. The mask counts the outside feeds only:
+        # exact where a tree starts (nothing of its own behind), as at a join; the tree's own
+        # belt into a fed tile mid-path is phase 3's (its lanes in the search state)
+        self.lane_ok = {}
 
     def blocked(self, t):
         return t in self.occ or t in self.fronts
@@ -155,41 +185,60 @@ class FixedSink:
 
 
 class TapSink:
-    """A machine (tile rectangle) fed by ``k`` inserters picking off the net's belt."""
+    """A machine (tile rectangle) fed by ``k`` inserters picking off the net's belt. ``arms``
+    (3.0, ``fkcore.arms.Arms``): the vectors the force may set an inserter to (Bob's adjustable
+    inserters), or None (the base game: pickup and drop opposite, a long-handed one reaching 2)."""
     terminal = False
 
-    def __init__(self, name, rect, k=1, inserters=("inserter", "long-handed-inserter")):
+    def __init__(self, name, rect, k=1, inserters=("inserter", "long-handed-inserter"),
+                 arms=None):
         self.name, self.rect, self.k, self.inserters = name, rect, k, inserters
+        self.arms = arms
 
     def inside(self, t):
         x0, y0, x1, y1 = self.rect
         return x0 <= t[0] < x1 and y0 <= t[1] < y1
 
     def taps_at(self, tile, free):
-        """(inserter tile, name, direction) taps from a belt on ``tile`` into this machine."""
+        """(inserter tile, name, direction, arm) taps from a belt on ``tile`` into this machine;
+        ``arm`` is None, or (pick, drop) offsets from the inserter's tile (``self.arms``): first
+        the plain straight ones, then a short hand with vectors (round a corner, then further
+        out), then a long-handed one."""
         out = []
+        short = [n for n in self.inserters if armsmod.REACH.get(n, 1) == 1]
+        names = self.inserters if self.arms is None else short
         for h in range(4):
-            for name in self.inserters:
+            for name in names:
                 r = 2 if name == "long-handed-inserter" else 1
                 q = (tile[0] + DX[h] * r, tile[1] + DY[h] * r)
                 if free(q) and self.inside((q[0] + DX[h] * r, q[1] + DY[h] * r)):
-                    out.append((q, name, _fdir((h + 2) % 4)))
+                    out.append((q, name, _fdir((h + 2) % 4), None))
+        if self.arms is None:
+            return out
+        if short:
+            for pick, drop in armsmod.pairs(self.arms, straight=False):
+                q = (tile[0] - pick[0], tile[1] - pick[1])
+                if free(q) and self.inside((q[0] + drop[0], q[1] + drop[1])):
+                    out.append((q, short[0], armsmod.heading(pick), (pick, drop)))
+        for name in self.inserters:
+            if name not in short:
+                for h in range(4):
+                    q = (tile[0] + DX[h] * 2, tile[1] + DY[h] * 2)
+                    if free(q) and self.inside((q[0] + DX[h] * 2, q[1] + DY[h] * 2)):
+                        out.append((q, name, _fdir((h + 2) % 4), None))
         return out
 
     def pick(self, path, tree, taken=()):
         """Taps off the last tiles of ``path`` (one per belt tile, newest first), up to k; none on
         ``taken`` (the tiles the path's start move lays, a splitter's)."""
         on = {(s[0], s[1]) for s in path}
-        tunnels = {path[i] for i in range(len(path) - 1) if path[i + 1][3]} \
-            if tree.grid.drop_taps else ()
         got = []
-        for s in reversed(path[-6:]):
-            if s in tunnels:
-                continue     # reversed this is an underground exit, which takes no drop
+        # 3.0: k taps may wrap a belt round the machine (three sides of a 1x1 chest): a longer tail
+        for s in reversed(path[-(6 + 4 * (self.k - 1)):]):
             used = {g[0] for g in got}
-            for q, name, direction in self.taps_at((s[0], s[1]), lambda q: tree.free(q) and q not in on
-                                                   and q not in used and q not in taken):
-                got.append((q, name, direction, self.name))
+            for q, name, direction, arm in self.taps_at((s[0], s[1]), lambda q: tree.free(q) and q not in on
+                                                        and q not in used and q not in taken):
+                got.append((q, name, direction, self.name, arm))
                 break
             if len(got) >= self.k:
                 break
@@ -205,7 +254,26 @@ class TapSink:
         x0, y0, x1, y1 = self.rect
         dx = max(x0 - x, 0, x - (x1 - 1))
         dy = max(y0 - y, 0, y - (y1 - 1))
-        return max(0, dx + dy - 3)    # a long-handed tap reaches 3 tiles from the footprint
+        # a long-handed tap reaches 3 tiles from the footprint; with vectors (3.0) any short hand
+        # reaches its range twice over
+        return max(0, dx + dy - max(3, 2 * self.arms.range - 1 if self.arms else 3))
+
+
+class DropSink:
+    """3.0 (drills in cells): a machine that drops its output on one fixed tile (a drill's or a
+    recycler's drop tile), reached by a belt of the net standing on that tile, any heading, an
+    underground exit included, no inserter. The tree may run on through it: a through-belt
+    passes the drill and takes its ore."""
+    terminal = False
+
+    def __init__(self, name, tile):
+        self.name, self.tile = name, tuple(tile)
+
+    def goal(self, state, tree, path=None, taken=()):
+        return (state[0], state[1]) == self.tile
+
+    def h(self, x, y):
+        return abs(x - self.tile[0]) + abs(y - self.tile[1])
 
 
 # -- the tree -----------------------------------------------------------------------------------
@@ -249,7 +317,7 @@ class Tree:
                     own.setdefault(m, []).append(("splitter", s))
                     if self.grid.drop_taps:
                         spare.add(self.spare_tile(s, mv[1]))
-            for q, _n, _d, _s in self.taps:
+            for q, _n, _d, _s, _a in self.taps:
                 own.setdefault(q, []).append(("tap", q))
             self._tiles, self._spare = own, spare
         return self._tiles
@@ -265,7 +333,7 @@ class Tree:
 
     def free(self, t):
         return (not self.grid.blocked(t) and t not in self.tiles() and t not in self.reserved
-                and t not in self.spare())
+                and t not in self.spare() and t not in getattr(self.grid, "soft", ()))
 
     @staticmethod
     def split_tiles(s, side):
@@ -320,9 +388,8 @@ class Tree:
                 ents.append(_ent("underground-belt", x, y, d, net, "output"))
             else:
                 ents.append(_ent("transport-belt", x, y, out, net))
-        for q, name, direction, sink in self.taps:
-            ents.append({"name": name, "x": q[0] + 0.5, "y": q[1] + 0.5, "direction": direction,
-                         "role": "ins", "link": f"{net}~{sink}"})
+        for q, name, direction, sink, arm in self.taps:
+            ents.append(_tap_ent(name, q, direction, arm, f"{net}~{sink}"))
         return ents
 
     def _entities_reversed(self, net):
@@ -342,9 +409,10 @@ class Tree:
                 ents.append(_ent("underground-belt", x, y, back, net, "input"))
             else:
                 ents.append(_ent("transport-belt", x, y, back, net))
-        for q, name, direction, sink in self.taps:
-            ents.append({"name": name, "x": q[0] + 0.5, "y": q[1] + 0.5, "direction": (direction + 8) % 16,
-                         "role": "ins", "link": f"{sink}->{net}"})
+        for q, name, direction, sink, arm in self.taps:
+            # laid reversed, the tap picks from the machine and drops onto the belt
+            ents.append(_tap_ent(name, q, (direction + 8) % 16, arm and (arm[1], arm[0]),
+                                 f"{sink}->{net}"))
         return ents
 
     def counts(self):
@@ -371,7 +439,7 @@ class Tree:
         c, k = self.counts(), self.costs
         return round(c["belts"] * k["belt"] + c["turns"] * k["turn"] + c["undergrounds"] / 2 * k["ug"]
                      + c["splitters"] * k["split"]
-                     + sum(k["long_tap"] if n == "long-handed-inserter" else k["tap"] for _q, n, _d, _s in self.taps), 3)
+                     + sum(k["long_tap"] if n == "long-handed-inserter" else k["tap"] for _q, n, _d, _s, _a in self.taps), 3)
 
     def problems(self, sinks):
         """What would break in the game: shared tiles, blocked tiles, unreached sinks, tunnels
@@ -397,6 +465,17 @@ class Tree:
             if mine[ax] & self.grid.spans[ax]:
                 out.append(f"UG_INTERLEAVE axis {ax}: {sorted(mine[ax] & self.grid.spans[ax])[:3]}")
         return out
+
+
+def _tap_ent(name, q, direction, arm, link):
+    """A tap's plan entity; with its own vectors (3.0), ``pick``/``drop`` where they are not its
+    direction's own (``fkcore.arms.canon``), and it faces its pickup."""
+    e = {"name": name, "x": q[0] + 0.5, "y": q[1] + 0.5, "direction": direction, "role": "ins",
+         "link": link}
+    if arm:
+        e["direction"] = armsmod.heading(arm[0])
+        e.update(armsmod.canon(name, e["direction"], arm[0], arm[1]))
+    return e
 
 
 def _ent(name, x, y, h, net, ug=None):
@@ -524,24 +603,176 @@ def _starts(tree):
                 continue     # laid reversed, this merge's spare output would feed what is there
             if tree.grid.drop_taps and Tree.spare_tile(s, side) in tree.tiles():
                 continue     # ... the tree's own belt there, too
-            if tree.free(m) and tree.free((o2[0], o2[1])):
+            if tree.free(m) and tree.free((o2[0], o2[1])) and _lanes_allow(tree.grid, n, 12 + d) \
+                    and _lanes_allow(tree.grid, m, 12 + d):
                 out.append((o2, k["split"] - k["belt"], ("split", s, side, c), (n, m)))
     return out
 
 
+def _lanes_allow(grid, t, bit):
+    """PLAN-LANES phase 2: may tile ``t`` hold the carrier of ``bit`` (``lanephys.mask_bit``)?
+    Always, unless something feeds it (``Grid.lane_ok``)."""
+    lane_ok = getattr(grid, "lane_ok", None)
+    m = lane_ok.get(t) if lane_ok else None
+    return m is None or bool(m >> bit & 1)
+
+
+def _lanes_hold(tree, states):
+    """Every one of ``states`` (on fed tiles) holds a carrier its lanes allow: a landing an
+    underground exit, else a jump's start an entrance, else a belt heading on to its next state
+    (a leaf or a split's feed: its own heading)."""
+    for s in states:
+        if not getattr(tree.grid, "lane_ok", None) or (s[0], s[1]) not in tree.grid.lane_ok:
+            continue
+        mv = tree.succ.get(s)
+        if s[3]:
+            bit = 8 + s[2]
+        elif mv is not None and mv[0] == "jump":
+            bit = 4 + s[2]
+        elif mv is not None and mv[0] == "step":
+            bit = mv[1][2]
+        else:
+            bit = s[2]
+        if not _lanes_allow(tree.grid, (s[0], s[1]), bit):
+            return False
+    return True
+
+
+def _lane_list(grid):
+    """``Grid.lane_ok`` for the kernel: [(tile, mask)]."""
+    return [(tuple(t), int(m)) for t, m in (getattr(grid, "lane_ok", None) or {}).items()]
+
+
+# -- the native kernel (optional) ---------------------------------------------------------------
+# ``fkroute`` (v5/native/fkroute, Rust) runs _astar step for step with the same tie-breaks, so it
+# returns the same path. Without it, or with FK_NATIVE=0, the Python search below runs.
+try:
+    import fkroute as _native
+except ImportError:          # stdlib only: the native kernel is a speed-up, never a dependency
+    _native = None
+
+_UNSUPPORTED = object()
+
+
+def native_on():
+    """True when _astar runs in fkroute (installed, and FK_NATIVE is not 0)."""
+    return _native is not None and os.environ.get("FK_NATIVE", "1") != "0"
+
+
+def _native_grid(grid):
+    """The grid's fkroute.NativeGrid, built once and cached on it; None for a Grid subclass whose
+    blocked() the kernel does not know."""
+    blocked_fn = type(grid).blocked
+    if blocked_fn is Grid.blocked:
+        box = None
+    elif getattr(blocked_fn, "native_bounded", False):    # route._Bounded.blocked: box + occ
+        box = tuple(grid.box)
+    else:
+        return None
+    sp = grid.spans
+    soft = getattr(grid, "soft", None) or {}
+    key = (box, id(grid.occ), len(grid.occ), id(grid.fronts), len(grid.fronts), len(sp[0]), len(sp[1]),
+           id(soft), len(soft))
+    got = grid.__dict__.get("_native")
+    if got is not None and got[0] == key:
+        return got[1]
+    tiles = grid.occ if box is not None else grid.occ | grid.fronts
+    ng = _native.NativeGrid(list(tiles), list(sp[0]), list(sp[1]), box,
+                            [(t, float(c)) for t, c in soft.items()])
+    grid.__dict__["_native"] = (key, ng)
+    return ng
+
+
+def _astar_native(tree, starts, sinks, targets, limit):
+    grid = tree.grid
+    if not targets:
+        return _UNSUPPORTED
+    ng = _native_grid(grid)
+    if ng is None:
+        return _UNSUPPORTED
+    spec = []
+    for i, s in enumerate(sinks):
+        t = type(s)
+        if isinstance(s, FixedSink) and t.goal is FixedSink.goal and t.h is FixedSink.h:
+            spec.append((0, s.tile[0], s.tile[1], int(s.edir), 0))
+        elif isinstance(s, TapSink) and t.h is TapSink.h and not s.terminal:
+            # 3.0: the kernel knows plain taps only: a sink with adjustable arms (its own h) or
+            # one that wants k > 1 taps (states that count them) is searched in Python
+            if s.arms is not None or (i in targets and getattr(s, "k", 1) > 1):
+                return _UNSUPPORTED
+            x0, y0, x1, y1 = s.rect
+            spec.append((1, x0, y0, x1, y1))
+        else:
+            return _UNSUPPORTED
+    k = tree.costs
+    tiles, res, spare = tree.tiles(), tree.reserved, tree.spare()
+    spans = tree.spans()
+    tapped = []
+    if grid.drop_taps:
+        for q, name, direction, _s, arm in tree.taps:
+            r, g0 = (2 if name == "long-handed-inserter" else 1), int(direction) // 4
+            tapped.append((q[0] + arm[0][0], q[1] + arm[0][1]) if arm else
+                          (q[0] + DX[g0] * r, q[1] + DY[g0] * r))
+    st_list, st_spare, how_of, taken_of, g_of = [], [], {}, {}, {}
+    for st, g0, how, *taken in starts:
+        st_list.append((st, float(g0)))
+        st_spare.append(Tree.spare_tile(how[1], how[2]) if grid.drop_taps and how[0] == "split" else None)
+        if g0 < g_of.get(st, INF):
+            g_of[st] = g0
+            how_of[st] = how
+            taken_of[st] = frozenset(taken[0]) if taken else frozenset()
+
+    def tap_goal(i, path):
+        path = [tuple(p) for p in path]
+        return sinks[i].goal(path[-1], tree, path, taken_of[path[0]])
+
+    extra = set(tiles) | set(res) | set(spare)
+    got = _native.astar(ng, list(extra), list(spans[0]), list(spans[1]), st_list, st_spare, spec,
+                        list(targets), tapped, float(k["belt"]), float(k["turn"]), float(k["ug"]),
+                        int(k["max_ug"]), int(limit), tap_goal, _lane_list(grid))
+    if got is None:
+        return None
+    path, i, gs = got
+    path = [tuple(p) for p in path]
+    return path, how_of[path[0]], i, gs
+
+
 def _astar(tree, starts, sinks, targets, limit=60000):
     """One A* from every start state to the nearest target sink; (path, how, sink, cost) or None.
-    A start is (state, g0, how) or (state, g0, how, taken): a tap is never planned on ``taken``."""
+    A start is (state, g0, how) or (state, g0, how, taken): a tap is never planned on ``taken``.
+    Runs in fkroute when it is installed (``native_on``), else in Python (``_astar_py``).
+    FK_NATIVE=check runs both and raises if they differ (the parity check)."""
+    mode = os.environ.get("FK_NATIVE", "1")
+    if _native is not None and mode != "0":
+        try:
+            got = _astar_native(tree, starts, sinks, targets, limit)
+        except (TypeError, OverflowError):     # a non-integer tile: the kernel takes ints only
+            got = _UNSUPPORTED
+        if got is not _UNSUPPORTED:
+            if mode == "check":
+                py = _astar_py(tree, starts, sinks, targets, limit)
+                if py != got:
+                    raise AssertionError(f"fkroute.astar differs from _astar_py: {got!r} != {py!r}")
+            return got
+    return _astar_py(tree, starts, sinks, targets, limit)
+
+
+def _astar_py(tree, starts, sinks, targets, limit=60000):
+    """The Python search: _astar's original, and its fallback."""
     k = tree.costs
     grid, tiles, res, spare = tree.grid, tree.tiles(), tree.reserved, tree.spare()
     sink_tiles = {s.tile for i, s in enumerate(sinks) if isinstance(s, FixedSink)}
     spans = tree.spans()
+    soft = getattr(grid, "soft", None)    # negotiated: a step onto a tile another net holds pays
+    # PLAN-LANES phase 2: on a fed tile only the carriers its lanes allow (lanephys.tile_mask):
+    # bit d a belt heading d, 4 + d an underground entrance, 8 + d an exit
+    lane_ok = getattr(grid, "lane_ok", None) or {}
 
     def blocked(t):
         return grid.blocked(t) or t in tiles or t in res or t in spare
 
-    def crosses_own_spare(path):
-        how = how_of[path[0]]
+    def crosses_own_spare(path, first):
+        how = how_of[first]
         if not grid.drop_taps or how[0] != "split":
             return False
         return Tree.spare_tile(how[1], how[2]) in {(p[0], p[1]) for p in path}
@@ -551,12 +782,28 @@ def _astar(tree, starts, sinks, targets, limit=60000):
 
     tapped = set()           # laid reversed, a tapped belt takes a drop: it starts no tunnel
     if grid.drop_taps:
-        for q, name, direction, _s in tree.taps:
+        for q, name, direction, _s, arm in tree.taps:
             r, g0 = (2 if name == "long-handed-inserter" else 1), int(direction) // 4
-            tapped.add((q[0] + DX[g0] * r, q[1] + DY[g0] * r))
+            tapped.add((q[0] + arm[0][0], q[1] + arm[0][1]) if arm else
+                       (q[0] + DX[g0] * r, q[1] + DY[g0] * r))
+
+    # 3.0: a tap sink that wants k > 1 inserters (route._TAPS) needs a path that passes k tap
+    # tiles, a wrap round a 1x1 chest say, which costs more than the straight path to the same
+    # state: near such a sink a state carries how many taps its own path has (up to k), so the
+    # costlier path isn't dropped. A search with none of them keeps its four-part states.
+    multi = [sinks[i] for i in targets if getattr(sinks[i], "k", 1) > 1]
+
+    def key(x, y, d, ex, prev=None):
+        if not multi:
+            return (x, y, d, ex)
+        if all(s.h(x, y) > 0 for s in multi):
+            return (x, y, d, ex, prev[4] if prev else 0)
+        path = ([p[:4] for p in _trace(parent, prev)] if prev else []) + [(x, y, d, ex)]
+        return (x, y, d, ex, max(min(len(s.pick(path, tree)), s.k) for s in multi))
 
     heap, g, parent, how_of, taken_of = [], {}, {}, {}, {}
     for st, g0, how, *taken in starts:
+        st = key(*st[:4]) if multi else st      # a start has no path behind it
         if g0 < g.get(st, INF):
             g[st] = g0
             parent[st] = None
@@ -573,23 +820,31 @@ def _astar(tree, starts, sinks, targets, limit=60000):
         done.add(st)
         if len(done) > limit:
             return None
-        path = None
+        path = keys = None
+        here = st[:4]
         for i in targets:
             if sinks[i].terminal:
-                hit = sinks[i].goal(st, tree)
+                hit = sinks[i].goal(here, tree)
             elif sinks[i].h(st[0], st[1]) > 0:
                 hit = False          # too far for any tap: skip the path trace
             else:
-                path = path or _trace(parent, st)
-                hit = sinks[i].goal(st, tree, path, taken_of[path[0]])
+                keys = keys or _trace(parent, st)
+                path = path or [p[:4] for p in keys]
+                hit = sinks[i].goal(here, tree, path, taken_of[keys[0]])
+            if hit and lane_ok and (here[0], here[1]) in lane_ok and \
+                    not lane_ok[(here[0], here[1])] >> ((8 if here[3] else 0) + here[2]) & 1:
+                hit = False      # the path's end: a belt or an exit its fed tile does not allow
             if hit:
-                path = path or _trace(parent, st)
+                keys = keys or _trace(parent, st)
+                path = path or [p[:4] for p in keys]
                 if len({(p[0], p[1]) for p in path}) == len(path) and \
-                        not crosses_own_spare(path):
-                    return path, how_of[path[0]], i, gs
-        x, y, d, ex = st
+                        not crosses_own_spare(path, keys[0]):
+                    return path, how_of[keys[0]], i, gs
+        x, y, d, ex = here
+
         if (x, y) in sink_tiles and parent[st] is not None:
             continue   # nothing continues through a port's link tile
+        lok = lane_ok.get((x, y)) if lane_ok else None
         for nd in range(4):
             if ex and nd != d:
                 continue
@@ -597,9 +852,12 @@ def _astar(tree, starts, sinks, targets, limit=60000):
                 continue
             nx, ny = x + DX[nd], y + DY[nd]
             step = k["belt"] + (k["turn"] if nd != d else 0.0)
-            if not blocked((nx, ny)):
-                _push(heap, g, parent, (nx, ny, nd, 0), st, gs + step, hh)
-            if ex or nd != d or (x, y) in tapped:
+            if not blocked((nx, ny)) and (lok is None or lok >> ((8 + d) if ex else nd) & 1):
+                cost = gs + step
+                if soft:
+                    cost += soft.get((nx, ny), 0.0)
+                _push(heap, g, parent, key(nx, ny, nd, 0, st), st, cost, hh)
+            if ex or nd != d or (x, y) in tapped or (lok is not None and not lok >> (4 + d) & 1):
                 continue
             seen_block = False
             for j in jumps:
@@ -613,7 +871,10 @@ def _astar(tree, starts, sinks, targets, limit=60000):
                 if span & grid.spans[_axis(d)] or span & spans[_axis(d)]:
                     break
                 if seen_block and not blocked((tx, ty)):
-                    _push(heap, g, parent, (tx, ty, d, 1), st, gs + k["ug"], hh)
+                    cost = gs + k["ug"]
+                    if soft:
+                        cost += soft.get((tx, ty), 0.0)
+                    _push(heap, g, parent, key(tx, ty, d, 1, st), st, cost, hh)
     return None
 
 
@@ -686,14 +947,20 @@ def _detach(tree, sink_i, sinks):
             mid = (n[0], n[1], d, 0)
             tree.succ[p] = ("step", mid)
             tree.succ[mid] = ("step", c1)
+            laid = (p, mid)
         else:
             sh = (d + side) % 4
             a, b = (n[0], n[1], d, 0), (m[0], m[1], sh, 0)
             tree.succ[p] = ("step", a)
             tree.succ[a] = ("step", b)
             tree.succ[b] = ("step", c2)
+            laid = (p, a, b)
+        if not _lanes_hold(tree, laid):
+            return None   # PLAN-LANES phase 2: the belts in the splitter's place break a fed tile
     elif p is not None:
         tree.succ.pop(p, None)
+        if not _lanes_hold(tree, (p,)):
+            return None   # ... or a belt left heading its own way as a leaf
     tree.taps = [t for t in tree.taps if t[3] != sinks[sink_i].name]
     tree.reserved = {t[0] for t in tree.taps}
     tree.touch()
@@ -701,7 +968,95 @@ def _detach(tree, sink_i, sinks):
 
 
 def grow(grid, root, sinks, costs=None, improve=8, order=None, limit=60000):
-    """Forward tree search; {"tree", "cost", "counts", "problems", "seconds", "log"}."""
+    """Forward tree search; {"tree", "cost", "counts", "problems", "seconds", "log"}.
+    Runs whole in fkroute when it can (plain FixedSink / TapSink sinks on a Grid it knows), else
+    in Python (``_grow_py``, whose steps still use the native A*). FK_NATIVE=check runs both and
+    raises if the trees differ."""
+    mode = os.environ.get("FK_NATIVE", "1")
+    if _native is not None and mode != "0":
+        t0 = time.time()
+        try:
+            got = _grow_native(grid, root, sinks, costs, improve, order, limit)
+        except (TypeError, OverflowError):     # a non-integer tile: the kernel takes ints only
+            got = _UNSUPPORTED
+        if got is not _UNSUPPORTED:
+            if mode == "check":
+                py = _grow_py(grid, root, sinks, costs, improve, order, limit)
+                a, b = _tree_key(got["tree"]), _tree_key(py["tree"])
+                if a != b or got["log"] != py["log"]:
+                    raise AssertionError(f"fkroute.grow differs from _grow_py: {a!r} {got['log']} "
+                                         f"!= {b!r} {py['log']}")
+            got["seconds"] = round(time.time() - t0, 2)
+            return got
+    return _grow_py(grid, root, sinks, costs, improve, order, limit)
+
+
+def _tree_key(t):
+    return (list(t.succ.items()), list(t.sink_at.items()), list(t.taps), sorted(t.reserved),
+            dict(getattr(t, "sink_terminal", {})))
+
+
+_MOVES = ("step", "jump", "split")
+
+
+def _grow_native(grid, root, sinks, costs, improve, order, limit):
+    ng = _native_grid(grid)
+    if ng is None:
+        return _UNSUPPORTED
+    # 3.0 changed how taps are picked (an underground exit takes a drop, k taps take a longer
+    # tail, adjustable arms): the kernel's grow picks taps the 2.1 way, so those trees grow in
+    # Python (whose A* steps still run in the kernel where it can)
+    if grid.drop_taps or any(type(s) is TapSink and (s.arms is not None or int(s.k) > 1)
+                             for s in sinks):
+        return _UNSUPPORTED
+    spec, ks, ins = [], [], []
+    for s in sinks:
+        if type(s) is FixedSink:
+            spec.append((0, s.tile[0], s.tile[1], int(s.edir), 0))
+            ks.append(0)
+            ins.append([])
+        elif type(s) is TapSink:
+            x0, y0, x1, y1 = s.rect
+            spec.append((1, x0, y0, x1, y1))
+            ks.append(int(s.k))
+            ins.append([str(n) for n in s.inserters])
+        else:
+            return _UNSUPPORTED        # a sink of its own (m2m's): _grow_py, on the native A*
+    if not sinks:
+        return _UNSUPPORTED
+    names = [s.name for s in sinks]
+    if any(not isinstance(n, str) for n in names):
+        return _UNSUPPORTED
+    tree = Tree(grid, root, costs)
+    k = tree.costs
+    kk = (float(k["belt"]), float(k["turn"]), float(k["ug"]), float(k["split"]), float(k["tap"]),
+          float(k["long_tap"]), int(k["max_ug"]))
+    succ, sink_at, taps, reserved, last, log = _native.grow(
+        ng, list(grid.keep_clear), bool(grid.drop_taps), tuple(root), spec, names, ks, ins, kk,
+        int(improve), None if order is None else [int(i) for i in order], int(limit),
+        _lane_list(grid))
+    for s, (kind, side, c1, c2) in succ:
+        tree.succ[tuple(s)] = ("split", side, tuple(c1), tuple(c2)) if kind == 2 else \
+            (_MOVES[kind], tuple(c1))
+    tree.sink_at = {tuple(s): i for s, i in sink_at}
+    tree.taps = [(tuple(q), name, direction, names[si], None) for q, name, direction, si in taps]
+    tree.reserved = {tuple(t) for t in reserved}
+    tree.sink_terminal = {tuple(last[0]): last[1]} if last else {}
+    tree.touch()
+    text = []
+    for kind, targets, i, how, a, b in log:
+        if kind == 0:
+            text.append(f"cannot reach {[sinks[t].name for t in targets]}")
+        elif kind == 1:
+            text.append(f"+{sinks[i].name} via {('leaf', 'split')[how]} ({a:.1f})")
+        else:
+            text.append(f"reroute {sinks[i].name}: {a:.1f} -> {b:.1f}")
+    return {"tree": tree, "cost": tree.cost(), "counts": tree.counts(),
+            "problems": tree.problems(sinks), "seconds": 0.0, "log": text}
+
+
+def _grow_py(grid, root, sinks, costs=None, improve=8, order=None, limit=60000):
+    """The Python grow: grow's original, and its fallback."""
     t0 = time.time()
     tree = Tree(grid, root, costs)
     tree.sink_terminal = {}

@@ -102,7 +102,7 @@ class LeftTap(TapSink):
                 q = (s[0] + DX[h] * r, s[1] + DY[h] * r)
                 if tree.free(q) and q not in on and q not in used and q not in taken and \
                         self.inside((q[0] + DX[h] * r, q[1] + DY[h] * r)):
-                    got.append((q, name, ((h + 2) % 4) * 4, self.name))
+                    got.append((q, name, ((h + 2) % 4) * 4, self.name, None))
                     break
             if len(got) >= self.k:
                 break
@@ -529,7 +529,7 @@ class _Ctx:
             if not got:
                 return None
             adds += _path_plan(path, path[-1][2])
-            for q, name, direction, _s in got:
+            for q, name, direction, _s, _a in got:
                 adds.append({"name": name, "x": q[0] + 0.5, "y": q[1] + 0.5,
                              "direction": direction, "role": "ins"})
                 taken |= {q}
@@ -632,18 +632,19 @@ def route(cat, job, blocked, spans, clear, box, limit, ents):
     slow = inserter_rate("long-handed-inserter")
     rate = job.m2m["supply"]
 
-    def tap(key, rect, k, hands):
-        # a driver that makes more than a long-handed inserter moves gets a fast one
+    def tap(key, rect, k, hands, arms=None):
+        # a driver that makes more than a long-handed inserter moves gets a fast one; a left tap
+        # drops on the left lane by where it stands, so it keeps a straight swing (no vectors)
         if rate.get(key, 0.0) > slow + 1e-9:
             hands = tuple(h for h in hands if h != "long-handed-inserter") or hands
         return LeftTap(key, rect, k, hands)
 
     both = job.m2m.get("both", False)
 
-    def either(key, rect, k, hands):
+    def either(key, rect, k, hands, arms=None):
         if rate.get(key, 0.0) > slow + 1e-9:
             hands = tuple(h for h in hands if h != "long-handed-inserter") or hands
-        return TapSink(key, rect, k, hands)
+        return TapSink(key, rect, k, hands, arms=arms)
 
     plan, how = rt._hub_search(cat, job, blocked, spans, clear, box, limit,
                                tap=either if both else tap)

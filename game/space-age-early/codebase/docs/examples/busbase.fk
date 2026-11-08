@@ -1,19 +1,15 @@
-# busbase.fk: a bus base. Three buses run east along the bottom: circuits, iron, copper. Every
-# spine factory stands north of them and runs PERPENDICULAR to the bus: its machines in columns
-# running north-south, its belts coming straight down to the taps and loads at its south edge.
-#   smelting: drill columns beside a smelter stack (furnaces on both sides of each plate belt),
-#             loaded onto the iron and copper buses;
-#   circuits: two columns of circuit assemblers facing one output belt (one lane each), cable
-#             assemblers handing them cable directly; loaded onto the circuit bus;
-#   mall:     iron and circuits into belts, inserters, assemblers, drills and pipes, a chest each;
-#   science:  iron, copper and circuits into red and green packs.
-# Every spine is a sealed module: its own nets stay inside its frame, and it meets the buses only
-# at its ports. `fk contract busbase.fk` shows what each one takes and gives.
-
+# busbase.fk: a bus base, smelting, circuits, mall and science. Plot 172x82. Three buses run east
+# along the bottom (circuits, iron, copper); every spine is a sealed module north of them, its
+# machines in columns perpendicular to the bus, meeting the buses only at its ports.
+# Run:  fk check busbase.fk    fk build --to report_checks    fk contract busbase.fk
+# Expect: `check busbase: 116 machines, 38 nets, 0 check lines`; `busbase: 38 nets: 38 connected,
+# 0 open, 0 unrouted; 0 SPILL; 1743 entities ...`, the route step about 1.4 s; the contract lines
+# `fe: out iron-plate 7.5/s via febus load n16 (got 4.3)` and the rest. In the lab it stood whole
+# and by game minute 30 science ran at the model's rates.
 module IronSmelt size 34x62 {
   port plate : out iron-plate @s16
-  ore   = MinerRow<n=16, resource=iron-ore> @(1, 2, rot 1)
-  coal  = MinerRow<n=2, resource=coal>      @(25, 30, rot 1)
+  ore   = MinerRow<n=16, resource=iron-ore> @(8, 2, rot 1)
+  coal  = MinerRow<n=2, resource=coal>      @(32, 30, rot 1)
   smelt = SmelterArray<n=24, recipe=iron-plate> @(11, 26)
   net ore_: ore -> smelt
   net fuel: coal -> smelt
@@ -22,8 +18,8 @@ module IronSmelt size 34x62 {
 
 module CopperSmelt size 34x62 {
   port plate : out copper-plate @s16
-  ore   = MinerRow<n=8, resource=copper-ore> @(1, 14, rot 1)
-  coal  = MinerRow<n=2, resource=coal>       @(25, 30, rot 1)
+  ore   = MinerRow<n=8, resource=copper-ore> @(8, 14, rot 1)
+  coal  = MinerRow<n=2, resource=coal>       @(32, 30, rot 1)
   smelt = SmelterArray<n=12, recipe=copper-plate> @(11, 26)
   net ore_: ore -> smelt
   net fuel: coal -> smelt
@@ -71,11 +67,11 @@ module Science size 44x50 {
   port iron   : in iron-plate         @s4
   port copper : in copper-plate       @s10
   port circ   : in electronic-circuit @s16
-  gears = AsmRow<n=2, recipe=iron-gear-wheel>         @(2, 28, rot 3)
-  red   = AsmRow<n=5, recipe=automation-science-pack> @(12, 20, rot 3)
+  gears = AsmRow<n=2, recipe=iron-gear-wheel>         @(2, 34, rot 3)
+  red   = AsmRow<n=5, recipe=automation-science-pack> @(12, 35, rot 3)
   insm  = Assembler<recipe=inserter>                  @(24, 36)
   beltm = Assembler<recipe=transport-belt>            @(24, 28)
-  green = AsmRow<n=6, recipe=logistic-science-pack>   @(32, 16, rot 3)
+  green = AsmRow<n=6, recipe=logistic-science-pack>   @(32, 34, rot 3)
   redbox   = Chest<provider, limit=8> @(14, 4)
   greenbox = Chest<provider, limit=8> @(34, 4)
   net fe:     iron -> gears, insm, beltm

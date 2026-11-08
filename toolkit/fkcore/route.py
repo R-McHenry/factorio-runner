@@ -34,7 +34,13 @@ connected graph joining every driver to every consumer); a net is laid in one of
 A consumer that is a single machine (a chest, an assembler cell: its role has no attach tile) is
 reached by direct insertion: a fast (or long-handed) inserter beside the belt picks into it
 (``steiner.TapSink``), keyed ``~<net>/i<k>``. A single machine as a driver works the same way on a
-reversed tree, so its inserter turns round to pick from the machine.
+reversed tree, so its inserter turns round to pick from the machine. A driver that puts its output
+down itself (3.0: a drill, a recycler; ``Catalog.drop_tile``, the game's drop vector) is reached
+by a belt over its drop tile, any heading and no inserter (``steiner.DropSink``,
+``NetJob.drops``); the tile is its net's end, so the through-belt of a cell may pass it. A
+recycler no belt reaches that way is emptied by an inserter. One whose drop tile lies in a
+consumer of its net (a drill into a furnace or a chest) feeds it straight: nothing to lay
+(``NetJob.direct``).
 
 Two nets that share a belt (``lanes A | B``, 2.0) are one job, ``A|B``: each net from its drivers
 to its side of a join, and one route of both lanes from the join to every consumer
@@ -98,15 +104,19 @@ from __future__ import annotations
 import hashlib
 import heapq
 import math
+import os
 import re
 import time
 from fnmatch import fnmatchcase
 from dataclasses import dataclass, field
 
+from . import arms as armsmod
+from . import compiled as compiledmod
 from . import connect as connectmod
 from . import fkp as fkpmod
+from . import steiner as steinermod
 from .expand import attach_points, frame_of, port_edges, record_misfit
-from .steiner import COSTS, FixedSink, Grid, TapSink, Tree, grow
+from .steiner import COSTS, DropSink, FixedSink, Grid, TapSink, Tree, grow
 from .steiner import _astar as _search      # one A* from many start states: grow()'s own step
 
 __all__ = ["NetJob", "Routed", "jobs", "route_layout", "fluid_nets"]
@@ -190,9 +200,16 @@ class NetJob:
     pin: str | None = None                         # 2.0.54: the lane it ends on (L or R)
     drv: list = field(default_factory=list)        # [(start or source, instance path)]
     m2m: dict | None = None                        # 2.1 route --m2m: fkcore.m2m.spec_of
+    drops: dict = field(default_factory=dict)      # 3.0: {source key: tile} a drill drops onto
+    direct: list = field(default_factory=list)     # 3.0: [(driver, consumer)] dropped straight in
+    # PLAN-LANES phase 2: {tile: (need, feeds)}, a tile other carriers feed (a pair's join):
+    # need {lane: labels} what its carrier must hold, feeds [(heading 0-3, {lane: labels})] what
+    # comes in; lanephys says which carriers the search may put there (was 2.1.31's no_bend)
+    lanes: dict = field(default_factory=dict)
 
     def ends(self):
-        return [t for t, _h in self.starts] + [t for t, _h in self.goals] + list(self.reserved)
+        return [t for t, _h in self.starts] + [t for t, _h in self.goals] + list(self.reserved) \
+            + sorted(set(self.drops.values()))
 
     def signature(self):
         """Everything a route of this net is laid to: per role, its start or goal tiles with their
@@ -252,6 +269,10 @@ class Routed:
     again: dict = field(default_factory=dict)      # net -> why its committed route was not kept
     maxflow: dict = field(default_factory=dict)    # 2.1 --m2m: net -> why its max-flow is short
     memo: dict = field(default_factory=dict)       # 3.0: net -> {key, why} of a net that failed
+    #: 3.1, the compile store: sealed unit -> {module, key, nets (its own, in order), from
+    #: ("routed", "twin <unit>", "store", or None: not keyed), stored (1 when this run wrote it),
+    #: refused (names the force can't build in the stored entry, which was not taken)}
+    compiled: dict = field(default_factory=dict)
 
 
 class _Bounded(Grid):
@@ -269,6 +290,8 @@ class _Bounded(Grid):
     def blocked(self, t):
         x0, y0, x1, y1 = self.box
         return not (x0 <= t[0] < x1 and y0 <= t[1] < y1) or t in self.occ
+
+    blocked.native_bounded = True     # steiner's native kernel knows this rule (box, then occ)
 
 
 def fluid_nets(flat, cat) -> set:
@@ -329,6 +352,7 @@ def jobs(flat, lay, cat) -> dict:
                 mine.append((side, job.goals[-1]))
             job.owners.append(f"{path}.{role}")
     _literal_ends(flat, lay, cat, out, fluids)
+    _drill_drops(lay, cat, out)
     if getattr(flat, "pairs", None):
         from . import pairs
         pairs.merge(flat, out)
@@ -336,13 +360,60 @@ def jobs(flat, lay, cat) -> dict:
         _mark_m2m(flat, cat, out)
     _widen(flat, cat, out)
     for net, job in out.items():
-        if job.skip is not None or job.fluid:
+        if job.skip is not None or job.fluid or _abuts(job):
             continue
         if not job.drivers():
             job.skip = "no driver role is placed"
         elif not job.consumers():
             job.skip = "no consumer role is placed"
     return out
+
+
+def _drop_tile(cat, e):
+    """The tile an entity puts its output down on itself (``Catalog.drop_tile``: a drill, a
+    recycler), or None (none, a pumpjack, or an undirected one)."""
+    if not cat.has_entity(e.name) or _heading(e) is None:
+        return None
+    return cat.drop_tile(e.name, e.x, e.y, _heading(e) * 4)
+
+
+class _Drop(tuple):
+    """A drop tile; ``hand``: an inserter may take the output instead (a recycler)."""
+    hand = False
+
+
+def _drill_drops(lay, cat, out):
+    """3.0: every machine driver with a drop tile (a drill, a recycler) puts its output down
+    there, no inserter. One whose drop tile lies in a consumer of its net feeds that consumer
+    straight (a drill into a furnace or a chest): nothing to lay between them. A recycler whose
+    drop tile something else stands on is emptied by an inserter."""
+    taken = None
+    for job in out.values():
+        for key, _rect in job.sources:
+            e = lay.entities.get(key)
+            t = None if e is None else _drop_tile(cat, e)
+            if t is None:
+                continue
+            into = [k for k, (x0, y0, x1, y1) in job.taps if x0 <= t[0] < x1 and y0 <= t[1] < y1]
+            hand = cat.kind(e.name) != "mining-drill"   # an inserter may empty a recycler
+            if into:
+                job.direct.append((key, into[0]))
+                continue
+            if hand:
+                if taken is None:
+                    taken = {u for x in lay.entities.values() for u in fkpmod.tiles_of(cat, x)}
+                if t in taken:
+                    continue
+            job.drops[key] = _Drop(t)
+            job.drops[key].hand = hand
+        if not job.direct:
+            continue
+        gone = {d for d, _c in job.direct}
+        job.sources = [s for s in job.sources if s[0] not in gone]
+        job.drv = [d for d in job.drv if d[0][0] not in gone]
+        if not job.sources and not job.starts:
+            fed = {c for _d, c in job.direct}
+            job.taps = [t for t in job.taps if t[0] not in fed]
 
 
 def _literal_ends(flat, lay, cat, out, fluids):
@@ -359,6 +430,8 @@ def _literal_ends(flat, lay, cat, out, fluids):
             if m is not None and m.extra.get("belt_end"):
                 _belt_end(flat, lay, out, fluids, path, name, key)
                 continue
+            if m is not None and m.extra.get("pipe_end"):
+                continue                         # a fluid port: the fluid plug-in's end
             ts = fkpmod.tiles_of(cat, lay.entities[key])
             rect = (min(t[0] for t in ts), min(t[1] for t in ts),
                     max(t[0] for t in ts) + 1, max(t[1] for t in ts) + 1)
@@ -383,14 +456,28 @@ def _belt_end(flat, lay, out, fluids, path, name, key):
     e = lay.entities[key]
     h = _heading(e)
     tile = (math.floor(float(e.x)), math.floor(float(e.y)))
+    edge = port_side(flat, lay, key)
+    ug = flat.machines[key].extra.get("ug") if key in flat.machines else None
     for side, hold in (("out", flat._out_hold), ("in", flat._in_hold)):
+        if ug is not None and edge is None and (ug == "in") == (side == "out"):
+            continue      # 3.0: an underground's entry only takes, its exit only gives
         for net in sorted({n for (k, _i), ns in hold.items() if k == key for n in ns}):
             if net in fluids or net not in flat.nets:
                 continue
             job = out.setdefault(net, NetJob(net))
             owner = f"{path}.{name}"
             mine = job.anchors.setdefault(owner, [])
-            if side == "out":
+            if edge is not None:
+                # 3.0, a Literal port: the net meets the carrier across its frame edge
+                t = (tile[0] + _DX[edge], tile[1] + _DY[edge])
+                if side == "out":
+                    job.starts.append((t, edge))
+                    job.drv.append((job.starts[-1], path))
+                    mine.append((side, job.starts[-1]))
+                else:
+                    job.goals.append((t, (edge + 2) % 4))
+                    mine.append((side, job.goals[-1]))
+            elif side == "out":
                 job.starts.append(((tile[0] + _DX[h], tile[1] + _DY[h]), h))
                 job.drv.append((job.starts[-1], path))
                 mine.append((side, job.starts[-1]))
@@ -399,6 +486,18 @@ def _belt_end(flat, lay, out, fluids, path, name, key):
                 mine.append((side, job.goals[-1]))
             if owner not in job.owners:
                 job.owners.append(owner)
+
+
+def port_side(flat, lay, key):
+    """3.0: the heading (N E S W = 0..3) out of a Literal port's frame edge, turned with the
+    Literal, or None when ``key`` is no Literal port."""
+    m = flat.machines.get(key)
+    side = m.extra.get("lit_port") if m is not None else None
+    if side is None:
+        return None
+    from .literal import SIDES
+    rec = lay.insts.get(key.rsplit("/", 1)[0])
+    return (SIDES[side] + (int(rec.rot) if rec is not None else 0)) % 4
 
 
 # -- the ground -----------------------------------------------------------------------------------
@@ -435,20 +534,14 @@ def _hand_tiles(cat, ents):
             continue
         kind = cat.kind(e.name)
         if kind == "inserter":
-            h = _heading(e)
-            if h is None:
-                continue
-            r = connectmod.REACH.get(e.name, 1)
-            (tx, ty), = fkpmod.tiles_of(cat, e)
-            for s in (r, -r):
-                out.setdefault((tx + _DX[h] * s, ty + _DY[h] * s), e.net)
-        elif kind == "mining-drill" and e.name != "pumpjack" and _heading(e) is not None:
-            # the game's vector_to_place_result, as fkcore.connect has it
-            w, hh = cat.size(e.name)
-            vx, vy = (-0.5 if w % 2 == 0 else 0.0), -(hh / 2 + 0.3)
-            for _ in range(_heading(e)):
-                vx, vy = -vy, vx
-            out.setdefault((math.floor(float(e.x) + vx), math.floor(float(e.y) + vy)), None)
+            (tile,) = fkpmod.tiles_of(cat, e)
+            got = armsmod.tiles(e.name, e.dir, e.attrs, tile)
+            for t in got or ():
+                out.setdefault(t, e.net)
+        else:
+            t = _drop_tile(cat, e)
+            if t is not None:          # its own net may still lay on it: it is that net's end
+                out.setdefault(t, None)
     return out
 
 
@@ -483,20 +576,132 @@ def _ug_spans(cat, ents):
     return spans
 
 
-def _ground(cat, ents, frames, js, net, terrain=()):
+def _ent_ground(cat, e):
+    """(tiles, front tiles, hand tiles, hand owner is the net) of one entity: what it stands on,
+    what its belt points into (``_belt_fronts``), what its hand picks from or drops onto
+    (``_hand_tiles``; a drill's drop has no net). Remembered on the catalog per entity value."""
+    memo = cat.__dict__.setdefault("_route_ground_memo", {})
+    key = (e.name, e.x, e.y, e.dir, e.attrs.get("ug"))
+    got = memo.get(key)
+    if got is None:
+        got = memo[key] = (tuple(fkpmod.tiles_of(cat, e)), tuple(_belt_fronts(cat, [e])),
+                           tuple(_hand_tiles(cat, [e])), cat.has_entity(e.name)
+                           and cat.kind(e.name) == "inserter")
+    return got
+
+
+def _ground(cat, ents, frames, js, net, terrain=(), box=None):
+    """``box`` (2.1.33): only the other nets' ends inside it count (a search never leaves it),
+    from an index of every net's ends built once for ``js``."""
     blocked = set(frames) | set(terrain)
-    for e in ents:
-        blocked |= fkpmod.tiles_of(cat, e)
-    for tile, owner in _belt_fronts(cat, ents).items():
+    fronts, hands = {}, {}
+    for e in ents:         # as _belt_fronts and _hand_tiles: the first entity on a tile owns it
+        ts, fs, hs, ins = _ent_ground(cat, e)
+        blocked.update(ts)
+        for t in fs:
+            fronts.setdefault(t, e.net)
+        for t in hs:
+            hands.setdefault(t, e.net if ins else None)
+    for tile, owner in fronts.items():
         if owner != net:
             blocked.add(tile)
-    for tile, owner in _hand_tiles(cat, ents).items():
+    for tile, owner in hands.items():
         if owner != net:
             blocked.add(tile)
-    for other, job in js.items():
-        if other != net:
-            blocked |= set(job.ends())
+    if box is None:
+        for other, job in js.items():
+            if other != net:
+                blocked |= set(job.ends())
+    else:
+        index = _ends_index(js)
+        x0, y0, x1, y1 = box
+        if (x1 - x0) * (y1 - y0) < len(index):
+            got = ((x, y) for x in range(x0, x1) for y in range(y0, y1) if (x, y) in index)
+        else:
+            got = (t for t in index if x0 <= t[0] < x1 and y0 <= t[1] < y1)
+        for t in got:
+            if index[t] - {net}:
+                blocked.add(t)
     return blocked - set(js[net].ends())
+
+
+_ENDS = [None, None]
+
+
+def _ends_index(js):
+    """{tile: the nets that end there} for ``js``, built once per jobs dict (2.1.33)."""
+    if _ENDS[0] is not js:
+        index = {}
+        for name, job in js.items():
+            for t in job.ends():
+                index.setdefault(tuple(t), set()).add(name)
+        _ENDS[0], _ENDS[1] = js, index
+    return _ENDS[1]
+
+
+#: 2.1.33 (lab FRICTION 35): how far past a net's search box an entity can still matter (its
+#: tiles, a belt's front, a long hand's reach, an underground's far end: turbo reaches 11)
+_CLIP = 16
+
+
+def _clipped(ents, frames, box):
+    """``ents`` and ``frames`` near ``box`` only: a search is blocked outside its box anyway.
+    Every net built its ground from every entity and frame tile of the whole layout, so a
+    megabase loop of 1300 nets routed 28+ minutes where each bay alone took 20-40 s."""
+    x0, y0, x1, y1 = box
+    a0, b0, a1, b1 = x0 - _CLIP, y0 - _CLIP, x1 + _CLIP, y1 + _CLIP
+    near = [e for e in ents if a0 <= e.x < a1 and b0 <= e.y < b1]
+    if len(near) == len(ents):
+        near = ents
+    if (a1 - a0) * (b1 - b0) < len(frames):
+        fr = {(x, y) for x in range(a0, a1) for y in range(b0, b1) if (x, y) in frames}
+    else:
+        fr = {t for t in frames if a0 <= t[0] < a1 and b0 <= t[1] < b1}
+    return near, fr
+
+
+class _GroundParts:
+    """``_ground`` for many nets of one layout: the parts every net shares, worked out once
+    (2.1.32: ``_direct_claims`` worked them out again for every net, most of a megabase grid's
+    route setup). ``of(net)`` == ``_ground(cat, ents, frames, js, net, terrain)``."""
+
+    def __init__(self, cat, ents, frames, js, terrain=()):
+        self.base = set(frames) | set(terrain)
+        for e in ents:
+            self.base |= fkpmod.tiles_of(cat, e)
+        self.parts = []                         # (every tile, {owner: its tiles})
+        for tiles in (_belt_fronts(cat, ents), _hand_tiles(cat, ents)):
+            mine = {}
+            for tile, owner in tiles.items():
+                mine.setdefault(owner, set()).add(tile)
+            self.parts.append((set(tiles), mine))
+        self.ends = set()                       # every net's ends: its own are taken off after
+        for job in js.values():
+            self.ends |= set(job.ends())
+        self.js = js
+
+    def grid(self, net, box):
+        """A ground for one net's direct inserters: ``blocked(t)`` as ``_Bounded(of(net), box)``
+        has it, tile by tile, with no set of the whole frame built for the net."""
+        parts, own = self, set(self.js[net].ends())
+        x0, y0, x1, y1 = box
+
+        class _View:
+            def blocked(self, t):
+                if not (x0 <= t[0] < x1 and y0 <= t[1] < y1):
+                    return True
+                if t in own:
+                    return False
+                if t in parts.base or t in parts.ends:
+                    return True
+                return any(t in every and t not in mine.get(net, ()) for every, mine in parts.parts)
+        return _View()
+
+    def of(self, net):
+        blocked = self.base | self.ends
+        for every, mine in self.parts:
+            blocked |= every - mine.get(net, set())
+        return blocked - set(self.js[net].ends())
 
 
 # -- promotion: another net's belt becomes an underground pair (2.0.78) ----------------------------
@@ -647,6 +852,9 @@ def _carriers(job, tree_ents, net):
             attrs["ug"] = "in" if p["belt_to_ground_type"] == "input" else "out"
         if p.get("config"):                        # 2.1.24: an m2m split's output priority
             attrs["config"] = p["config"]
+        for k in ("pick", "drop"):                 # 3.0: an inserter's own vectors
+            if p.get(k):
+                attrs[k] = p[k]
         x, y = p["x"], p["y"]
         out.append(fkpmod.Entity(key, p["name"], _clean(x), _clean(y), int(p["direction"]), attrs))
     return out
@@ -661,21 +869,134 @@ def _clean(v):
 #: fast inserters first (``_route_layout`` sets it)
 _FILTERED = frozenset()
 
+#: 3.0 (Rory, 11-01: "a net needs two or 3 inserters on the same machine, a common case in seablock
+#: earlygame"): {(net, machine): k} for a machine one hand can't keep up with, the best hand the
+#: force can build at what the design asks of it (``_tap_counts``); ``_grow`` asks the tree for k
+#: inserters there, and one where k don't fit
+_TAPS = {}
+TAPS_MAX = 3
+#: 3.0 (Rory, 11-02: "ideally our throughput fix is more general"): what flows through each
+#: machine's side of a net, {(net, machine, "in"|"out"): items/s}, and what one hand of the best
+#: the force can build carries: every inserter link the router lays (a tap off a belt, a drop onto
+#: one, a machine straight into a machine) is sized by them (``_link_k``)
+_NEED = {}
+_HAND = 0.0
+#: 3.0 (Bob's adjustable inserters, ``fkcore.arms``): the vectors the force may set an inserter to,
+#: or None (the base game). ``_route_layout`` sets it from the build's stock read; nothing read:
+#: the pack's base set (range 1, 4 ways). Taps and direct inserters then turn corners, and reach
+#: further with a short hand, before a long-handed one is laid.
+_ARMS = None
+INF_RATE = float("inf")
 
-def _grow(grid, root, fixed, machines, limit, sources=False, tap=TapSink):
+
+def _link_k(net, src=None, dst=None, need=None):
+    """How many inserters one link of ``net`` needs: what flows through it (the lesser of what
+    machine ``src`` puts on the net and what ``dst`` takes from it; ``need`` when given) over what
+    one hand of the best the force can build carries, 1 to TAPS_MAX. 1 when nothing is known."""
+    r = need if need is not None else min(_NEED.get((net, src, "out"), INF_RATE),
+                                          _NEED.get((net, dst, "in"), INF_RATE))
+    if not _HAND or not 0 < r < INF_RATE:
+        return 1
+    return max(1, min(TAPS_MAX, math.ceil(r / _HAND - 1e-9)))
+
+
+def _sizing(flat, cat):
+    """``_tap_counts`` and the flows behind it: (taps, need, hand) for ``_TAPS``, ``_NEED`` and
+    ``_HAND``. Nothing read: ({}, {}, 0.0)."""
+    need, hand = {}, [0.0]
+    taps = _tap_counts(flat, cat, need, hand)
+    return taps, need, hand[0]
+
+
+def _tap_counts(flat, cat, need=None, hand=None):
+    """{(net, machine): k} for every machine on a belt net whose take (a consumer) or put (a
+    driver) is more than one inserter of the best hand the force can build carries: k of them, at
+    most TAPS_MAX. Nothing read (a lab, a paper game): {} (one hand each; ``hands`` raises it).
+    ``need`` (a dict) gets every machine's flow, ``hand`` (a one-item list) the one hand's rate."""
+    from . import avail as availmod
+    from . import lanes as lanesmod
+    from . import routed as routedmod
+    if availmod.snapshot().sup is None:
+        return {}
+    rungs = [h for h in availmod.HANDS if availmod.buildable(h)]
+    best = rungs[-1] if rungs else availmod.HANDS[0]
+    take = lanesmod.inserter_rate(best, cat=cat)
+    put = lanesmod.inserter_rate(best, onto_belt=True, cat=cat)
+    if not take or not put:
+        return {}
+    if hand is not None:
+        hand[0] = take
+    model = routedmod.sizing_model(flat)
+    out = {}
+    for name, net in flat.nets.items():
+        want = {}
+        for key, item in net.consumers:
+            m = flat.machines.get(key)
+            if m is None or cat.is_fluid(item):
+                continue
+            r = m.needs.get(item, 0.0) * model.util.get(key, 1.0)
+            if not r and m.sink:         # a chest at a net's end: its share of what reaches sinks
+                st = model.nets.get((name, item))
+                n = sum(1 for k, i in net.consumers if i == item and flat.machines[k].sink)
+                r = st.to_sinks / max(1, n) if st is not None and st.to_sinks < INF_RATE else 0.0
+            if 0 < r < INF_RATE:
+                want[(key, "in")] = want.get((key, "in"), 0.0) + r
+        for key, item in net.drivers:
+            m = flat.machines.get(key)
+            if m is None or cat.is_fluid(item):
+                continue
+            r = m.makes.get(item, 0.0)
+            if r >= INF_RATE:
+                st = model.nets.get((name, item))
+                n = sum(1 for _k, i in net.drivers if i == item)
+                r = st.delivered / max(1, n) if st is not None and st.delivered < INF_RATE else 0.0
+            else:
+                r *= model.util.get(key, 1.0)
+            if r > 0:
+                want[(key, "out")] = want.get((key, "out"), 0.0) + r
+        for (key, side), r in want.items():
+            if need is not None:
+                need[(name, key, side)] = r
+            k = min(TAPS_MAX, math.ceil(r / (take if side == "in" else put) - 1e-9))
+            if k > 1:
+                out[(name, key)] = k
+    return out
+
+
+def _grow(grid, root, fixed, machines, limit, sources=False, tap=TapSink, drops=None, net=None,
+          cap=TAPS_MAX):
     """grow() towards ``fixed`` sinks and ``machines`` [(key, rect)] by direct insertion: fast
     inserters, or long-handed ones where only those reach. ``sources``: the machines are drivers,
     and one in ``_FILTERED`` is tried with fast inserters alone before a long-handed one may load
-    it (2.0.76). ``tap``: the machines' sink kind (2.1 m2m: ``m2m.LeftTap``). -> (result, sinks)."""
+    it (2.0.76). ``tap``: the machines' sink kind (2.1 m2m: ``m2m.LeftTap``). ``drops``: {key:
+    tile} of the driver machines that drop on a tile (drills: ``DropSink``). -> (result, sinks)."""
+    drops = drops or {}
     passes = list(_HANDS)
     if sources and any(key in _FILTERED for key, _r in machines):
         passes = [_HANDS[0], None] + passes[1:]
+    # two drills facing one belt tile (a pair) drop on the same tile: one sink for both
+    first = {}
+    for key, _r in machines:
+        if key in drops:
+            first.setdefault(drops[key], key)
+    machines = [(k, r) for k, r in machines if k not in drops or first[drops[k]] == k]
     for hands in passes:
-        sinks = fixed + [tap(key, rect, 1, _HANDS[0] if hands is None and key in _FILTERED
-                             else hands or _HANDS[-1]) for key, rect in machines]
+        sinks = fixed + [DropSink(key, drops[key]) if key in drops else
+                         tap(key, rect, min(_TAPS.get((net, key), 1), cap),
+                             _HANDS[0] if hands is None and key in _FILTERED
+                             else hands or _HANDS[-1], arms=_ARMS) for key, rect in machines]
         res = grow(grid, root, sinks, limit=limit)
         if not res["problems"] or not machines:
             break
+    if res["problems"] and cap > 1 and any(_TAPS.get((net, k), 1) > 1 for k, _r in machines):
+        # 3.0: k inserters on a machine don't fit here: one fewer, down to one each as before
+        # (too-thin says what that costs)
+        return _grow(grid, root, fixed, machines, limit, sources, tap, drops, net,
+                     min(cap, max(_TAPS.get((net, k), 1) for k, _r in machines)) - 1)
+    if res["problems"] and any(getattr(t, "hand", False) for t in drops.values()):
+        # 3.0: a recycler whose drop tile no belt reaches is emptied by an inserter instead
+        return _grow(grid, root, fixed, machines, limit, sources, tap,
+                     {k: t for k, t in drops.items() if not getattr(t, "hand", False)}, net, cap)
     return res, sinks
 
 
@@ -683,6 +1004,10 @@ def _tree_job(cat, job, blocked, spans, clear, box, limit):
     """forward or reverse: one tree. -> (plan entities, report text) or (None, reason)."""
     reverse = job.mode == "reverse"
     grid = _Bounded(blocked, box, spans, clear if reverse else None)
+    if job.lanes and not reverse:
+        from . import lanephys
+        grid.lane_ok = {t: lanephys.tile_mask(need, [(h * 4, held) for h, held in feeds])
+                        for t, (need, feeds) in job.lanes.items()}
     if reverse:
         (gtile, gh), = job.goals
         root = (gtile[0], gtile[1], (gh + 2) % 4, 0)
@@ -695,7 +1020,8 @@ def _tree_job(cat, job, blocked, spans, clear, box, limit):
         machines = job.taps
     if grid.blocked((root[0], root[1])):
         return None, f"its {'end' if reverse else 'start'} tile {root[0]},{root[1]} is taken"
-    res, sinks = _grow(grid, root, fixed, machines, limit, sources=reverse)
+    res, sinks = _grow(grid, root, fixed, machines, limit, sources=reverse,
+                       drops=job.drops if reverse else None, net=job.net)
     if res["problems"]:
         return None, "; ".join(res["problems"][:3])
     c = res["counts"]
@@ -706,9 +1032,45 @@ def _tree_job(cat, job, blocked, spans, clear, box, limit):
 
 
 # -- the hub --------------------------------------------------------------------------------------
+def _native_box_grid(grid):
+    """The grid's fkroute.NativeGrid when the native kernel may walk it (a _Bounded), else None."""
+    if not steinermod.native_on():
+        return None
+    try:
+        ng = steinermod._native_grid(grid)
+    except (TypeError, OverflowError):
+        return None
+    return ng if ng is not None and getattr(grid, "box", None) is not None and \
+        type(grid).blocked is _Bounded.blocked else None
+
+
+def _int_tiles(ts):
+    out = []
+    for t in ts:
+        if type(t[0]) is not int or type(t[1]) is not int:
+            return None
+        out.append((t[0], t[1]))
+    return out
+
+
 def _walk(grid, seeds, reach=5):
     """Belt distance over free ground from ``seeds``: a step to a free tile, or a tunnel under
-    whatever blocks it to the first free tile within ``reach`` (as the search may jump)."""
+    whatever blocks it to the first free tile within ``reach`` (as the search may jump).
+    Runs in fkroute when it can (the same dict, in the same order)."""
+    seeds = list(seeds)
+    ng = _native_box_grid(grid)
+    ints = _int_tiles(seeds) if ng is not None else None
+    if ints is not None:
+        got = dict(steinermod._native.walk(ng, ints, reach))
+        if os.environ.get("FK_NATIVE") == "check":
+            py = _walk_py(grid, seeds, reach)
+            if list(py.items()) != list(got.items()):
+                raise AssertionError("fkroute.walk differs from _walk_py")
+        return got
+    return _walk_py(grid, seeds, reach)
+
+
+def _walk_py(grid, seeds, reach=5):
     dist = {s: 0 for s in seeds}
     todo = [(0, s) for s in sorted(dist)]
     while todo:
@@ -741,10 +1103,27 @@ def _hubs(grid, job, most=_HUBS):
     by the summed walking distance from every driver to H and from F to every consumer; a hub
     within 2 tiles of an end on a side with several ends ranks last; picked 3 tiles apart."""
     ends = set(job.ends())
-    near_d = [[t] for t, _h in job.starts] + [_beside(grid, r) for _k, r in job.sources]
+    near_d = [[t] for t, _h in job.starts] + [[job.drops[k]] if k in job.drops else
+                                              _beside(grid, r) for k, r in job.sources]
     near_c = [[t] for t, _h in job.goals] + [_beside(grid, r) for _k, r in job.taps]
-    dd = [_walk(grid, s) for s in near_d]
-    dc = [_walk(grid, s) for s in near_c]
+    ng = _native_box_grid(grid)
+    if ng is not None:
+        nd = [_int_tiles(s) for s in near_d]
+        nc = [_int_tiles(s) for s in near_c]
+        ne = _int_tiles(ends)
+        if ne is not None and all(s is not None for s in nd + nc):
+            got = [(tuple(t), f) for t, f in steinermod._native.hubs(ng, nd, nc, ne, most)]
+            if os.environ.get("FK_NATIVE") == "check":
+                py = _hubs_py(grid, ends, near_d, near_c, most)
+                if py != got:
+                    raise AssertionError(f"fkroute.hubs differs from _hubs_py: {got} != {py}")
+            return got
+    return _hubs_py(grid, ends, near_d, near_c, most)
+
+
+def _hubs_py(grid, ends, near_d, near_c, most):
+    dd = [_walk_py(grid, s) for s in near_d]
+    dc = [_walk_py(grid, s) for s in near_c]
     if not dd or not dc:
         return []
     common = set.intersection(*(set(d) for d in dd + dc)) - ends
@@ -778,7 +1157,7 @@ def _hub_trees(cat, job, blocked, spans, clear, box, limit, hub, f, tap=TapSink)
     rgrid = _Bounded(set(blocked) | {(fx, fy)}, box, spans, clear)
     fixed = [FixedSink(f"driver{i}", t, (h + 2) % 4) for i, (t, h) in enumerate(job.starts)]
     rres, rsinks = _grow(rgrid, (hub[0], hub[1], (f + 2) % 4, 0), fixed, job.sources, limit,
-                         sources=True, tap=tap)
+                         sources=True, tap=tap, drops=job.drops, net=job.net)
     if rres["problems"]:
         return "drivers: " + "; ".join(rres["problems"][:2])
     rtree = rres["tree"]
@@ -791,7 +1170,7 @@ def _hub_trees(cat, job, blocked, spans, clear, box, limit, hub, f, tap=TapSink)
     rs = rtree.spans()
     fgrid = _Bounded(fb, box, {a: set(spans[a]) | rs[a] for a in (0, 1)})
     fixed = [FixedSink(f"consumer{i}", t, h) for i, (t, h) in enumerate(job.goals)]
-    fres, fsinks = _grow(fgrid, (fx, fy, f, 0), fixed, job.taps, limit)
+    fres, fsinks = _grow(fgrid, (fx, fy, f, 0), fixed, job.taps, limit, net=job.net)
     if fres["problems"]:
         return "consumers: " + "; ".join(fres["problems"][:2])
     ftree = fres["tree"]
@@ -799,10 +1178,41 @@ def _hub_trees(cat, job, blocked, spans, clear, box, limit, hub, f, tap=TapSink)
     return rtree.cost() + ftree.cost(), plan, rres["counts"], fres["counts"]
 
 
+def _arm_plan(name, q, arm, role="ins"):
+    """A plan inserter on tile ``q`` with its own (pick, drop) vectors (3.0, ``fkcore.arms``): it
+    faces its pickup, and keeps the vectors that are not that direction's own."""
+    direction = armsmod.heading(arm[0])
+    return dict({"name": name, "x": q[0] + 0.5, "y": q[1] + 0.5, "direction": direction,
+                 "role": role}, **armsmod.canon(name, direction, arm[0], arm[1]))
+
+
+def _passes():
+    """The hand passes of a direct inserter: ``_HANDS``, with the force's vectors (``_ARMS``)
+    after the first: (names, None) for a straight swing, (names, pairs) for vectors."""
+    out = [(_HANDS[0], None)]
+    if _ARMS is not None:
+        short = [n for n in _HANDS[0] if _REACH.get(n) == 1]
+        if short:
+            out.append(((short[0],), armsmod.pairs(_ARMS, straight=False)))
+    return out + [(hands, None) for hands in _HANDS[1:]]
+
+
 def _direct_pair(src, dst, grid, taken=()):
     """An inserter from machine rect ``src`` into machine rect ``dst`` on a free tile not in
-    ``taken`` (one this plan already holds), if one fits: a short hand first, else a long one."""
-    for hands in _HANDS:
+    ``taken`` (one this plan already holds), if one fits: a short hand first, then (3.0) one with
+    the force's vectors (round a corner, further out), else a long one."""
+    for hands, arms in _passes():
+        if arms is not None:
+            for pick, drop in arms:
+                for x in range(src[0], src[2]):
+                    for y in range(src[1], src[3]):
+                        q = (x - pick[0], y - pick[1])
+                        d = (q[0] + drop[0], q[1] + drop[1])
+                        if q in taken or grid.blocked(q) or not (dst[0] <= d[0] < dst[2]
+                                                                 and dst[1] <= d[1] < dst[3]):
+                            continue
+                        return _arm_plan(hands[0], q, (pick, drop))
+            continue
         for name in hands:
             r = _REACH[name]
             for x in range(src[0], src[2]):
@@ -818,12 +1228,28 @@ def _direct_pair(src, dst, grid, taken=()):
     return None
 
 
+def _direct_link(src, dst, grid, taken=(), k=1):
+    """Up to ``k`` inserters from machine rect ``src`` into ``dst`` (``_direct_pair``, each on a
+    tile of its own): [] when none fits, fewer than k where only those fit."""
+    got, held = [], set(taken)
+    for _ in range(max(1, k)):
+        one = _direct_pair(src, dst, grid, held)
+        if one is None:
+            break
+        got.append(one)
+        held.add((math.floor(one["x"]), math.floor(one["y"])))
+    return got
+
+
+def _tiles_of(plans):
+    return {(math.floor(p["x"]), math.floor(p["y"])) for p in plans}
+
+
 def _direct(cat, job, grid):
     """One machine driver into one machine: a single inserter between them, if one fits."""
-    (_sk, src), = job.sources
-    (_tk, dst), = job.taps
-    got = _direct_pair(src, dst, grid)
-    return [got] if got else None
+    (sk, src), = job.sources
+    (tk, dst), = job.taps
+    return _direct_link(src, dst, grid, (), _link_k(job.net, sk, tk)) or None
 
 
 def _direct_claims(cat, js, todo, ents, frames, box, terrain=()):
@@ -832,16 +1258,18 @@ def _direct_claims(cat, js, todo, ents, frames, box, terrain=()):
     belt ends), and a mall's machine-to-machine nets have none. Greedy, net by net, one inserter
     per tile."""
     taken, out = set(), {}
+    shared = None
     for net in sorted(todo):
         pairs = _direct_pairs_of(js[net])
         if not pairs:
             continue
-        grid = _Bounded(_ground(cat, ents, frames, js, net, terrain), box)
+        if shared is None:
+            shared = _GroundParts(cat, ents, frames, js, terrain)
+        grid = shared.grid(net, box)
         mine, ends = set(), set(js[net].ends())
-        for src, dst in pairs:
-            got = _direct_pair(src, dst, grid, taken | mine | ends)
-            if got:
-                mine.add((math.floor(got["x"]), math.floor(got["y"])))
+        for (sk, src), (tk, dst) in pairs:
+            mine |= _tiles_of(_direct_link(src, dst, grid, taken | mine | ends,
+                                           _link_k(net, sk, tk)))
         if mine:
             out[net] = mine
             taken |= mine
@@ -849,15 +1277,15 @@ def _direct_claims(cat, js, todo, ents, frames, box, terrain=()):
 
 
 def _direct_pairs_of(job):
-    """[(driver rect, consumer rect)] a direct inserter may join: one machine driver and each
+    """[((driver, rect), (consumer, rect))] a direct inserter may join: one machine driver and each
     consumer machine, or (1.4) each of several machine drivers and one consumer machine (two
     cable assemblers beside one circuit assembler). [] for any other net."""
     if job.starts or job.goals:
         return []
     if len(job.sources) == 1 and job.taps:
-        return [(job.sources[0][1], rect) for _k, rect in job.taps]
+        return [(job.sources[0], tap) for tap in job.taps]
     if len(job.taps) == 1 and len(job.sources) > 1:
-        return [(rect, job.taps[0][1]) for _k, rect in job.sources]
+        return [(src, job.taps[0]) for src in job.sources]
     return []
 
 
@@ -874,13 +1302,13 @@ def _hub_job(cat, job, blocked, spans, clear, box, limit):
     # nets' claims took every side of the driver), the whole net is laid as a tree, as before 1.4
     ends = set(job.ends())
     if len(job.sources) == 1 and not job.starts and job.taps:
-        (_sk, src), = job.sources
+        (sk, src), = job.sources
         taken, direct, rest = set(), [], []
         for key, rect in job.taps:
-            got = _direct_pair(src, rect, grid, taken | ends)
+            got = _direct_link(src, rect, grid, taken | ends, _link_k(job.net, sk, key))
             if got:
-                direct.append(got)
-                taken.add((math.floor(got["x"]), math.floor(got["y"])))
+                direct += got
+                taken |= _tiles_of(got)
             else:
                 rest.append((key, rect))
         if direct:
@@ -888,7 +1316,7 @@ def _hub_job(cat, job, blocked, spans, clear, box, limit):
             if not rest and not job.goals:
                 return direct, n
             sub = NetJob(job.net, starts=list(job.starts), goals=list(job.goals), taps=rest,
-                         sources=list(job.sources), owners=list(job.owners))
+                         sources=list(job.sources), drops=dict(job.drops), owners=list(job.owners))
             if sub.mode == "hub":
                 plan, how = _hub_search(cat, sub, set(blocked) | taken, spans, clear, box, limit)
             else:
@@ -899,20 +1327,20 @@ def _hub_job(cat, job, blocked, spans, clear, box, limit):
     if len(job.taps) == 1 and len(job.sources) > 1 and not job.starts and not job.goals:
         # several machine drivers beside one consumer machine: each hands to it by an inserter
         # of its own (1.4); only the drivers left are laid as a belt tree into it
-        (_tk, dst), = job.taps
+        (tk, dst), = job.taps
         taken, direct, rest = set(), [], []
         for key, rect in job.sources:
-            got = _direct_pair(rect, dst, grid, taken | ends)
+            got = _direct_link(rect, dst, grid, taken | ends, _link_k(job.net, key, tk))
             if got:
-                direct.append(got)
-                taken.add((math.floor(got["x"]), math.floor(got["y"])))
+                direct += got
+                taken |= _tiles_of(got)
             else:
                 rest.append((key, rect))
         if direct:
             n = f"{len(direct)} inserter{'s' if len(direct) > 1 else ''} (direct insertion)"
             if not rest:
                 return direct, n
-            sub = NetJob(job.net, taps=list(job.taps), sources=rest, owners=list(job.owners))
+            sub = NetJob(job.net, taps=list(job.taps), sources=rest, drops=dict(job.drops), owners=list(job.owners))
             plan, how = _hub_search(cat, sub, set(blocked) | taken, spans, clear, box, limit)
             if plan is not None:
                 return direct + plan, f"{n}, then {how}"
@@ -1105,10 +1533,12 @@ def _widen(flat, cat, js):
             part = NetJob(f"{net}.{side}")
             for entry in group:
                 (part.sources if isinstance(entry[0], str) else part.starts).append(entry)
+                if isinstance(entry[0], str) and entry[0] in job.drops:
+                    part.drops[entry[0]] = job.drops[entry[0]]
             parts.append(part)
         both = NetJob(net, goals=list(job.goals), taps=list(job.taps), owners=list(job.owners))
         wide = NetJob(net, starts=list(job.starts), goals=list(job.goals), taps=list(job.taps),
-                      sources=list(job.sources), owners=list(job.owners),
+                      sources=list(job.sources), drops=dict(job.drops), owners=list(job.owners),
                       anchors=dict(job.anchors), parts=(parts[0], parts[1], both),
                       wide=pin is None, pin=pin, drv=list(job.drv))
         js[net] = wide
@@ -1205,12 +1635,13 @@ def _ground_key(cat, job, ents, box, terrain, avoid, extra, whole=False):
 
 
 def _route_one(cat, job, ents, frames, js, box, limit, terrain=(), avoid=(), spans=None,
-               allow=frozenset(), promoted=frozenset()):
+               allow=frozenset(), promoted=frozenset(), soft=None):
     """One net's route in ``box``: first in its own neighbourhood (``_near_box``), then, if that
     fails, in the whole box, so bounding the search never loses a route the box allowed. 2.1.26:
     when the whole box would cost more than ``WALK_BUDGET``, in boxes twice as big in turn, as far
     as the budget allows; then it fails, saying how far it looked. ``promoted``: tiles freed for it
-    (``_route_promoted``)."""
+    (``_route_promoted``). ``soft``: {tile: extra cost} of the tiles only other nets' routes hold
+    (``_negotiate``): its tree or hub may lay belts there, paying."""
     near = _near_box(job, box)
     seeds = _seeds_of(job)
     if near is None:
@@ -1228,16 +1659,16 @@ def _route_one(cat, job, ents, frames, js, box, limit, terrain=(), avoid=(), spa
                    f"the route's walk budget")
             break
         got, how = _route_in(cat, job, ents, frames, js, b, limit, terrain, avoid, spans, allow,
-                             promoted)
+                             promoted, soft)
         if got is not None:
             break
     if got is not None or not (job.wide or job.pin):
         return got, how
     # 2.0.54: no join routes, so the net goes on as one lane, the way it went before
     plain = NetJob(job.net, starts=list(job.starts), goals=list(job.goals), taps=list(job.taps),
-                   sources=list(job.sources), owners=list(job.owners), anchors=dict(job.anchors))
+                   sources=list(job.sources), drops=dict(job.drops), owners=list(job.owners), anchors=dict(job.anchors))
     got, text = _route_one(cat, plain, ents, frames, js, box, limit, terrain, avoid, spans, allow,
-                           promoted)
+                           promoted, soft)
     if got is None:
         return None, how
     what = "both lanes" if job.wide else f"lane {job.pin}"
@@ -1270,15 +1701,37 @@ def _route_seeded(cat, job, ents, frames, js, box, limit, terrain, avoid, seed,
     a short run), the rest of it the router's (Rory, 2026-11-01: "a manual way to just pin the
     splitter in"). Each driver goes to the seed's nearest way in, each consumer comes from its
     nearest way out, a piece of the router's own search each, laid on the seed and the pieces
-    before it. -> (carriers, report text) or (None, reason)."""
+    before it. -> (carriers, report text) or (None, reason).
+
+    3.0 (the walker's blueprints): a seed may hold inserters too. One that picks from a machine
+    and drops on a seed belt feeds it from that driver, one that picks from a seed belt and drops
+    into a machine feeds that consumer, so the router lays no hand of its own for them."""
     if job.parts or job.m2m is not None or job.fluid:
         return None, "a seed takes a net on one belt (not a lane pair, an m2m net or a pipe)"
+    hands = [e for e in seed if cat.has_entity(e.name) and cat.kind(e.name) == "inserter"
+             and _heading(e) is not None]
     for e in seed:
-        if not _is_belt(cat, e) or _heading(e) is None:
-            return None, f"seed {e.key} ({e.name}) is no belt, underground or splitter"
-    seed = [fkpmod.Entity(e.key, e.name, e.x, e.y, e.dir, dict(e.attrs, net=job.net))
-            for e in seed]
-    ins, outs = _seed_ends(cat, seed)
+        if e not in hands and (not _is_belt(cat, e) or _heading(e) is None):
+            return None, f"seed {e.key} ({e.name}) is no belt, underground, splitter or inserter"
+    belts = [fkpmod.Entity(e.key, e.name, e.x, e.y, e.dir, dict(e.attrs, net=job.net))
+             for e in seed if e not in hands]
+    if not belts:
+        return None, "a seed of inserters alone has no belt for them to stand on"
+    hands = [fkpmod.Entity(e.key, e.name, e.x, e.y, e.dir, dict(e.attrs, net=job.net))
+             for e in hands]
+    seed = belts + hands
+    on = {t for e in belts for t in fkpmod.tiles_of(cat, e)}
+    reach = []                                          # (pickup tile, drop tile) per hand
+    for e in hands:
+        (tile,) = fkpmod.tiles_of(cat, e)
+        reach.append(armsmod.tiles(e.name, e.dir, e.attrs, tile))
+
+    def inside(t, rect):
+        return rect[0] <= t[0] < rect[2] and rect[1] <= t[1] < rect[3]
+    sources = [m for m in job.sources
+               if not any(inside(p, m[1]) and d in on for p, d in reach)]
+    taps = [m for m in job.taps if not any(p in on and inside(d, m[1]) for p, d in reach)]
+    ins, outs = _seed_ends(cat, belts)
     if not ins or not outs:
         return None, f"the seed has no way {'in' if not ins else 'out'}: every end of it is " \
                      "another of its carriers"
@@ -1309,13 +1762,13 @@ def _route_seeded(cat, job, ents, frames, js, box, limit, terrain, avoid, seed,
             got[k][0 if kind == "b" else 1].append(x)
         return got
 
-    into = share(ins, job.starts, job.sources)          # per way in: (starts, sources)
-    out_of = share(outs, job.goals, job.taps)           # per way out: (goals, taps)
+    into = share(ins, job.starts, sources)              # per way in: (starts, sources)
+    out_of = share(outs, job.goals, taps)               # per way out: (goals, taps)
     laid, words = list(seed), [f"your seed, {len(seed)} carriers"]
     for k, (starts, sources) in enumerate(into):
         if not starts and not sources:
             continue
-        piece = NetJob(job.net, starts=starts, sources=sources, goals=[ins[k]],
+        piece = NetJob(job.net, starts=starts, sources=sources, drops=dict(job.drops), goals=[ins[k]],
                        owners=list(job.owners), anchors=dict(job.anchors))
         got, why = _route_one(cat, piece, list(ents) + laid, frames, js, box, limit, terrain,
                               avoid, allow=allow)
@@ -1382,8 +1835,11 @@ def try_route(flat, lay, cat, a, b, bounds=None, margin=4, blocked=(), limit=600
 
 
 def _route_in(cat, job, ents, frames, js, box, limit, terrain=(), avoid=(), spans=None,
-              allow=frozenset(), promoted=frozenset()):
+              allow=frozenset(), promoted=frozenset(), soft=None):
     net = job.net
+    ents, frames = _clipped(ents, frames, box)
+    if terrain:
+        terrain = _clipped((), terrain, box)[1]
     if job.parts:
         joined = _prejoined(job)
         if joined is None:
@@ -1392,7 +1848,8 @@ def _route_in(cat, job, ents, frames, js, box, limit, terrain=(), avoid=(), span
                                allow)
         # a pair already paired where it comes in (a stack cell's paired port, 2.0.48): its one
         # belt runs straight on, both lanes, and every machine hands on or off it
-        blocked = _ground(cat, ents, frames, js, net, terrain) | (set(avoid) - set(job.ends()))
+        blocked = _ground(cat, ents, frames, js, net, terrain, box) | \
+            (set(avoid) - set(job.ends()))
         plan = _straight(joined, _Bounded(blocked, box))
         if plan is None:
             return None, ("its two lanes come in paired, and no straight belt runs on from there "
@@ -1402,8 +1859,8 @@ def _route_in(cat, job, ents, frames, js, box, limit, terrain=(), avoid=(), span
             if e.name not in _BELT_NAMES:
                 e.attrs["net"] = fkpmod.hand_net(net)
         return laid, f"a straight belt of both lanes, {len(laid)} carriers (paired at its port)"
-    blocked = (_ground(cat, ents, frames, js, net, terrain) | (set(avoid) - set(job.ends()))) \
-        - set(promoted)
+    blocked = (_ground(cat, ents, frames, js, net, terrain, box)
+               | (set(avoid) - set(job.ends()))) - set(promoted)
     spans = _ug_spans(cat, ents) if spans is None else spans
     clear = _belt_tiles(cat, ents)
     if job.straight:
@@ -1414,13 +1871,20 @@ def _route_in(cat, job, ents, frames, js, box, limit, terrain=(), avoid=(), span
             laid = _settle_leaves(cat, _carriers(job, straight, net), ents, allow=allow)
             if laid is not None:
                 return laid, f"a straight belt, {len(straight)} carriers"
+    # negotiated: the tree or hub may lay belts on what only other nets' routes hold, paying (a
+    # tile its own ground blocks stays blocked)
+    if soft:
+        soft = {t: c for t, c in soft.items() if t not in blocked}
+    soft_blocked = blocked
     if job.m2m is not None:
         from . import m2m as m2mmod
         plan, how = m2mmod.route(cat, job, blocked, spans, clear, box, limit, ents)
     elif job.mode == "hub":
-        plan, how = _hub_job(cat, job, blocked, spans, clear, box, limit)
+        with steinermod.soft_ground(soft):
+            plan, how = _hub_job(cat, job, soft_blocked, spans, clear, box, limit)
     else:
-        plan, how = _tree_job(cat, job, blocked, spans, clear, box, limit)
+        with steinermod.soft_ground(soft):
+            plan, how = _tree_job(cat, job, soft_blocked, spans, clear, box, limit)
     if plan is None:
         # 2.0.48: a belt that runs straight through, every machine handing on or off it by one
         # inserter (a stack cell's through belt: no room for a tree's turns or hub)
@@ -1450,7 +1914,7 @@ def _prejoined(job):
                   goals=list(pair.goals) + list(left.goals) + list(right.goals),
                   taps=list(pair.taps) + list(left.taps) + list(right.taps),
                   sources=list(left.sources) + list(right.sources),
-                  owners=list(job.owners))
+                  drops={**left.drops, **right.drops}, owners=list(job.owners))
 
 
 def _straight(job, grid):
@@ -1501,18 +1965,20 @@ def _straight(job, grid):
     laid = [t for t in tiles if kind[t] is not None]
     taken = set(tiles)
     for want, pairs in ((job.taps, False), (job.sources, True)):
-        for _key, rect in want:
-            got = None
+        for key, rect in want:
+            k, n = _TAPS.get((job.net, key), 1), 0
             for x, y in laid:
                 belt = (x, y, x + 1, y + 1)
                 got = _direct_pair(rect, belt, grid, taken) if pairs else \
                     _direct_pair(belt, rect, grid, taken)
                 if got:
-                    break
-            if not got:
+                    taken.add((math.floor(got["x"]), math.floor(got["y"])))
+                    plan.append(got)
+                    n += 1
+                    if n >= k:
+                        break
+            if not n:
                 return None
-            taken.add((math.floor(got["x"]), math.floor(got["y"])))
-            plan.append(got)
     return plan
 
 
@@ -1878,7 +2344,7 @@ class _Patch:
         if not starts:
             return None
         sinks = ([FixedSink(role, belt[0], belt[1])] if belt is not None else
-                 [TapSink(machine[0], machine[1], 1, hands) for hands in _HANDS])
+                 [TapSink(machine[0], machine[1], 1, hands, arms=_ARMS) for hands in _HANDS])
         for sink in sinks:
             got = _new_branch(grid, starts, sink, self.net, False, self.limit)
             if got is not None:
@@ -1914,15 +2380,17 @@ class _Patch:
         grid, _others = self.grid(None)
         free = lambda q: not grid.blocked(q) and q not in self.g.at
         for hands in _HANDS:
-            sink = TapSink(mkey, rect, 1, hands)
+            sink = TapSink(mkey, rect, 1, hands, arms=_ARMS)
             for key in sorted(keys, key=fkpmod.natural_key):
                 n = self.g.nodes[key]
                 if n.kind not in _BELT_KINDS or (n.kind == "underground-belt" and not n.ug):
                     continue
                 for tile in n.tiles:
-                    for q, name, direction in sink.taps_at(tile, free):
+                    for q, name, direction, arm in sink.taps_at(tile, free):
+                        p = _arm_plan(name, q, arm) if arm else {"direction": direction}
                         e = fkpmod.Entity(f"~{self.net}/i0", name, q[0] + 0.5, q[1] + 0.5,
-                                          direction, {})
+                                          p["direction"], {k: p[k] for k in ("pick", "drop")
+                                                           if k in p})
                         laid = self.lay([e], nets)
                         return f"an inserter from {key} ({laid[0].key})"
         return None
@@ -1937,11 +2405,11 @@ class _Patch:
         grid, _others = self.grid(None)
         plan, taken = [], set()
         for d, m in drivers:
-            got = _direct_pair(rects[d], machine[1], grid, taken)
-            if got is None:
+            got = _direct_link(rects[d], machine[1], grid, taken, _link_k(m, d, machine[0]))
+            if not got:
                 return None
-            plan.append((got, m))
-            taken.add((math.floor(got["x"]), math.floor(got["y"])))
+            plan += [(g, m) for g in got]
+            taken |= _tiles_of(got)
         for got, m in plan:
             self.lay(_carriers(self.job, [got], self.net), [m])
         names = [d for d, _m in drivers]
@@ -1996,7 +2464,7 @@ class _Patch:
         if not roots:
             return None
         sinks = ([FixedSink(role, belt[0], (belt[1] + 2) % 4)] if belt is not None else
-                 [TapSink(machine[0], machine[1], 1, hands) for hands in _HANDS])
+                 [TapSink(machine[0], machine[1], 1, hands, arms=_ARMS) for hands in _HANDS])
         for sink in sinks:
             got = _new_branch(grid, roots, sink, m, True, self.limit)
             if got is not None:
@@ -2017,14 +2485,26 @@ class _Patch:
         a pair's belt)."""
         mkey, rect = machine
         grid, _others = self.grid(None)
-        for hands in _HANDS:
+        for hands, arms in _passes():
             for key in sorted(keys, key=fkpmod.natural_key):
                 n = self.g.nodes[key]
                 if n.nets != (m,) or (n.kind not in _BELTY and not (
                         n.kind == "underground-belt" and n.ug == "in")):
                     continue
                 for (tx, ty) in n.tiles:
-                    for h in range(4):
+                    for pick, drop in arms or ():       # 3.0: the force's vectors
+                        q = (tx - drop[0], ty - drop[1])
+                        p = (q[0] + pick[0], q[1] + pick[1])
+                        if grid.blocked(q) or q in self.g.at or not (
+                                rect[0] <= p[0] < rect[2] and rect[1] <= p[1] < rect[3]):
+                            continue
+                        plan = _arm_plan(hands[0], q, (pick, drop))
+                        e = fkpmod.Entity(f"~{self.net}/i0", hands[0], q[0] + 0.5, q[1] + 0.5,
+                                          plan["direction"],
+                                          {k: plan[k] for k in ("pick", "drop") if k in plan})
+                        laid = self.lay([e], [m])
+                        return f"an inserter onto {key} ({laid[0].key})"
+                    for h in range(4) if arms is None else ():
                         for name in hands:
                             r = _REACH[name]
                             q = (tx + _DX[h] * r, ty + _DY[h] * r)
@@ -2048,11 +2528,11 @@ class _Patch:
         grid, _others = self.grid(None)
         plan, taken = [], set()
         for c in consumers:
-            got = _direct_pair(machine[1], rects[c], grid, taken)
-            if got is None:
+            got = _direct_link(machine[1], rects[c], grid, taken, _link_k(m, machine[0], c))
+            if not got:
                 return None
-            plan.append(got)
-            taken.add((math.floor(got["x"]), math.floor(got["y"])))
+            plan += got
+            taken |= _tiles_of(got)
         laid = self.lay(_carriers(self.job, plan, m), [m])
         return f"{len(laid)} inserter{'s' if len(laid) != 1 else ''} into {', '.join(consumers)}"
 
@@ -2317,10 +2797,316 @@ def _filter_loads(flat, lay, cat):
     return out
 
 
+# 3.1: the router's version is ``compiled.ROUTER``, the one constant of the one compile store
+# (route.COMPILE_VERSION, 2.1.31..3.0.3, is retired with the router's own store).
+
+
+def _unit(net, sealed):
+    """The compile unit of ``net``: the innermost sealed module it is inside, "" for none (a lane
+    pair ``a|b`` by its first net)."""
+    parts = fkpmod.net_names(net)[0].split("/")[:-1] if net else []
+    best = ""
+    for i in range(1, len(parts) + 1):
+        pre = "/".join(parts[:i])
+        if pre in sealed:
+            best = pre
+    return best
+
+
+def _renamed(net, src, dst):
+    """``net`` (a net of unit ``src``, or a lane pair of them) as the same net of unit ``dst``;
+    ``dst`` "" gives the name relative to ``src``. None when a part is outside ``src``."""
+    out = []
+    for part in re.split(r"([|+])", net):
+        if part in ("|", "+", ""):
+            out.append(part)
+        elif part.startswith(src + "/"):
+            out.append((dst + "/" if dst else "") + part[len(src) + 1:])
+        else:
+            return None
+    return "".join(out)
+
+
+class _UnitTurn:
+    """A sealed unit's frame-relative terms (2.1.32): plain, or, for a unit turned 180 degrees
+    (``half``), the terms of its unturned frame, so a turned twin keys and stores alike."""
+
+    def __init__(self, frame, rot):
+        self.x0, self.y0, x1, y1 = frame[0], frame[1], frame[2], frame[3]
+        self.w, self.h = x1 - self.x0, y1 - self.y0
+        self.half = int(rot or 0) % 4 == 2
+
+    def point(self, x, y):
+        x, y = x - self.x0, y - self.y0
+        return (self.w - x, self.h - y) if self.half else (x, y)
+
+    def point_abs(self, x, y):
+        if self.half:
+            x, y = self.w - x, self.h - y
+        return x + self.x0, y + self.y0
+
+    def tile(self, t):
+        x, y = t[0] - self.x0, t[1] - self.y0
+        return (self.w - 1 - x, self.h - 1 - y) if self.half else (x, y)
+
+    def rect(self, r):
+        a0, b0, a1, b1 = r[0] - self.x0, r[1] - self.y0, r[2] - self.x0, r[3] - self.y0
+        return (self.w - a1, self.h - b1, self.w - a0, self.h - b0) if self.half             else (a0, b0, a1, b1)
+
+    def d16(self, d):
+        return None if d is None else ((int(d) + 8) % 16 if self.half else d)
+
+    def h4(self, h):
+        return (h + 2) % 4 if self.half else h
+
+
+def unit_key(flat, lay, cat, js, u, sealed, mine, ground, terrain, child_keys=(), seeds=None,
+             settings=()):
+    """The compile key of sealed unit ``u`` (3.1, the one key of the compile store,
+    ``fkcore.compiled``): a sha over everything its own nets ``mine`` are laid to, relative to
+    its frame -- ``compiled.ROUTER``, the frame's size, the instances placed in it (the module's
+    source and parameters, as they elaborate), every entity standing in it (machines, Literals,
+    its children's routes, a held route), the keys of the sealed units inside it
+    (``child_keys``: [(relative path, key)]), the catalog's version and the footprint of every entity name in
+    the frame, the terrain in it, the router's ``settings`` (hand, ribbon tiers, pipe), and each
+    net's ends, items, lanes and seed (``seeds``: {net: carriers}). Two units with one key are
+    laid the same. -> the key (20 hex), or None when a net's name is not the unit's own."""
+    x0, y0, x1, y1, _tiles = sealed[u]
+    rec = lay.insts.get(u)
+    rel = {n: _renamed(n, u, "") for n in mine}
+    if rec is None or any(r is None for r in rel.values()):
+        return None
+
+    def key_of(k):
+        return k[len(u) + 1:] if k.startswith(u + "/") else "^" + k
+
+    tf = _UnitTurn(sealed[u], rec.rot)
+    tile, rect = tf.tile, tf.rect
+
+    # 2.1.32: a unit turned 180 degrees is keyed in its unturned frame (a `>` bay's chains are
+    # its unturned twin's, turned): its routes are stored unturned (``_store_save``)
+    parts = [compiledmod.ROUTER, x1 - x0, y1 - y0, rec.kind, 0 if tf.half else rec.rot,
+             sorted(child_keys, key=repr), repr(settings)]
+    kids = []
+    for p, r in lay.insts.items():
+        if not p.startswith(u + "/"):
+            continue
+        if tf.half:
+            inst = flat.insts.get(p)
+            try:
+                if r.kind == "Literal" and inst is not None and inst.literal is not None:
+                    w, h = inst.literal[1]
+                    if r.rot % 2:
+                        w, h = h, w
+                    box = (int(r.x), int(r.y), int(r.x) + w, int(r.y) + h)
+                else:
+                    box = frame_of(flat, lay, p, cat)
+                fx0, fy0, _fx1, _fy1 = tf.rect(box)
+            except Exception:                 # noqa: BLE001 (a child with no frame: no key)
+                return None
+            kids.append((p[len(u) + 1:], r.kind, sorted(r.params.items()), fx0, fy0,
+                         (r.rot + 2) % 4))
+        else:
+            kids.append((p[len(u) + 1:], r.kind, sorted(r.params.items()), r.x - x0, r.y - y0,
+                         r.rot))
+    parts.append(sorted(kids))
+    # 2.1.35: a rail or signal another module owns (a shared lane's ramp, the planned signals)
+    # is left out of the key: it differs from twin to twin at the frame's edge, and ``_fits``
+    # still rejects a moved route that would stand on it
+    standing = sorted((e.name,) + tf.point(e.x, e.y) + (tf.d16(e.dir) if e.dir is not None
+                                                        else -1,)
+                      for e in _near(ground, x0, y0, x1, y1)
+                      if x0 <= e.x < x1 and y0 <= e.y < y1
+                      and not ("rail" in e.name and not e.key.startswith(u + "/")))
+    parts.append(standing)
+    # 3.1: the catalog facts the routes are laid against: its version and each name's footprint
+    facts = [getattr(cat, "version", None)]
+    for name in sorted({s[0] for s in standing}):
+        try:
+            facts.append((name, cat.size(name)))
+        except Exception:                 # noqa: BLE001 (a name the catalog has no row for)
+            facts.append((name, None))
+    parts.append(facts)
+    if terrain:
+        parts.append(sorted(tile((x, y)) for x in range(x0, x1) for y in range(y0, y1)
+                            if (x, y) in terrain))
+    for n in sorted(mine, key=lambda m: rel[m]):
+        j = js[n]
+        items = sorted(i for m in fkpmod.net_names(n) if m in flat.nets for i in flat.nets[m].items)
+        parts.append((rel[n], items,
+                      sorted((tile(t), tf.h4(h)) for t, h in j.starts),
+                      sorted((tile(t), tf.h4(h)) for t, h in j.goals),
+                      sorted((key_of(k), rect(r)) for k, r in j.taps),
+                      sorted((key_of(k), rect(r)) for k, r in j.sources),
+                      sorted(tile(t) for t in j.reserved),
+                      sorted((tile(t), sorted((ln, sorted(v)) for ln, v in need.items()),
+                              sorted((tf.h4(h), sorted((ln, sorted(v)) for ln, v in held.items()))
+                                     for h, held in feeds))
+                             for t, (need, feeds) in j.lanes.items()),
+                      j.skip, j.fluid, j.straight, j.wide, j.pin, j.m2m is not None,
+                      len(j.parts),
+                      # 3.1: a seed (fk seed) is an input of the net: it is in the key
+                      sorted((key_of(e.key), e.name) + tf.point(e.x, e.y) + (tf.d16(e.dir)
+                                                                              if e.dir is not None
+                                                                              else -1,)
+                             for e in (seeds or {}).get(n, ()))))
+    return hashlib.sha1(repr(parts).encode("utf-8")).hexdigest()[:20]
+
+
+def _moved_entity(e, net, new_net, dx, dy, src, dst):
+    """Carrier ``e`` of ``net`` (unit ``src``'s) as the same carrier of ``new_net`` (unit
+    ``dst``'s), moved by (dx, dy); None when its key or its ``net=`` is not the unit's own. The
+    ``net=`` is renamed as written: an inserter of a lane pair says ``a+b``, its belts ``a|b``."""
+    head = f"~{net}"
+    if not e.key.startswith(head):
+        return None
+    attrs = dict(e.attrs)
+    if "net" in attrs:
+        attrs["net"] = _renamed(attrs["net"], src, dst)
+        if attrs["net"] is None:
+            return None
+    return fkpmod.Entity(f"~{new_net}{e.key[len(head):]}", e.name, e.x + dx, e.y + dy, e.dir,
+                         attrs)
+
+
+def _moved_routes(added, nets, src, src_frame, dst, dst_frame):
+    """The routes unit ``src`` laid this build (``added``, its ``nets``), moved to unit ``dst``'s
+    frame and renamed to its nets: -> {net: carriers}, or None when one is missing."""
+    dx, dy = dst_frame[0] - src_frame[0], dst_frame[1] - src_frame[1]
+    out = {}
+    for n in nets:
+        new = _renamed(n, src, dst)
+        if n not in added or new is None:
+            return None
+        ents = [_moved_entity(e, n, new, dx, dy, src, dst) for e in added[n]]
+        if any(e is None for e in ents):
+            return None
+        out[new] = ents
+    return out
+
+
+class _Buckets:
+    """Entities by place (2.1.33, lab FRICTION 35): ``near(x0, y0, x1, y1)`` yields every entity
+    whose position may lie in the box, from 32-tile buckets. A megabase loop's ~700 sealed units
+    each scanned the whole ground to key and fit their compiled routes."""
+    S = 32
+
+    def __init__(self, ents=()):
+        self.b = {}
+        self.extend(ents)
+
+    def extend(self, ents):
+        for e in ents:
+            self.b.setdefault((math.floor(e.x) // self.S, math.floor(e.y) // self.S),
+                              []).append(e)
+
+    def near(self, x0, y0, x1, y1):
+        s = self.S
+        for bx in range(math.floor(x0) // s, math.floor(x1) // s + 1):
+            for by in range(math.floor(y0) // s, math.floor(y1) // s + 1):
+                yield from self.b.get((bx, by), ())
+
+    def __iter__(self):
+        for ents in self.b.values():
+            yield from ents
+
+
+def _near(ground, x0, y0, x1, y1):
+    """The entities of ``ground`` (a list, or ``_Buckets``) that may lie in the box."""
+    return ground.near(x0, y0, x1, y1) if isinstance(ground, _Buckets) else ground
+
+
+def _fits(cat, got, ground, frame, blocked, terrain, claimed, mine):
+    """True when the moved routes ``got`` ({net: carriers}) stand in ``frame`` on free tiles: no
+    entity of ``ground`` there, no terrain, no blocked frame, no tile another net's direct
+    insertion claims (``claimed``: tile -> nets; ``mine``: the unit's own nets)."""
+    x0, y0, x1, y1, _tiles = frame
+    occ = set()
+    for e in _near(ground, x0 - 3, y0 - 3, x1 + 3, y1 + 3):
+        if x0 - 3 <= e.x < x1 + 3 and y0 - 3 <= e.y < y1 + 3:
+            occ |= fkpmod.tiles_of(cat, e)
+    for ents in got.values():
+        for e in ents:
+            for t in fkpmod.tiles_of(cat, e):
+                if not (x0 <= t[0] < x1 and y0 <= t[1] < y1) or t in occ or t in terrain \
+                        or t in blocked or claimed.get(t, mine) - mine:
+                    return False
+    return True
+
+
+def _prefixed(rel, u):
+    """A net name relative to unit ``u`` (``x|y``, ``x+y``) as ``u``'s own (``u/x|u/y``)."""
+    return re.sub(r"(^|[|+])", lambda m: m.group(1) + u + "/", rel)
+
+
+def _unit_rel(routes, u, frame, rot=0):
+    """Sealed unit ``u``'s routes ({net: carriers}) in its own terms: its nets' names relative to
+    it, the carriers relative to its frame (unturned, ``_UnitTurn``): the compiled store's form.
+    -> {rel net: [[tag, name, x, y, dir, attrs, own net]]}, or None when one is not its own."""
+    tf = _UnitTurn(frame, rot)
+    nets = {}
+    for n, ents in routes.items():
+        rel = _renamed(n, u, "")
+        head = f"~{n}"
+        if rel is None or any(not e.key.startswith(head) for e in ents):
+            return None
+        own = [_renamed(e.attrs["net"], u, "") if "net" in e.attrs else "" for e in ents]
+        if any(o is None for o in own):
+            return None
+        nets[rel] = [[e.key[len(head):], e.name, *tf.point(e.x, e.y), tf.d16(e.dir),
+                      {k: v for k, v in e.attrs.items() if k != "net"}, o]
+                     for e, o in zip(ents, own)]
+    return nets
+
+
+def _unit_abs(nets, u, frame, rot=0):
+    """``_unit_rel``'s inverse: the routes of unit ``u`` in its frame, turned as it is."""
+    tf = _UnitTurn(frame, rot)
+    out = {}
+    for rel, ents in nets.items():
+        net = _prefixed(rel, u)
+        got = []
+        for tag, name, x, y, d, attrs, own in ents:
+            attrs = dict(attrs)
+            if own:
+                attrs["net"] = _prefixed(own, u)
+            ax, ay = tf.point_abs(x, y)
+            got.append(fkpmod.Entity(f"~{net}{tag}", name, ax, ay, tf.d16(d), attrs))
+        out[net] = got
+    return out
+
+
+def _store_save(store, ckey, module, u, frame, routes, rot=0, inputs=None):
+    """Write sealed unit ``u``'s routes ({net: carriers}) to the compile store
+    (``compiled.Store``), relative to its frame (unturned), under ``module`` and its key. -> 1
+    when written, 0 when the key was there already or the store can't be written."""
+    nets = _unit_rel(routes, u, frame, rot)
+    if nets is None:
+        return 0
+    return store.save(module, ckey, u, nets, inputs)
+
+
+def _store_load(store, ckey, module, u, frame, rot=0):
+    """Sealed unit ``u``'s routes from the compile store under ``module`` and ``ckey``, moved to
+    its frame: -> {net: carriers}, or None when the store has none it may take."""
+    nets = store.load(module, ckey)
+    if nets is None:
+        return None
+    return _unit_abs(nets, u, frame, rot)
+
+
+def _module_of(flat, lay, u):
+    """The module name sealed unit ``u`` is an instance of (the store's folder)."""
+    inst = flat.insts.get(u)
+    if inst is not None and (inst.module or inst.kind):
+        return compiledmod.module_name(inst.module or inst.kind)
+    return compiledmod.module_name(lay.insts[u].kind)
+
+
 def route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=60000,
                  blocked=(), hand=None, patch=None, ug=None, m2m=False, group_budget=None,
                  group_max=None, first=(), skip=(), memo=None, again=(), on_net=None,
-                 on_reach=None, seeds=None, retry="changed") -> Routed:
+                 on_reach=None, seeds=None, retry="changed", pipe=None, store=None) -> Routed:
     """``_route_layout`` with direct insertion by ``hand`` (a short inserter) instead of the
     fast one; long-handed ones still go where only they reach. ``ug``: the fastest belt tier a
     ribbon's tunnels may have (yellow, red, blue, turbo; default yellow): a ribbon reaches as far
@@ -2344,31 +3130,36 @@ def route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=6000
     ``seeds``: {net: carriers the player pinned} (``fk seed``), each such net laid through its
     seed (``_route_seeded``). ``retry`` (``route --retry-failed``): a net that failed last build is
     searched again when its ground ``changed`` (the default), ``always``, or ``never`` (until
-    ``again`` names it or the player unroutes it)."""
+    ``again`` names it or the player unroutes it). ``pipe``: (pipe, pipe-to-ground) the fluid
+    nets are laid with (``fluid_route.material``; default the iron ones). ``store`` (a folder,
+    or None): the compiled sealed modules (PLAN-3.0 §4), read and written (``_route_layout``)."""
     global _HANDS, _M2M
     policy = dict(group_budget=group_budget, group_max=group_max, first=tuple(first or ()),
                   skip=tuple(skip or ()), memo=memo or {}, fresh=tuple(again or ()),
                   on_net=on_net, on_reach=on_reach, seeds=dict(seeds or {}), retry=retry)
     from . import ribbons as ribmod
-    saved_ug, saved_m2m = ribmod._UG, _M2M
+    from . import fluid_route as fluidmod
+    saved_ug, saved_m2m, saved_pipe = ribmod._UG, _M2M, list(fluidmod._LAY)
+    fluidmod._LAY[:] = list(pipe or (fluidmod.PIPE, fluidmod.PTG))
     ribmod._UG = ribmod.ug_tiers(cat, ug or "yellow")
     _M2M = "left" if m2m == "left" else bool(m2m)
     try:
         if not hand or hand == "fast-inserter":
             return _route_layout(flat, lay, cat, bounds, margin, retries, limit, blocked, patch,
-                                 **policy)
+                                 store=store, **policy)
         if _REACH.get(hand) != 1:
             raise ValueError(f"hand is a short inserter (inserter, fast-inserter, "
                              f"burner-inserter), got {hand!r}")
         saved, _HANDS = _HANDS, ((hand,), (hand, "long-handed-inserter"))
         try:
             return _route_layout(flat, lay, cat, bounds, margin, retries, limit, blocked, patch,
-                                 **policy)
+                                 store=store, **policy)
         finally:
             _HANDS = saved
     finally:
         ribmod._UG = saved_ug
         _M2M = saved_m2m
+        fluidmod._LAY[:] = saved_pipe
 
 
 def _named(net, patterns):
@@ -2376,11 +3167,186 @@ def _named(net, patterns):
     return any(net == p or fnmatchcase(net, p) for p in patterns)
 
 
+# -- negotiation (PathFinder): nets share ground at a price until none overlaps ---------------------
+#: rounds, the price of a tile another net holds (x2 each round), the history a contested tile adds
+NEG_ROUNDS, NEG_PRES, NEG_GROW, NEG_HIST = 8, 1.0, 2.0, 1.0
+
+
+def negotiate_on():
+    """FK_NEGOTIATE=1: route_layout negotiates before its passes (opt-in while it is measured)."""
+    return os.environ.get("FK_NEGOTIATE", "0") == "1"
+
+
+def _holds(cat, laid):
+    """(the tiles a net's carriers stand on, the tiles they forbid another net: those, the tiles
+    their belts point into, the tiles their hands reach; their tunnels' spans per axis) --
+    ``_ground``'s and ``_ug_spans``' rules for one net."""
+    on, forbid = set(), set()
+    for e in laid:
+        ts, fs, hs, _ins = _ent_ground(cat, e)
+        on.update(ts)
+        forbid.update(ts)
+        forbid.update(fs)
+        forbid.update(hs)
+    return on, forbid, _ug_spans(cat, laid)
+
+
+def _negotiate(flat, cat, js, order, ribs, base_ents, net_frames, claims, rib_of, joints, limit,
+               terrain):
+    """Every net routed as if alone but for a price: on the hard ground (the layout, ribbons,
+    terrain, claims), a belt may go where another net's route is, paying (1 + history) *
+    (1 + pres * nets there) - 1 a tile (``soft``; its tree and hub only, never a splitter or a
+    tap). A clash: a net's carrier on a tile another net's route forbids, or two nets' tunnels
+    overlapping on one axis. Round by round the clashing nets are routed again, ``pres`` doubling
+    and every contested tile's history growing, until none clashes (PathFinder); a net that
+    cannot move (a straight belt, a pair) keeps its tiles and the others go round it. Nets still
+    clashing after ``NEG_ROUNDS`` are laid again on hard ground, in order, each seeing the rest.
+    Ribbons are laid first, on hard ground, as a pass lays them. -> the pass loop's ``best``."""
+    from . import ribbons as ribmod
+    added, failed, how, rlines = {}, {}, {}, {}
+    hard = list(base_ents)
+    plain = []
+
+    def avoid_of(net):
+        out = set()
+        for other, tiles in claims.items():
+            if other != net and rib_of.get(other) != net:
+                out |= tiles
+        return out
+
+    for key in order:
+        if key not in ribs:
+            plain.append(key)
+            continue
+        rib = ribs[key]
+        fnet, bnet = net_frames(rib.nets[0])
+        got, why, summary = ribmod.route(cat, rib, hard, fnet, js, bnet, limit, terrain,
+                                         avoid_of(key), joints)
+        if got is None:
+            for m in rib.nets:
+                if js[m].skip is None:
+                    failed[m] = why
+            continue
+        for m, laid in got.items():
+            added[m] = laid
+            how[m] = why[m]
+            hard += laid
+        rlines[key] = summary
+
+    routes, holds, hist = {}, {}, {}
+    total = {}                       # tile -> how many nets' routes forbid it
+
+    def hold(net, h):
+        old = holds.pop(net, None)
+        if old is not None:
+            for t in old[1]:
+                total[t] -= 1
+                if not total[t]:
+                    del total[t]
+        if h is not None:
+            holds[net] = h
+            for t in h[1]:
+                total[t] = total.get(t, 0) + 1
+
+    todo, rounds, clash = list(plain), 0, set()
+    for rnd in range(NEG_ROUNDS):
+        rounds = rnd + 1
+        pres = NEG_PRES * NEG_GROW ** rnd
+        for k, net in enumerate(todo):
+            _progress(rnd, k, todo, net, which="negotiate")
+            fnet, bnet = net_frames(net)
+            avoid = avoid_of(net)
+            mine = holds[net][1] if net in holds else ()
+            soft = {}                    # _route_in keeps what its own ground blocks out of it
+            for t, n in total.items():
+                n -= t in mine
+                if n > 0:
+                    soft[t] = (1.0 + hist.get(t, 0.0)) * (1.0 + pres * n) - 1.0
+            got, why = _route_one(cat, js[net], hard, fnet, js, bnet, limit, terrain, avoid,
+                                  allow=joints, soft=soft)
+            if got is not None and (js[net].wide or js[net].pin):
+                got = _serving_only(flat, cat, js[net], hard, got)
+            if got is None:
+                routes.pop(net, None)
+                hold(net, None)
+                failed[net] = why
+                continue
+            failed.pop(net, None)
+            routes[net], how[net] = got, why
+            hold(net, _holds(cat, got))
+        # a clash: a net's carrier on a tile another net's route forbids (its own ends excepted:
+        # _ground frees those for it)
+        owners, tunnels = {}, ({}, {})
+        for net, (_on, forbid, spans) in holds.items():
+            for t in forbid:
+                owners.setdefault(t, []).append(net)
+            for ax in (0, 1):
+                for t in spans[ax]:
+                    tunnels[ax].setdefault(t, []).append(net)
+        clash, bad = set(), set()
+        for a, (on, _forbid, _spans) in holds.items():
+            ends = set(js[a].ends())
+            for t in on:
+                if t in ends:
+                    continue
+                others = [b for b in owners.get(t, ()) if b != a]
+                if others:
+                    clash.add(a)
+                    clash.update(others)
+                    bad.add(t)
+        for ax in (0, 1):
+            for t, nets in tunnels[ax].items():
+                if len(set(nets)) > 1:
+                    clash.update(nets)
+                    bad.add(t)
+        for t in bad:
+            hist[t] = hist.get(t, 0.0) + NEG_HIST
+        if not clash:
+            break
+        todo = [n for n in plain if n in clash or n in failed]
+
+    # still overlapping: rip those up, lay them again on hard ground in order
+    for net in clash:
+        routes.pop(net, None)
+        hold(net, None)
+    for k, net in enumerate([n for n in plain if n in clash]):
+        _progress(rounds, k, plain, net, which="negotiate: settle")
+        fnet, bnet = net_frames(net)
+        ents = hard + [e for laid in routes.values() for e in laid]
+        got, why = _route_one(cat, js[net], ents, fnet, js, bnet, limit, terrain, avoid_of(net),
+                              allow=joints)
+        if got is not None and (js[net].wide or js[net].pin):
+            got = _serving_only(flat, cat, js[net], ents, got)
+        if got is None:
+            failed[net] = why
+            how.pop(net, None)
+            continue
+        failed.pop(net, None)
+        routes[net], how[net] = got, why
+    for net in plain:
+        if net in routes:
+            added[net] = routes[net]
+    _NEG_LAST.clear()
+    _NEG_LAST.update(rounds=rounds, settled=len(clash), routed=len(added), failed=len(failed),
+                     why={n: str(w)[:160] for n, w in failed.items()})
+    return ((len(added), 0, 0), added, failed, how, rounds, list(order), [], rlines)
+
+
+#: the last negotiation's numbers: rounds, nets settled on hard ground, routed, failed
+_NEG_LAST = {}
+
+
 def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=60000,
                   blocked=(), patch=None, group_budget=None, group_max=None, first=(),
                   skip=(), memo=None, fresh=(), on_net=None, on_reach=None,
-                  seeds=None, retry="changed") -> Routed:
+                  seeds=None, retry="changed", store=None) -> Routed:
     """Route every net of ``flat`` that has no carriers in ``lay`` yet; -> Routed.
+
+    The nets route per compile unit (PLAN-3.0 §4): each sealed module's own nets on their own,
+    innermost first, then the rest. FK_NEGOTIATE=1 (3.0.1): a unit's nets are negotiated
+    first, and each negotiated route is laid when its net comes up, if it still fits. A sealed
+    module routed whole is compiled: a twin of it later in the build, or in a later build
+    through ``store`` (a folder), takes its routes moved to the twin's frame.
 
     ``bounds`` (x0, y0, x1, y1) limits the search; default: the factory frame plus ``margin``
     tiles east and south (the frame starts at 0, 0). ``blocked``: ground no carrier may use,
@@ -2391,10 +3357,12 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
     3.0: each net is laid once, in order, and keeps what it laid; a net that fails gets its group
     try (GROUP_BUDGET), then one promoting search of its own. ``retries`` is not used any more
     (kept for callers)."""
-    global _FILTERED
+    global _FILTERED, _TAPS, _ARMS, _NEED, _HAND
+    _ARMS = armsmod.of()
     _FILTERED = frozenset(k for net in flat.nets.values() for k, _i in net.drivers
                           if k in flat.machines
                           and not set(flat.machines[k].makes) <= set(net.items))
+    _TAPS, _NEED, _HAND = _sizing(flat, cat)
     js = jobs(flat, lay, cat)
     flat._port_edges = port_edges(flat, lay, cat)   # 2.0.48: a port is an edge of its frame
     for name, job in js.items():                      # 2.0.49: a stack cell's nets go straight first
@@ -2407,6 +3375,7 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
             and not js[n].fluid]
     frames = set()
     owned = {}                                   # instance path -> its frame's tiles
+    owned_rect = {}                              # instance path -> its frame (x0, y0, x1, y1)
     sealed = {}                                  # module path -> its frame, for a sealed module
     for path, rec in lay.insts.items():
         if rec.kind in ("Literal", "Bus") or path not in flat.insts:
@@ -2415,6 +3384,7 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
         mine = {(x, y) for x in range(x0, x1) for y in range(y0, y1)}
         frames |= mine
         owned[path] = mine
+        owned_rect[path] = (x0, y0, x1, y1)
         if path in flat.sealed:
             sealed[path] = (x0, y0, x1, y1, mine)
     w, h = lay.size or (0, 0)
@@ -2440,6 +3410,13 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
     abut = {n for n in todo if _abuts(js[n])}
     todo = [n for n in todo if n not in abut]
 
+    frames_of_unit = {}
+    rect_at = {}                     # 2.1.33: 64-tile bucket -> the instance frames over it
+    for path, (a0, b0, a1, b1) in owned_rect.items():
+        for bx in range(int(a0) // 64, int(a1 - 1) // 64 + 1):
+            for by in range(int(b0) // 64, int(b1 - 1) // 64 + 1):
+                rect_at.setdefault((bx, by), []).append(path)
+
     def net_frames(net):
         """The blocked frames for ``net`` and its box: a net inside a sealed module routes in that
         module's frame (bounded by the innermost one); every other net keeps every frame blocked,
@@ -2461,16 +3438,30 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
         if not inside:
             return frames, box
         inner = inside[-1]
+        # 2.1.32: the same for every net of one innermost module (worked out again for each net,
+        # 12 s of a 3-band megabase grid's route)
+        if inner in frames_of_unit:
+            return frames_of_unit[inner]
         x0, y0, x1, y1, mine = sealed[inner]
+        # 2.1.32: only the tiles inside the module's own box (the net routes in it, and its grid
+        # blocks all else), frame by frame as rectangles: every frame's tiles for every module
+        # was most of a megabase grid's route setup
         blocked = set()
-        for path, tiles in owned.items():
+        near = {p for bx in range(int(x0) // 64, int(x1 - 1) // 64 + 1)
+                for by in range(int(y0) // 64, int(y1 - 1) // 64 + 1)
+                for p in rect_at.get((bx, by), ())}
+        for path in sorted(near):
+            a0, b0, a1, b1 = owned_rect[path]
             if path in inside:
                 continue
             if path in sealed and not path.startswith(inner + "/") \
                     and not inner.startswith(path + "/"):
-                tiles = tiles - mine                  # a foreign sealed frame: the overlap is shared
-            blocked |= tiles
-        return frozenset(blocked), (x0, y0, x1, y1)
+                continue                              # a foreign sealed frame: the overlap is shared
+            c0, d0, c1, d1 = max(a0, x0), max(b0, y0), min(a1, x1), min(b1, y1)
+            if c0 < c1 and d0 < d1:
+                blocked |= {(x, y) for x in range(c0, c1) for y in range(d0, d1)}
+        frames_of_unit[inner] = frozenset(blocked), (x0, y0, x1, y1)
+        return frames_of_unit[inner]
     base = lay.copy()
     standing, patched, again, held = [], {}, {}, {}
     if patch:
@@ -2494,27 +3485,63 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
     ribs = ribmod.plan(flat, cat, js, pending)
     ribs = {k: r for k, r in ribs.items() if any(n in todo for n in r.nets)}
     rib_of = {n: k for k, r in ribs.items() for n in r.nets}
-    rib_lines, rib_seen = {}, {}
-    order = list(ribs) + [n for n in todo if n not in rib_of]
-    if first:
-        # 3.0: the build script's order (route --first): the nets it names, in its order, then
-        # the rest as before
+    rib_seen = {}
+    budget = GROUP_BUDGET if group_budget is None else float(group_budget)
+    gmax = GROUP_MAX if group_max is None else int(group_max)
+    memo = {} if retry == "always" else (memo or {})
+    seeds = seeds or {}
+
+    def ranked(keys):
+        """3.0: the build script's order (route --first): the nets it names, in its order, then
+        the rest as before."""
+        if not first:
+            return list(keys)
+
         def rank(key):
             names = ribs[key].nets if key in ribs else [key]
             return next((i for i, p in enumerate(first) if any(_named(m, (p,)) for m in names)),
                         len(first))
-        order.sort(key=rank)
-    budget = GROUP_BUDGET if group_budget is None else float(group_budget)
-    gmax = GROUP_MAX if group_max is None else int(group_max)
-    ents = list(base.entities.values())
-    added, failed, how, swaps, rlines = {}, {}, {}, [], {}
-    memo = {} if retry == "always" else (memo or {})
-    seeds = seeds or {}
+        return sorted(keys, key=rank)
 
     def same(net, key):
         """Its last failure stands: ``--retry-failed never``, or its ground is as it was."""
         return retry == "never" or memo[net].get("key") == key
 
+    def unrouted(key, failed):
+        if key in ribs:
+            return any(n in failed for n in ribs[key].nets)
+        return key in failed
+
+    claim_at = {}                               # 2.1.33: tile -> the nets that claim it
+    for other, tiles in claims.items():
+        for t in tiles:
+            claim_at.setdefault(t, set()).add(other)
+
+    def avoid_of(net, bound):
+        """The tiles other nets' direct inserters claim, inside ``bound`` (the net's search never
+        leaves it). 2.1.33: was every claim of the layout, unioned again for every net."""
+        x0, y0, x1, y1 = bound
+        if (x1 - x0) * (y1 - y0) < len(claim_at):
+            tiles = ((x, y) for x in range(x0, x1) for y in range(y0, y1) if (x, y) in claim_at)
+        else:
+            tiles = (t for t in claim_at if x0 <= t[0] < x1 and y0 <= t[1] < y1)
+        return {t for t in tiles
+                if any(o != net and rib_of.get(o) != net for o in claim_at[t])}
+
+    def avoid(net):
+        """``avoid_of`` in the box of ``net`` (a net, or a ribbon's key)."""
+        return avoid_of(net, net_frames(ribs[net].nets[0] if net in ribs else net)[1])
+
+    # -- the routing state every unit adds to ------------------------------------------------------
+    ents = list(base.entities.values())          # the ground: the layout and every carrier laid
+    added, failed, how, swaps, rlines = {}, {}, {}, [], {}
+
+    # -- FK_NEGOTIATE=1 (3.0.1): negotiation proposes a unit's routes; ``lay_net`` lays a
+    # proposed route when it still fits the ground, so seeds, holds, the memo and the group try
+    # apply to negotiated nets as to any. Empty unless FK_NEGOTIATE=1.
+    proposed = {}
+
+    # -- 3.0: each net once, in order, keeping what it lays -----------------------------------------
     def unsearched(net, why):
         why = why.split("; not searched again:")[0]          # the net file's why has it already
         when = ("the route step's --retry-failed never" if retry == "never"
@@ -2523,6 +3550,7 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
     fresh = tuple(fresh) + tuple(seeds)     # a seeded net is searched, whatever it did last
     remembered, last_key, known = {}, {}, {}
     held_now = set()                   # nets the player held while this build ran (on_reach)
+    groups = []
 
     def landed(net, took):
         """Tell ``on_net`` how ``net`` (or each net of a ribbon) landed."""
@@ -2534,18 +3562,11 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
             elif m in failed:
                 on_net(m, "unrouted", (), failed[m], took)
 
-    def avoid_of(net):
-        avoid = set()
-        for other, tiles in claims.items():
-            if other != net and rib_of.get(other) != net:
-                avoid |= tiles
-        return avoid
-
     def key_of(net, ents):
         _fnet, bnet = net_frames(net)
-        return _ground_key(cat, js[net], ents, bnet, terrain, avoid_of(net), (limit, budget, gmax))
+        return _ground_key(cat, js[net], ents, bnet, terrain, avoid(net), (limit, budget, gmax))
 
-    def lay(net, ents, k, steps, which, promo=False):
+    def lay_net(net, ents, k, steps, which, promo=False):
         """Lay ``net`` (a net, or a ribbon's key) on ``ents``, into added / failed / how: -> the
         entities with its carriers. ``promo``: only the promoting search (the plain one failed on
         this ground already)."""
@@ -2559,7 +3580,7 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
                 failed.pop(net, None)
                 held_now.add(net)
                 return ents + mine
-        avoid = avoid_of(net)
+        av = avoid(net)
         if net in ribs:
             rib = ribs[net]
             fnet, bnet = net_frames(rib.nets[0])
@@ -2567,7 +3588,7 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
             seen = (net, tuple(sorted(added)), tuple(s[2] for s in swaps))
             if seen not in rib_seen:
                 rib_seen[seen] = ribmod.route(cat, rib, ents, fnet, js, bnet, limit,
-                                              terrain, avoid, joints)
+                                              terrain, av, joints)
             got, why, summary = rib_seen[seen]
             if got is None:
                 for m in rib.nets:
@@ -2583,7 +3604,7 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
             return ents
         fnet, bnet = net_frames(net)
         if net in seeds:
-            got, why = _route_seeded(cat, js[net], ents, fnet, js, bnet, limit, terrain, avoid,
+            got, why = _route_seeded(cat, js[net], ents, fnet, js, bnet, limit, terrain, av,
                                      seeds[net], allow=joints)
             if got is None:
                 failed[net] = f"through your seed: {why}"
@@ -2591,11 +3612,19 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
             failed.pop(net, None)
             added[net], how[net] = got, why
             return ents + got
-        got, why = (None, failed.get(net)) if promo else \
-            _route_one(cat, js[net], ents, fnet, js, bnet, limit, terrain, avoid, allow=joints)
+        offer = None if promo else proposed.pop(net, None)
+        if offer is not None:
+            taken = {t for e in ents for t in fkpmod.tiles_of(cat, e)}
+            if any(fkpmod.tiles_of(cat, e) & taken for e in offer[0]):
+                offer = None                  # the ground changed under it: searched as any net
+        if offer is not None:
+            got, why = offer
+        else:
+            got, why = (None, failed.get(net)) if promo else \
+                _route_one(cat, js[net], ents, fnet, js, bnet, limit, terrain, av, allow=joints)
         if got is None and promo:
             # once more, crossing other nets' straight belts by promoting them
-            prom = _route_promoted(cat, js[net], ents, fnet, js, bnet, limit, terrain, avoid,
+            prom = _route_promoted(cat, js[net], ents, fnet, js, bnet, limit, terrain, av,
                                    joints)
             if prom is not None:
                 got, why, mine = prom
@@ -2613,123 +3642,252 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
         how[net] = why
         return ents + got
 
-    def in_way(net):
-        """The nets laid this run that stand in ``net``'s way: ``net`` searched once with them
-        lifted, and the nets whose carriers are on or beside that way, most carriers first, at
-        most ``gmax`` (never a ribbon's: a ribbon is laid whole). None when ``net`` finds no way
-        even then: the ground, not the order, stops it."""
-        lift = {e.key: other for other, laid in added.items() if other not in rib_of
-                and other not in held_now for e in laid}
-        avoid = avoid_of(net)
+    def inside(other, unit):
+        """True when net ``other`` belongs to compile unit ``unit`` or to a unit nested in it (the
+        top level, ``""``, holds them all)."""
+        if not unit:
+            return True
+        mine = _unit(other, sealed)
+        return mine == unit or mine.startswith(unit + "/")
+
+    def in_way(net, unit):
+        """The nets laid this run in ``unit`` or a unit nested in it that stand in ``net``'s way:
+        ``net`` searched once with them lifted, and the nets whose carriers are on or beside that
+        way, most carriers first, at most ``gmax`` (never a ribbon's: a ribbon is laid whole).
+        None when ``net`` finds no way even then: the ground, not the order, stops it. A sibling
+        unit's routes are never lifted (a unit's failed net never rips up another unit's
+        routes); a nested one's may be, laid again in its own frame (a top-level net past a
+        routing.fk Waypoint lifts the Waypoint's belt), but only a nested unit whose frame the
+        way enters (3.0.1): a module the way only runs beside keeps its routes."""
+        lift = {e.key: other for other, laid in added.items() if inside(other, unit)
+                and other not in rib_of and other not in held_now for e in laid}
         fnet, bnet = net_frames(net)
         _progress(0, 0, [net], net, which=f"the way of {net}")
         got, _why = _route_one(cat, js[net], [e for e in ents if e.key not in lift], fnet, js,
-                               bnet, limit, terrain, avoid, allow=joints)
+                               bnet, limit, terrain, avoid(net), allow=joints)
         if got is None:
             return None
-        way = set()
+        path, way = set(), set()
         for e in got:
-            for x, y in fkpmod.tiles_of(cat, e):
-                way |= {(x + dx, y + dy) for dx in range(-GROUP_MARGIN, GROUP_MARGIN + 1)
-                        for dy in range(-GROUP_MARGIN, GROUP_MARGIN + 1)}
+            path |= fkpmod.tiles_of(cat, e)
+        for x, y in path:
+            way |= {(x + dx, y + dy) for dx in range(-GROUP_MARGIN, GROUP_MARGIN + 1)
+                    for dy in range(-GROUP_MARGIN, GROUP_MARGIN + 1)}
+
+        ends = set(js[net].ends())
+
+        def entered(v):
+            """The way enters ``v``'s frame, or the net ends at it (a port on its edge)."""
+            x0, y0, x1, y1 = sealed[v][:4]
+            return any(x0 <= x < x1 and y0 <= y < y1 for x, y in path) or \
+                any(x0 - 1 <= x <= x1 and y0 - 1 <= y <= y1 for x, y in ends)
+        units_in = {}
+
+        def liftable(other):
+            """``other``'s unit is ``unit``, or every sealed unit from it out to ``unit`` is one
+            the way enters."""
+            mine = _unit(other, sealed)
+            if mine == unit:
+                return True
+            if mine not in units_in:
+                chain, v = [], mine
+                while v and v != unit:
+                    chain.append(v)
+                    v = "/".join(v.split("/")[:-1])
+                    while v and v not in sealed and v != unit:
+                        v = "/".join(v.split("/")[:-1])
+                units_in[mine] = all(entered(c) for c in chain)
+            return units_in[mine]
         hits = {}
         for e in ents:
             other = lift.get(e.key)
-            if other is not None and other != net and fkpmod.tiles_of(cat, e) & way:
+            if other is not None and other != net and fkpmod.tiles_of(cat, e) & way \
+                    and liftable(other):
                 hits[other] = hits.get(other, 0) + 1
         return sorted(hits, key=lambda o: (-hits[o], o))[:gmax]
 
-    # 3.0: one pass, each net once, in order; what it lays stays (2.1.29 laid every net again in
-    # each of its passes: the 20261030-2352 world's 278 nets three times over for four that failed)
-    # 3.0: a net that failed last build, on ground as it stands now, is not searched again; one
-    # whose ground differs waits for the end of the pass, where its last search was
-    later = []
-    for k, net in enumerate(order + [None]):
-        if net is None:
-            for j, net in enumerate(later):
+    def route_once(order, unit):
+        """3.0: lay compile unit ``unit``'s ``order`` (net names and ribbon keys) once each, in
+        order; a net that failed gets its group try on the budget, then one promoting search.
+        -> passes (1 or 2)."""
+        nonlocal ents
+        # a net that failed last build, on ground as it stands now, is not searched again; one
+        # whose ground differs waits for the end of the pass, where its last search was
+        later = []
+        for k, net in enumerate(order + [None]):
+            if net is None:
+                for j, net in enumerate(later):
+                    if same(net, key_of(net, ents)):
+                        failed[net] = memo[net]["why"]
+                        remembered[net] = memo[net]
+                    else:
+                        t0 = time.monotonic()
+                        ents = lay_net(net, ents, j, later, "pass 1, the nets that failed last build")
+                        landed(net, time.monotonic() - t0)
+                break
+            if memo.get(net) and net not in ribs and not _named(net, fresh):
                 if same(net, key_of(net, ents)):
                     failed[net] = memo[net]["why"]
                     remembered[net] = memo[net]
                 else:
-                    t0 = time.monotonic()
-                    ents = lay(net, ents, j, later, "pass 1, the nets that failed last build")
-                    landed(net, time.monotonic() - t0)
-            break
-        if memo.get(net) and net not in ribs and not _named(net, fresh):
-            if same(net, key_of(net, ents)):
-                failed[net] = memo[net]["why"]
-                remembered[net] = memo[net]
-            else:
-                later.append(net)
-            continue
-        t0 = time.monotonic()
-        ents = lay(net, ents, k, order, "pass 1")
-        landed(net, time.monotonic() - t0)
-    # a net that failed: laid again together with the nets in its way, for up to the budget
-    groups = []
-    for net in [n for n in order if n in failed and n not in ribs and n not in remembered]:
-        if budget <= 0 or net not in failed:
-            continue
-        t0 = time.monotonic()
-        members = in_way(net)
-        if members is None:
-            groups.append((net, None, False, time.monotonic() - t0))
-            continue
-        if not members:
-            continue
-        steps, tried, settled = [net] + members, set(), False
-        while tuple(steps) not in tried:
-            tried.add(tuple(steps))
-            saved = (dict(added), dict(failed), dict(how), dict(rlines), ents)
-            members = [m for m in steps if m != net]
-            gone = {e.key for m in members for e in added[m]}
-            trial = [e for e in ents if e.key not in gone]
-            for m in members:
-                added.pop(m)
-                how.pop(m, None)
-            hopeless = False
-            for k, m in enumerate(steps):
-                trial = lay(m, trial, k, steps, f"the group of {net}")
-                if m not in added and m == net:
-                    # the failed net, with the others lifted, fails: no order of them helps it
-                    hopeless = True
+                    later.append(net)
+                continue
+            t0 = time.monotonic()
+            ents = lay_net(net, ents, k, order, "pass 1")
+            landed(net, time.monotonic() - t0)
+        # a net that failed: laid again together with the nets in its way, for up to the budget
+        for net in [n for n in order if n in failed and n not in ribs and n not in remembered]:
+            if budget <= 0 or net not in failed:
+                continue
+            t0 = time.monotonic()
+            members = in_way(net, unit)
+            if members is None:
+                groups.append((net, None, False, time.monotonic() - t0))
+                continue
+            if not members:
+                continue
+            steps, tried, settled = [net] + members, set(), False
+            while tuple(steps) not in tried:
+                tried.add(tuple(steps))
+                saved = (dict(added), dict(failed), dict(how), dict(rlines), ents)
+                members = [m for m in steps if m != net]
+                gone = {e.key for m in members for e in added[m]}
+                trial = [e for e in ents if e.key not in gone]
+                for m in members:
+                    added.pop(m)
+                    how.pop(m, None)
+                hopeless = False
+                for k, m in enumerate(steps):
+                    trial = lay_net(m, trial, k, steps, f"the group of {net}")
+                    if m not in added and m == net:
+                        # the failed net, with the others lifted, fails: no order of them helps
+                        hopeless = True
+                        break
+                    if time.monotonic() - t0 >= budget and k < len(steps) - 1:
+                        hopeless = True               # the budget is spent: no half-laid group
+                        break
+                if not hopeless and all(m in added for m in steps):
+                    ents, settled = trial, True
+                    for m in steps:
+                        landed(m, time.monotonic() - t0)
                     break
-                if time.monotonic() - t0 >= budget and k < len(steps) - 1:
-                    hopeless = True               # the budget is spent: no half-laid group
+                lost = [m for m in steps if m not in added]
+                for d, was in zip((added, failed, how, rlines), saved):
+                    d.clear()
+                    d.update(was)
+                ents = saved[4]
+                if hopeless or time.monotonic() - t0 >= budget:
                     break
-            if not hopeless and all(m in added for m in steps):
-                ents, settled = trial, True
-                for m in steps:
-                    landed(m, time.monotonic() - t0)
-                break
-            lost = [m for m in steps if m not in added]
-            for d, was in zip((added, failed, how, rlines), saved):
-                d.clear()
-                d.update(was)
-            ents = saved[4]
-            if hopeless or time.monotonic() - t0 >= budget:
-                break
-            # a net of the group that failed: what stands in its way joins the group
-            for m in lost:
-                if m != net and len(steps) <= gmax:
-                    more = in_way(m) or []
-                    steps += [o for o in more if o not in steps][:gmax + 1 - len(steps)]
-            # the failed net stays first (the group is for it), then the ones that failed now
-            steps = [net] + [m for m in lost if m != net] + \
-                [m for m in steps if m not in lost and m != net]
-        groups.append((net, len(steps) - 1, settled, time.monotonic() - t0))
-    # 2.0.78: last, a net still unrouted may promote other nets' belts (its own search only)
-    passes = 1
-    left = [n for n in order if n in failed and n not in ribs and n not in remembered]
-    for k, net in enumerate(left):
-        passes = 2
-        t0 = time.monotonic()
-        ents = lay(net, ents, k, left, "the promoting pass", promo=True)
-        landed(net, time.monotonic() - t0)
-        if net in failed:
-            last_key[net] = key_of(net, ents)      # the ground of its last search
+                # a net of the group that failed: what stands in its way joins the group
+                for m in lost:
+                    if m != net and len(steps) <= gmax:
+                        more = in_way(m, unit) or []
+                        steps += [o for o in more if o not in steps][:gmax + 1 - len(steps)]
+                # the failed net stays first (the group is for it), then the ones that failed now
+                steps = [net] + [m for m in lost if m != net] + \
+                    [m for m in steps if m not in lost and m != net]
+            groups.append((net, len(steps) - 1, settled, time.monotonic() - t0))
+        # 2.0.78: last, a net still unrouted may promote other nets' belts (its own search only)
+        passes = 1
+        left = [n for n in order if n in failed and n not in ribs and n not in remembered]
+        for k, net in enumerate(left):
+            passes = 2
+            t0 = time.monotonic()
+            ents = lay_net(net, ents, k, left, "the promoting pass", promo=True)
+            landed(net, time.monotonic() - t0)
+            if net in failed:
+                last_key[net] = key_of(net, ents)      # the ground of its last search
+        return passes
+
+    # PLAN-3.0 §4 (sealed modules compile once): each sealed module is a compile unit. Its own
+    # nets (those whose innermost sealed module it is) are laid on their own, the innermost
+    # units first, then the nets outside every sealed module; a unit's failed net never rips up
+    # another unit's routes. A unit whose twin (the same module, the same ground in its frame)
+    # routed earlier in this build, or in an earlier build (``store``), takes the twin's routes
+    # moved to its frame, and the judge (``_repair``) checks them as any route.
+    unit_keys = {}
+    for key in list(ribs) + [n for n in todo if n not in rib_of]:
+        unit_keys.setdefault(_unit(ribs[key].nets[0] if key in ribs else key, sealed),
+                             []).append(key)
+    nets_of = {u: [m for k in keys for m in (dict.fromkeys(ribs[k].nets) if k in ribs else [k])]
+               for u, keys in unit_keys.items()}
+    units = sorted(unit_keys, key=lambda u: (-(u.count("/") + 1) if u else 1, u))
+    gidx = _Buckets(ents)            # 2.1.33: the ground by place, for the per-unit reads
+    order, passes = [], 1
+    claimed = {}
+    for other, tiles in claims.items():
+        for t in tiles:
+            claimed.setdefault(t, set()).add(other)
+    # 3.1: the one compile store (fkcore.compiled); a path names the game folder's
+    if isinstance(store, str):
+        store = compiledmod.Store(store)
+    from . import fluid_route as fluidmod
+    settings = (tuple(_HANDS), tuple(getattr(ribmod, "_UG", ()) or ()), tuple(fluidmod._LAY),
+                _M2M)
+    twins, compiled, reused, keys_of, cinfo = {}, {}, {}, {}, {}
+    for u in units:
+        mine = nets_of[u]
+        ckey = None
+        if u:
+            child_keys = [(c[len(u) + 1:], k) for c, k in keys_of.items()
+                          if c.startswith(u + "/")]
+            ckey = unit_key(flat, lay, cat, js, u, sealed, mine, gidx, terrain, child_keys,
+                            seeds, settings)
+            keys_of[u] = ckey
+            cinfo[u] = {"module": _module_of(flat, lay, u), "key": ckey, "nets": list(mine),
+                        "from": None, "stored": 0, "refused": []}
+        if ckey is not None:
+            got, src = None, None
+            if ckey in twins:
+                src = twins[ckey]
+                if lay.insts[src].rot % 4 == lay.insts[u].rot % 4:
+                    got = _moved_routes(added, nets_of[src], src, sealed[src], u, sealed[u])
+                elif all(n in added for n in nets_of[src]):
+                    # a twin turned the other way (2.1.32): through the unturned terms
+                    rel = _unit_rel({n: added[n] for n in nets_of[src]}, src, sealed[src],
+                                    lay.insts[src].rot)
+                    got = None if rel is None else _unit_abs(rel, u, sealed[u], lay.insts[u].rot)
+            elif store:
+                got = _store_load(store, ckey, cinfo[u]["module"], u, sealed[u],
+                                  lay.insts[u].rot)
+                src = "the compiled store" if got is not None else None
+                cinfo[u]["refused"] = store.refused.get((cinfo[u]["module"], ckey), [])
+            if got is not None and set(got) == set(mine) \
+                    and _fits(cat, got, gidx, sealed[u], net_frames(mine[0])[0], terrain,
+                              claimed, set(mine)):
+                for net in mine:
+                    added[net] = got[net]
+                    how[net] = f"laid as {src} laid it (compiled once, PLAN-3.0 §4)"
+                    failed.pop(net, None)
+                    ents = ents + got[net]
+                    gidx.extend(got[net])
+                order += mine
+                reused[u] = src
+                cinfo[u]["from"] = "store" if src == "the compiled store" else f"twin {src}"
+                for net in mine:
+                    landed(net, 0.0)
+                continue
+        keys = ranked(unit_keys[u])
+        swaps_before = len(swaps)
+        if negotiate_on():
+            plain = [n for n in keys if n not in ribs and n not in seeds
+                     and not (memo.get(n) and not _named(n, fresh))]
+            if plain:
+                neg = _negotiate(flat, cat, js, plain, {}, list(ents), net_frames, claims,
+                                 rib_of, joints, limit, terrain)
+                _score, n_added, _f, n_how = neg[:4]
+                proposed.update({n: (laid, n_how.get(n, "")) for n, laid in n_added.items()})
+        u_order, u_passes = keys, route_once(keys, u)
+        proposed.clear()
+        gidx = _Buckets(ents)
+        order += [m for n in u_order for m in (dict.fromkeys(ribs[n].nets) if n in ribs else [n])]
+        passes = max(passes, u_passes)
+        if ckey is not None and not any(n in failed for n in mine) \
+                and len(swaps) == swaps_before:
+            twins.setdefault(ckey, u)
+            compiled[u] = ckey
+            cinfo[u]["from"] = "routed"
     added, failed, how, rib_lines = dict(added), dict(failed), dict(how), dict(rlines)
-    order = [m for n in order for m in (dict.fromkeys(ribs[n].nets) if n in ribs else [n])]
     new = base.copy()
     for gone, _new, _text in swaps:
         for k in gone:
@@ -2795,8 +3953,13 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
     for net in sorted(js, key=fkpmod.natural_key):
         job = js[net]
         if net in abut:
-            lines.append(f"routed    {net}: {job.drivers()} -> {job.consumers()}, nothing to lay "
-                         "(its ports meet on one edge)")
+            if job.direct:
+                lines.append(f"routed    {net}: {len(job.direct)} -> "
+                             f"{len({c for _d, c in job.direct})}, nothing to lay "
+                             "(dropped straight in)")
+            else:
+                lines.append(f"routed    {net}: {job.drivers()} -> {job.consumers()}, nothing "
+                             "to lay (its ports meet on one edge)")
         elif net in kept:
             lines.append(f"kept      {net}: its carriers are already laid (pinned)")
         elif net in patched:
@@ -2825,6 +3988,33 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
             lines.append(text)
             if why:
                 short[net] = why
+    sealed_units = [u for u in units if u]
+    if sealed_units:
+        stored = 0
+        for u, ckey in compiled.items():
+            if store and all(n in added and n not in failed for n in nets_of[u]):
+                x0, y0, x1, y1, _t = sealed[u]
+                inputs = {"frame": [x1 - x0, y1 - y0],
+                          "nets": [_renamed(n, u, "") for n in nets_of[u]],
+                          "children": sorted((c[len(u) + 1:], k) for c, k in keys_of.items()
+                                             if c.startswith(u + "/")),
+                          "seeded": sorted(_renamed(n, u, "") for n in nets_of[u]
+                                           if seeds.get(n)),
+                          "settings": repr(settings)}
+                cinfo[u]["stored"] = _store_save(
+                    store, ckey, cinfo[u]["module"], u, sealed[u],
+                    {n: [new.entities.get(e.key, e) for e in added[n]] for n in nets_of[u]},
+                    lay.insts[u].rot, inputs)
+                stored += cinfo[u]["stored"]
+        twin = sum(1 for s in reused.values() if s != "the compiled store")
+        lines.append(f"compile   {len(sealed_units)} sealed module{'s' if len(sealed_units) != 1 else ''}"
+                     f", each routed on its own in its frame "
+                     f"({sum(len(nets_of[u]) for u in sealed_units)} nets): {twin} laid as a twin "
+                     "laid this build, "
+                     f"{len(reused) - twin} from the compiled store"
+                     + (f", {stored} stored" if store else ""))
+        if store and store.out:
+            lines += compiledmod.old_lines(store.out)
     for net, size, settled, took in groups:
         if size is None:
             lines.append(f"group     {net}: no way even with the nets laid this run lifted: the "
@@ -2837,7 +4027,7 @@ def _route_layout(flat, lay, cat, bounds=None, margin=4, retries=None, limit=600
     lines += port_checks(flat, new, cat)
     lines += _filter_loads(flat, new, cat)
     return Routed(new, lines, sorted(set(added) | abut), failed, kept, passes, patched, again,
-                  short, known)
+                  short, known, cinfo)
 
 
 def seal_checks(flat, lay, cat):
@@ -2950,6 +4140,8 @@ def _crossings(flat):
 def _abuts(job):
     """A net whose one driver's belt points straight into its one consumer's first belt: two
     ports meeting on one edge (2.0.48, a stack's cells). It is connected and lays nothing."""
+    if job.direct and not (job.taps or job.sources or job.starts or job.goals):
+        return True                     # 3.0: every driver drops straight into its consumer
     if job.taps or job.sources or len(job.starts) != 1 or len(job.goals) != 1:
         return False
     (st, sh), (gt, gh) = job.starts[0], job.goals[0]

@@ -1,0 +1,28 @@
+{
+ "anchor": [
+  10,
+  10
+ ],
+ "bp": "0eNptkNFuhCAQRf9lnrFZd1c3a/onTWMApzoJDgZwu8b47wVsTdP0jTD3ngOzgjIzTo44QLMCcqBA6KF5W0FbDs6aVuEgH2RdCmhyeqbQxlkXk5bzpR0n6WRIEXgFkZo+yIQsN3F0kKUy2EHzIY3HOMi2peV5VBirpQCWI0aG9B5HZYj7YpR6IMaijNjJ+sP5jPnypRKw7IeIc6hpSnVylosepSs+B0QDm1j/us6HK4f1gD78Y7j8GE7RsL0LoPS1vB3iDp/50Z56liZVvpHBSfaTdaFQaBI2LPu7Ao6wY9Kp+bV7AQ90Ppur+ny/3u/V9XSr69tl274Atv+M9g==",
+ "entities": [
+  {
+   "bx": 11.5,
+   "by": 11.5,
+   "name": "assembling-machine-1",
+   "wx": 1.5,
+   "wy": 1.5
+  },
+  {
+   "bx": 13.5,
+   "by": 10.5,
+   "name": "iron-chest",
+   "wx": 3.5,
+   "wy": 0.5
+  }
+ ],
+ "from": "area 10,10,16,14 on nauvis",
+ "names": {
+  "asm1": 0
+ },
+ "surface": "nauvis"
+}

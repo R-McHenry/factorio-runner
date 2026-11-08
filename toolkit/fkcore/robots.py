@@ -19,7 +19,17 @@ from spawn sent every taken-up item 110 tiles to the kit's chests). Run it befor
 power``, so the poles power the roboports too. :func:`apply_robots` returns the layout with them
 and ``cover robots robots``. 1.7 (Rory, 2026-10-21: pin and patch): the committed roboports
 (``pinned``) stay where they still fit and still reach a chest, so a rebuild adds roboports only
-where none reaches and never moves the network that stands.
+where none reaches and never moves the network that stands. 3.1 (Rory, 2026-11-08: the world
+never feeds a step): the roboports that stand in the game do not decide where new ones go (2.1.3
+had chained new roboports from the last diff's read); the design says, and :func:`report` (``fk
+robots``) is where the standing roboports are judged against it.
+
+:func:`report` is that read's pure half: the roboports standing on the surface (``fk robots``
+reads them with :func:`lua_standing`) against the design's logistic chests, in an area or all of
+them: which chests a powered roboport's logistic square covers and which not, which roboports
+are redundant (every chest they reach another kept one reaches too, and taking them out splits
+no network), and how many roboports :func:`cover_robots` would lay for the same chests on free
+ground. It changes nothing.
 
 :func:`check_surface` judges a composed surface: roboports join one logistic network when their
 logistic squares meet (centres at most twice the radius apart on both axes); the **main** network
@@ -32,6 +42,7 @@ from __future__ import annotations
 import copy
 import re
 from collections import namedtuple
+from dataclasses import dataclass
 
 from . import fkp
 from .compose import turn
@@ -40,7 +51,8 @@ from .elaborate import Check
 from .fkp import Entity, natural_key
 
 __all__ = ["LOGISTIC_CHESTS", "RobotReport", "cover_robots", "apply_robots", "networks",
-           "served", "check_surface", "reach", "lua_roboports", "in_frame"]
+           "served", "check_surface", "reach", "lua_roboports", "lua_standing", "Standing",
+           "StandingReport", "report", "minimal"]
 
 LOGISTIC_CHESTS = frozenset({"requester-chest", "passive-provider-chest", "active-provider-chest",
                              "storage-chest", "buffer-chest"})
@@ -85,21 +97,15 @@ def _is_own(e, owner):
 
 
 def cover_robots(lay, cat, owner="robots", keep_out=(), roboport="roboport", served=(),
-                 storage=None, pinned=(), reach=None):
+                 storage=None, pinned=()):
     """-> (new Entities: roboports keyed ``<owner>/r<k>`` and, with ``storage`` (a chest
     prototype), a storage chest beside each keyed ``<owner>/s<k>``; RobotReport). ``served``:
     [(x, y, radius)] logistic squares of the surface's network in this factory's frame.
     ``pinned``: the committed .fkp's own ``r<k>`` / ``s<k>`` (1.7, pin and patch): a roboport
     that still fits and still reaches a chest of the factory stays where it stands, and so does
     its storage chest where that still fits; new roboports go only where no kept one reaches.
-
-    ``reach`` (2.1.3): [(x, y, logistic radius, construction radius)] of the roboports that stand
-    and have power, in this factory's frame (the last diff's read), or None when none was read.
-    With it, a roboport goes only where one that stands, or one this step lays in reach of them,
-    builds it and takes it into its network (inside its construction area, logistic squares
-    meeting); where no such spot covers a chest, it lays roboports one from the next toward the
-    chests. The runs' roboports placed out of every construction area stood as ghosts for ever,
-    and one built 52 tiles from the hub made a network with no robots."""
+    Pure: nothing of the world comes in (3.1; whether robots can reach a new roboport is the
+    diff's ``UNREACHED`` and report_bom's ``REACH`` to say)."""
     r = _radius(cat, roboport, "logistic_radius")
     ents = sorted(lay.entities.values(), key=lambda e: natural_key(e.key))
     # 2.0.63: a DNP chest asks for no robots, and a DNP roboport serves none (never built)
@@ -132,10 +138,6 @@ def cover_robots(lay, cat, owner="robots", keep_out=(), roboport="roboport", ser
             continue
         ground.place(spot)
         kept.append((int(local[1:]), spot, float(e.x), float(e.y)))
-    links = None if reach is None else _Links(reach, r)
-    if links is not None:
-        links.grow([(float(e.x), float(e.y)) for e in existing]
-                   + [(x, y) for _k, _s, x, y in kept])
     for k, _spot, _x, _y in kept:
         c = old.get(f"s{k}")
         if c is None or not storage or c.name != storage:
@@ -154,7 +156,6 @@ def cover_robots(lay, cat, owner="robots", keep_out=(), roboport="roboport", ser
     if left:
         cx = sum(float(c.x) for c in left) / len(left)
         cy = sum(float(c.y) for c in left) / len(left)
-    steps = 0
     while left:
         best = None
         x0 = int(min(float(c.x) for c in left) - r - w) - 1
@@ -166,26 +167,18 @@ def cover_robots(lay, cat, owner="robots", keep_out=(), roboport="roboport", ser
                 if not ground.free((i, j)):
                     continue
                 px, py = ground.centre((i, j))
-                if links is not None and not links.joins(px, py):
-                    continue
                 n = sum(1 for c in left if _inside(float(c.x), float(c.y), px, py, r))
                 if not n:
                     continue
                 score = (-n, (px - cx) ** 2 + (py - cy) ** 2, j, i)
                 if best is None or score < best[0]:
                     best = (score, (i, j))
-        if best is None and links is not None and steps < _CHAIN:
-            # no spot in reach covers a chest: one roboport more toward them, in reach
-            best = links.step(ground, left)
-            steps += 1
         if best is None:
             break
         spot = best[1]
         ground.place(spot)
         px, py = ground.centre(spot)
         placed.append((spot, px, py))
-        if links is not None:
-            links.grow([(px, py)])
         left = [c for c in left if not _inside(float(c.x), float(c.y), px, py, r)]
     placed.sort(key=lambda p: (p[2], p[1]))
     top = max([k for k, *_rest in kept] + [-1]) + 1      # new ones are numbered after the kept
@@ -203,69 +196,12 @@ def cover_robots(lay, cat, owner="robots", keep_out=(), roboport="roboport", ser
             ground.placed.add(tile)
             chests_out.append(Entity(f"{owner}/s{k}", storage, tile[0] + 0.5, tile[1] + 0.5,
                                      None, {}))
-    why = ("no free 4x4 spot inside the factory's frame reaches it" if links is None else
-           "no free 4x4 spot inside the factory's frame reaches it from a roboport that stands "
-           "(or one laid in reach of them): a roboport out of reach stays a ghost")
+    why = "no free 4x4 spot inside the factory's frame reaches it"
     uncovered = [(c.key, why) for c in left]
     rep = RobotReport(owner, [e.key for e in news], len(chests), len(chests) - len(left),
                       uncovered, served=len(outside), storage=[e.key for e in chests_out],
                       no_room=no_room, pinned=len(kept))
     return news + chests_out, rep
-
-
-#: roboports ``cover robots`` lays one from the next toward chests out of reach, at most
-_CHAIN = 12
-
-
-class _Links:
-    """The roboports that stand (with power) and those laid in reach of them, for ``cover robots``
-    (2.1.3): a spot joins when it is inside one's construction area (robots build it there) and
-    their logistic squares meet (it joins that network, whose robots then work from it)."""
-
-    def __init__(self, standing, radius):
-        self.r = radius                                  # the new roboports' logistic radius
-        self.ports = [(float(x), float(y), float(lr), float(cr)) for x, y, lr, cr in standing]
-        self.cr = max([cr for *_rest, cr in self.ports] + [0.0])
-
-    def joins(self, px, py):
-        return any(abs(px - x) <= min(cr, lr + self.r) and abs(py - y) <= min(cr, lr + self.r)
-                   for x, y, lr, cr in self.ports)
-
-    def grow(self, points):
-        """Add the roboports at ``points`` that join, each in turn (one joins through another)."""
-        todo, cr = list(points), self.cr or self.r
-        while True:
-            hit = [p for p in todo if self.joins(*p)]
-            if not hit:
-                return
-            for p in hit:
-                todo.remove(p)
-                self.ports.append((p[0], p[1], self.r, cr))
-
-    def step(self, ground, chests):
-        """The free spot in reach nearest to a chest out of reach, when it is nearer to it than
-        every roboport in reach: ((score), spot), or None."""
-        def gap(x, y):
-            return min(max(abs(float(c.x) - x), abs(float(c.y) - y)) for c in chests)
-        near = min(self.ports, key=lambda p: gap(p[0], p[1]), default=None)
-        if near is None:
-            return None
-        x, y, lr, cr = near
-        d = min(cr, lr + self.r)
-        best = None
-        for j in range(int(y - d - ground.ph / 2) - 1, int(y + d) + 2):
-            for i in range(int(x - d - ground.pw / 2) - 1, int(x + d) + 2):
-                if not ground.free((i, j)):
-                    continue
-                px, py = ground.centre((i, j))
-                if not self.joins(px, py):
-                    continue
-                score = (gap(px, py), j, i)
-                if best is None or score < best[0]:
-                    best = (score, (i, j))
-        if best is None or best[0][0] >= gap(x, y):
-            return None
-        return best
 
 
 def reach(rows, standing, cat):
@@ -356,10 +292,10 @@ def _clean(v):
 
 
 def apply_robots(lay, cat, owner="robots", keep_out=(), roboport="roboport", served=(),
-                 storage=None, pinned=(), reach=None):
+                 storage=None, pinned=()):
     """A new Layout: ``lay`` without ``owner``'s previous roboports and storage chests, with the
     new ones (the pinned ones that stay among them)."""
-    news, rep = cover_robots(lay, cat, owner, keep_out, roboport, served, storage, pinned, reach)
+    news, rep = cover_robots(lay, cat, owner, keep_out, roboport, served, storage, pinned)
     out = copy.deepcopy(lay)
     out.entities = {k: e for k, e in out.entities.items() if not _is_own(e, owner)}
     if news or owner in out.covers:
@@ -406,21 +342,6 @@ def served(places, infra, layouts, factory, cat):
     return out
 
 
-def in_frame(places, layouts, factory, standing):
-    """``standing`` [(x, y, logistic radius, construction radius)] in map coordinates, as
-    ``factory``'s frame has them (``cover robots``' ``reach``), or None when either is unknown."""
-    me, lay = places.get(factory), layouts.get(factory)
-    if standing is None or me is None or lay is None or not lay.size:
-        return None
-    w, h = lay.size
-    turned = (h, w) if me.rot % 2 else (w, h)
-    out = []
-    for x, y, lr, cr in standing:
-        fx, fy, _d = turn(float(x) - me.x, float(y) - me.y, None, (4 - me.rot) % 4, turned)
-        out.append((fx, fy, float(lr), float(cr)))
-    return out
-
-
 def networks(ents, cat):
     """Logistic networks of roboports: [[keys]], joined when their logistic squares meet."""
     ports = sorted((e for e in ents if cat.kind(e.name) == "roboport"), key=lambda e: natural_key(e.key))
@@ -445,6 +366,196 @@ def networks(ents, cat):
     for i, p in enumerate(ports):
         groups.setdefault(find(i), []).append(p)
     return [groups[k] for k in sorted(groups)]
+
+
+# -- fk robots: what stands against the design (3.1, a pure read) ---------------------------------
+@dataclass
+class Standing:
+    """One roboport standing on the surface, as ``fk robots`` reads it (:func:`lua_standing`)."""
+    name: str
+    x: float
+    y: float
+    lr: float                       # logistic radius (tiles each way from the centre)
+    cr: float                       # construction radius
+    powered: bool                   # its logistic cell transmits (robots work from it)
+
+    @property
+    def at(self):
+        return f"{fkp.fmt(self.x)},{fkp.fmt(self.y)}"
+
+
+def lua_standing(surface, force, tag, area=None):
+    """Lua writing ``fk5/<tag>.json``: [[name, x, y, logistic radius, construction radius,
+    powered]] of every roboport of ``force`` on ``surface`` (inside ``area`` (x0, y0, x1, y1), when
+    given); it replies with the count. A free read, nothing changed."""
+    q = (lambda t: "'" + str(t).replace("\\", "\\\\").replace("'", "\\'") + "'")
+    filt = f"type = 'roboport', force = f"
+    if area is not None:
+        x0, y0, x1, y1 = (float(v) for v in area)
+        filt += f", area = {{{{{x0}, {y0}}}, {{{x1}, {y1}}}}}"
+    return f"""
+local s, f = game.get_surface({q(surface)}), game.forces[{q(force)}]
+if not s or not f then rcon.print('no surface or force') return end
+local out = {{}}
+for _, r in pairs(s.find_entities_filtered{{{filt}}}) do
+  local c = r.logistic_cell
+  local lr, cr, on = 0, 0, false
+  if c then lr, cr, on = c.logistic_radius, c.construction_radius, c.transmitting and true or false end
+  out[#out + 1] = {{r.name, r.position.x, r.position.y, lr, cr, on}}
+end
+helpers.write_file('fk5/{tag}.json', helpers.table_to_json(out), false)
+rcon.print(#out)
+"""
+
+
+def standing_rows(rows, cat):
+    """The read's rows -> [Standing]; a radius the game gave as 0 (no cell) is the catalog's."""
+    out = []
+    for row in rows if isinstance(rows, list) else []:
+        if len(row) < 6:
+            continue
+        name, x, y, lr, cr, on = row[:6]
+        lr = float(lr) or (_radius(cat, name, "logistic_radius") if cat.has_entity(name) else 0.0)
+        cr = float(cr) or (_radius(cat, name, "construction_radius") if cat.has_entity(name)
+                           else 0.0)
+        out.append(Standing(str(name), float(x), float(y), lr, cr, bool(on)))
+    return sorted(out, key=lambda p: (p.y, p.x))
+
+
+def _square_meets(p, area):
+    x0, y0, x1, y1 = area
+    return p.x - p.lr < x1 and p.x + p.lr > x0 and p.y - p.lr < y1 and p.y + p.lr > y0
+
+
+def _groups_of(ports):
+    """Logistic networks among ``ports`` [Standing]: joined when their logistic squares meet."""
+    parent = list(range(len(ports)))
+
+    def find(a):
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    for i, a in enumerate(ports):
+        for j in range(i + 1, len(ports)):
+            b = ports[j]
+            if abs(a.x - b.x) <= a.lr + b.lr and abs(a.y - b.y) <= a.lr + b.lr:
+                ri, rj = find(i), find(j)
+                if ri != rj:
+                    parent[max(ri, rj)] = min(ri, rj)
+    return len({find(i) for i in range(len(ports))})
+
+
+@dataclass
+class StandingReport:
+    area: tuple | None
+    standing: list                  # [Standing] that serve the area (their square meets it)
+    chests: list                    # [(key, name, x, y)] the design's logistic chests there
+    covered: dict                   # chest key -> [Standing] powered ones whose square holds it
+    redundant: list                 # [Standing] powered ones the rest cover for
+    minimal: list                   # [(x, y)] cover_robots' roboports for these chests alone
+    networks: int                   # among the powered ones
+
+    @property
+    def powered(self):
+        return [p for p in self.standing if p.powered]
+
+    @property
+    def unpowered(self):
+        return [p for p in self.standing if not p.powered]
+
+    @property
+    def uncovered(self):
+        return [c for c in self.chests if not self.covered.get(c[0])]
+
+    def lines(self, surface, show=8):
+        def few(items):
+            return "; ".join(items[:show]) + (f"; ... {len(items) - show} more"
+                                               if len(items) > show else "")
+        where = f" area {','.join(str(int(v)) for v in self.area)}" if self.area else ""
+        n, on = len(self.standing), len(self.powered)
+        out = [f"robots {surface}{where}: {n} roboport{'s' if n != 1 else ''} stand ({on} with "
+               f"power, {self.networks} network{'s' if self.networks != 1 else ''}); "
+               f"{len(self.chests)} logistic chests in the design"]
+        if not self.chests:
+            out.append("  no logistic chest to cover here: every roboport is redundant for them")
+        else:
+            bad = self.uncovered
+            out.append(f"  covered: {len(self.chests) - len(bad)} of {len(self.chests)} chests "
+                       f"inside a powered roboport's logistic square"
+                       + ("" if not bad else "; uncovered: " + few(
+                           [f"{k.split(':', 1)[-1]} at {fkp.fmt(x)},{fkp.fmt(y)}"
+                            for k, _n, x, y in bad])))
+        idle = [p for p in self.redundant if not any(p in v for v in self.covered.values())]
+        out.append(f"  redundant: {len(self.redundant)} of the {on} powered (every chest they "
+                   f"reach another reaches too; taking them out splits no network)"
+                   + (f", {len(idle)} of them reach no chest" if idle else "")
+                   + (": " + few([p.at for p in self.redundant]) if self.redundant else ""))
+        if self.chests:
+            out.append(f"  minimal: {len(self.minimal)} roboport{'s' if len(self.minimal) != 1 else ''}"
+                       f" would cover every chest (cover robots on these chests alone, free "
+                       f"ground): " + few([f"{fkp.fmt(x)},{fkp.fmt(y)}" for x, y in self.minimal]))
+        if self.unpowered:
+            out.append(f"  without power: {len(self.unpowered)} (they serve nothing): "
+                       + few([p.at for p in self.unpowered]))
+        out.append("  nothing changed: the design says where roboports go (cover robots); a "
+                   "roboport the design does not have is the diff's difference")
+        return out
+
+
+def minimal(chests, cat, roboport="roboport"):
+    """[(x, y)] the roboports :func:`cover_robots` lays for ``chests`` [(key, name, x, y)]
+    alone, on free ground round them (nothing else of the design or the world in the way)."""
+    if not chests:
+        return []
+    r = _radius(cat, roboport, "logistic_radius")
+    w, h = cat.size(roboport)
+    pad = int(r) + max(w, h) + 1
+    x0 = int(min(float(c[2]) for c in chests)) - pad
+    y0 = int(min(float(c[3]) for c in chests)) - pad
+    x1 = int(max(float(c[2]) for c in chests)) + pad + 1
+    y1 = int(max(float(c[3]) for c in chests)) + pad + 1
+    text = f"fkp 1 factory chests\nsize {x1 - x0}x{y1 - y0}\ninst m Literal at 0,0 rot 0 sig -\n"
+    for k, (_key, name, x, y) in enumerate(chests):
+        name = name if name in LOGISTIC_CHESTS else "passive-provider-chest"
+        text += f"e m/c{k} {name} {fkp.fmt(float(x) - x0)},{fkp.fmt(float(y) - y0)}\n"
+    news, _rep = cover_robots(fkp.loads(text), cat, roboport=roboport)
+    return sorted((float(e.x) + x0, float(e.y) + y0) for e in news
+                  if cat.kind(e.name) == "roboport")
+
+
+def report(standing, chests, cat, area=None, roboport="roboport") -> StandingReport:
+    """The surface's roboports ``standing`` [Standing] against the design's logistic ``chests``
+    [(key, name, x, y)], both in map coordinates. With ``area`` (x0, y0, x1, y1): the chests
+    inside it and the roboports whose logistic square meets it. Coverage counts powered
+    roboports; a redundant one is a powered roboport every chest of which another kept one
+    covers, taken out one by one (fewest chests first) while the network count stays. The
+    minimal set is :func:`minimal` on the same chests. Pure, changes nothing."""
+    if area is not None:
+        x0, y0, x1, y1 = area
+        chests = [c for c in chests if x0 <= float(c[2]) < x1 and y0 <= float(c[3]) < y1]
+        standing = [p for p in standing if _square_meets(p, area)]
+    chests = sorted(chests, key=lambda c: natural_key(c[0]))
+    kept = [p for p in standing if p.powered]
+
+    def covers(p, c):
+        return _inside(float(c[2]), float(c[3]), p.x, p.y, p.lr)
+
+    covered = {c[0]: [p for p in kept if covers(p, c)] for c in chests}
+    nets = _groups_of(kept)
+    redundant, again = [], True
+    while again:                       # to a fixed point: a bridge to one that went is idle now
+        again = False
+        for p in sorted(kept, key=lambda p: (sum(1 for c in chests if covers(p, c)), p.y, p.x)):
+            rest = [q for q in kept if q is not p]
+            if all(any(covers(q, c) for q in rest) for c in chests if covers(p, c)) \
+                    and _groups_of(rest) <= nets:
+                kept = rest
+                redundant.append(p)
+                again = True
+    return StandingReport(tuple(area) if area else None, list(standing), chests, covered,
+                          redundant, minimal(chests, cat, roboport), nets)
 
 
 def check_surface(s, cat):

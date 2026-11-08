@@ -13,7 +13,9 @@ The game (each one RCON call; big replies through script-output, ``link.read_out
     force's logistic networks on the surface hold;
   - per entity and per machine recipe: whether the item's or the recipe's recipe is enabled,
     and for one that is not, the technology that unlocks it (cost or trigger, prerequisites);
-  - the research state: current research and progress, queue, labs on the surface, count researched.
+  - the research state: current research and progress, queue, labs on the surface, count researched;
+  3.0: ``research["techs"]``, {tech: researched} of the techs that widen an inserter's vectors
+  (``fkcore.arms.TECHS``, Bob's adjustable inserters), the ones the game has.
 - ``tech(r, force, names)``: each name as a technology, or (a recipe or item) the technologies
   that unlock it.
 - ``recipes(r, force, names)``: the enabled flag of each recipe (every recipe without names) and
@@ -38,6 +40,7 @@ import math
 import os
 from dataclasses import dataclass, field
 
+from . import arms as armsmod
 from . import link
 
 __all__ = ["Supply", "read", "tech", "recipes", "add_research", "available", "research_line",
@@ -176,6 +179,10 @@ for _, rn in pairs(RC) do
   recs[#recs + 1] = row
 end
 {_STATE_LUA}
+research.techs = {{}}
+for _, n in pairs(helpers.json_to_table({_J(_J(list(armsmod.TECHS)))})) do
+  if f.technologies[n] then research.techs[n] = f.technologies[n].researched end
+end
 helpers.write_file('fk5/{tag}.json', helpers.table_to_json({{tick = game.tick, force = f.name,
   surface = s.name, networks = #nets, entities = ents, recipes = recs, research = research}}), false)
 rcon.print(#ents + #recs)

@@ -1,0 +1,50 @@
+# belt-switch.fk: a production switch on a belt (the lab's steel bay, bay_steelbay.fk, 11-08).
+# Shows: a gated net whose route has no inserter (`when` on a net of belts) is switched at its
+# trunk belt, the first belt every driver's items pass (3.0.3). The bay reads the hub's flags on a
+# radar channel (green: what the hub holds, red: what it wants) and stops its own output belt when
+# the hub has enough. Rory's rule: stop a bay's output in the bay, never by the hub's filters.
+# Run:  fk check belt-switch.fk    fk build --to report_checks   (then read out\floorplan.txt)
+# Expect: 2 gate-open lines (the rate model takes a gated net as always open); in floorplan.txt
+# `gated net bay/out_: 1 carrier if=steel-plate>0 on bay/sw` and the same for bay/tap_.
+import FurnB from "beacon-cells.fk"
+
+# steel plate from iron ore, sealed: 13 iron furnaces feed 15 steel furnaces. One ore belt in on
+# the south edge, steel out on the east edge, and iron plates tapped off the plate belt beside it
+module SteelMod size 30x58 {
+  port fe_in  : in  iron-ore | iron-ore @s3
+  port st_out : out steel-plate         @e10
+  port fe_tap : out iron-plate          @e30
+  fea = Stack<cell=FurnB, n=13, plate=iron-plate, ore=iron-ore>    @(0, 7)
+  sa  = Stack<cell=FurnB, n=15, plate=steel-plate, ore=iron-plate> @(11, 1)
+  net fe:    fe_in -> fea.ore_in
+  net fs:    fea.pl_out -> sa.ore_in, fe_tap
+  net steel: sa.pl_out -> st_out
+}
+
+# the bay: one SteelMod, and the switch. The radar is on a universe channel (signal-1): the hub's
+# radar on the same channel sends what the hub holds (green) and what it wants (red). Each
+# decider says "want" while held < wanted; the two output nets run only while their item is wanted
+module SteelBay size 40x66 {
+  port ore : in  iron-ore | iron-ore       @w4
+  port out : out steel-plate | iron-plate  @e40
+  c1 = SteelMod @(4, 2)
+  net ore_ items iron-ore: ore -> c1.fe_in
+  sd     = Entity<name=radar, cb.mode=2, cb.universe_channel={type: virtual, name: signal-1}> @(14, 61)
+  want_p = Decider<if="green.steel-plate < red.steel-plate", out="steel-plate=1"> @(17, 61)
+  want_t = Decider<if="green.iron-plate < red.iron-plate", out="iron-plate=1">    @(18, 61)
+  wire sdr red:   sd -> want_p.in, want_t.in
+  wire sdg green: sd -> want_p.in, want_t.in
+  wire sw red:    want_p.out, want_t.out
+  net out_ items steel-plate: c1.st_out -> out when sw.steel-plate > 0
+  net tap_ items iron-plate:  c1.fe_tap -> out when sw.iron-plate > 0
+  lanes out_ | tap_
+}
+
+# in the base the hub takes each lane of `out` with a filtered inserter of its own; here one chest
+# takes both lanes, and the switch is what keeps either item from filling it
+ore = Chest<requester, item=iron-ore, rate=19/s> @(2, 10)
+bay = SteelBay @(10, 2)
+box = Chest<provider, limit=8>                   @(60, 44)
+
+net feed: ore -> bay.ore
+net take limited "the bay's switch stops each lane while the hub has enough": bay.out -> box

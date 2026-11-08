@@ -1,8 +1,10 @@
-# early-mall.fk: an early-tier mall: yellow and red belts, undergrounds and splitters, inserters,
-# assemblers, drills, pipes. Every machine stands within 3 tiles of what it feeds, so every product
-# link is one inserter (a long-handed one across a 3-tile gap); belts only bring iron, copper and
-# a few intermediates.
-
+# early-mall.fk: an early-tier mall. Plot 49x24. Yellow and red belts, undergrounds and splitters,
+# inserters, assemblers, drills, pipes, each into its own chest (limit=2). Every machine stands
+# within 3 tiles of what it feeds, so every product link is one inserter; belts only bring iron,
+# copper and a few intermediates. Built on a test server, every link moved items.
+# Run:  fk check early-mall.fk    fk build --to report_checks
+# Expect: `early-mall: 30 nets: 30 connected, 0 open, 0 unrouted`, 24 of them inserters only;
+# `short-feed` on the three iron nets (the requesters bring 2/s each); `bootstrap` lines.
 # the belt family: each yellow item beside its red one, 3-tile gaps (one inserter each way)
 yu      = Assembler<recipe=underground-belt>                 @(10, 3)
 ru      = Assembler<recipe=fast-underground-belt>            @(16, 3)

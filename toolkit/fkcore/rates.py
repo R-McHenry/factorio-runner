@@ -385,6 +385,43 @@ def _in_order(cons, total, share, line):
     return out
 
 
+def _parts(ends, machines, mine):
+    """The rate graph's parts (2.1.33): ``ends`` split where no machine joins them. A machine joins
+    every end it drives or takes from; sources and sinks hold no grants and join nothing. -> [(the
+    part's [(ni, end)] in ``ends`` order, its machines' grants)], in order of each part's first
+    end."""
+    parent = {}
+
+    def find(x):
+        while parent.setdefault(x, x) != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for ni in ends:
+        find(("end", ni))
+    for ni, e in ends.items():
+        for k in list(e["drivers"]) + list(e["consumers"]):
+            m = machines[k]
+            if m.sink or m.source:
+                continue
+            a, b = find(("end", ni)), find(("m", k))
+            if a != b:
+                parent[a] = b
+    parts, order = {}, []
+    for ni, e in ends.items():
+        r = find(("end", ni))
+        if r not in parts:
+            parts[r] = ([], [])
+            order.append(r)
+        parts[r][0].append((ni, e))
+    for k, gs in mine.items():
+        r = find(("m", k))
+        if r in parts:
+            parts[r][1].extend(gs)
+    return [parts[r] for r in order]
+
+
 def solve(flat, passes=50000, tol=1e-12, share="appetite", unbounded=()) -> Model:
     if share not in ("appetite", "level"):
         raise ValueError(f"share must be appetite or level, got {share!r}")
@@ -512,63 +549,73 @@ def solve(flat, passes=50000, tol=1e-12, share="appetite", unbounded=()) -> Mode
         sink_caps[ni] = sum(sink_share.get((k,) + ni, 0.0) for k in e["consumers"]
                             if machines[k].sink and machines[k].needs.get(ni[1], 0.0) <= 0)
 
-    first = dict(grants)
-    restarts = list(RESTARTS)
-    damping, since = DAMPING, 0
-    residual, done = INF, 0
-    window, before = 0.0, None          # the largest change this window, and in the one before
-    for done in range(1, passes + 1):
-        since += 1
-        if since % SWING_WINDOW == 1 and since > 1:
-            swings = before is not None and window >= before * SWING_DROP
-            before, window = window, 0.0
-        else:
-            swings = False
-        if restarts and (since > restarts[0][0] or swings):
-            damping = restarts.pop(0)[1]
-            grants.update(first)
-            since = 1
-            window, before = 0.0, None
-        new = {}
-        for ni, e in ends.items():
-            n, item = ni
-            prod, unb = [], n in unbounded
-            for k in e["drivers"]:
-                m = machines[k]
-                if m.source:
-                    unb = True
-                    continue
-                prod.append((k, m.makes.get(item, 0.0) / len(outs[(k, item)]),
-                             potential(k, belt.get((k, "out", n), (k, "out", n, item))),
-                             m.duty))
-            cons = []
-            for k in e["consumers"]:
-                m = machines[k]
-                need = m.needs.get(item, 0.0)
-                if need > 0:
-                    cons.append((k, need / len(feeds[(k, item)]),
-                                 potential(k, belt.get((k, "in", n), (k, "in", n, item))),
+    # 2.1.33: the rate graph splits into parts no net joins (each bay of the 9-bay loop is one);
+    # each settles on its own, with its own damping and restarts. One bay that swung at 0.5 held
+    # all nine to 1640 passes at 0.25 (18.5 s a solve, several solves a build).
+    def settle(cends, cgrants):
+        first = {g: grants[g] for g in cgrants}
+        restarts = list(RESTARTS)
+        damping, since = DAMPING, 0
+        residual, done = INF, 0
+        window, before = 0.0, None          # the largest change this window, and in the one before
+        for done in range(1, passes + 1):
+            since += 1
+            if since % SWING_WINDOW == 1 and since > 1:
+                swings = before is not None and window >= before * SWING_DROP
+                before, window = window, 0.0
+            else:
+                swings = False
+            if restarts and (since > restarts[0][0] or swings):
+                damping = restarts.pop(0)[1]
+                grants.update(first)
+                since = 1
+                window, before = 0.0, None
+            new = {}
+            for ni, e in cends:
+                n, item = ni
+                prod, unb = [], n in unbounded
+                for k in e["drivers"]:
+                    m = machines[k]
+                    if m.source:
+                        unb = True
+                        continue
+                    prod.append((k, m.makes.get(item, 0.0) / len(outs[(k, item)]),
+                                 potential(k, belt.get((k, "out", n), (k, "out", n, item))),
                                  m.duty))
-            can_make = INF if unb else sum(w * c for _k, w, c, _d in prod)
-            would_take = sum(w * c for _k, w, c, _d in cons)
-            can_take = would_take + sink_caps[ni]
-            stats[ni].can_make, stats[ni].can_take = can_make, can_take
-            stats[ni].would_take = would_take
-            got = _in_order(cons, can_make, share, lines[ni]) if ni in lines else \
-                _grant([r[1:] for r in cons], can_make, share)
-            for row, g in zip(cons, got):
-                new[(row[0], "in", n, item)] = g
-            for row, g in zip(prod, _grant([r[1:] for r in prod], can_take, share)):
-                new[(row[0], "out", n, item)] = g
-        change = 0.0
-        for g, v in new.items():
-            nv = grants[g] + (v - grants[g]) * damping
-            change = max(change, abs(nv - grants[g]))
-            grants[g] = nv
-        residual = change
-        window = max(window, change)
-        if change < tol:
-            break
+                cons = []
+                for k in e["consumers"]:
+                    m = machines[k]
+                    need = m.needs.get(item, 0.0)
+                    if need > 0:
+                        cons.append((k, need / len(feeds[(k, item)]),
+                                     potential(k, belt.get((k, "in", n), (k, "in", n, item))),
+                                     m.duty))
+                can_make = INF if unb else sum(w * c for _k, w, c, _d in prod)
+                would_take = sum(w * c for _k, w, c, _d in cons)
+                can_take = would_take + sink_caps[ni]
+                stats[ni].can_make, stats[ni].can_take = can_make, can_take
+                stats[ni].would_take = would_take
+                got = _in_order(cons, can_make, share, lines[ni]) if ni in lines else \
+                    _grant([r[1:] for r in cons], can_make, share)
+                for row, g in zip(cons, got):
+                    new[(row[0], "in", n, item)] = g
+                for row, g in zip(prod, _grant([r[1:] for r in prod], can_take, share)):
+                    new[(row[0], "out", n, item)] = g
+            change = 0.0
+            for g, v in new.items():
+                nv = grants[g] + (v - grants[g]) * damping
+                change = max(change, abs(nv - grants[g]))
+                grants[g] = nv
+            residual = change
+            window = max(window, change)
+            if change < tol:
+                break
+        return done, residual, damping
+
+    done, residual, damping = 1, 0.0, DAMPING
+    for cends, cgrants in _parts(ends, machines, mine):
+        d, r, dmp = settle(cends, cgrants)
+        done, residual, damping = max(done, d), max(residual, r), min(damping, dmp)
 
     util, binding = {}, {}
     for k, m in machines.items():

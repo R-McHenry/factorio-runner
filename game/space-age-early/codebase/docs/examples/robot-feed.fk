@@ -1,9 +1,10 @@
-# robot-feed.fk: the kit's robots back into a roboport (12x8)
-# The kit's logistic and construction robots end up as items in a storage chest whenever a build
-# takes up the roboport that held them (they are not lost, and nothing uses them there). This puts
-# them back: a requester chest asks for them and one inserter drops them into the roboport.
-# Place the plot on free ground next to the network, and let `cover power` power it.
-
+# robot-feed.fk: the kit's robots back into a roboport. Plot 12x8. The kit's robots end up as
+# items in a storage chest whenever a build takes up the roboport that held them; a requester asks
+# for them and one inserter drops them into the roboport. Place it on free ground inside the
+# network; `cover power` powers it.
+# Run:  fk check robot-feed.fk    fk build
+# Expect: `check robot-feed: 2 machines, 1 nets, 0 check lines`; `routed load: 1 -> 1, 1 inserter
+# (direct insertion)`. A second chest with item="construction-robot" does the same for those.
 port  = Roboport @(0, 0)
 botin = Chest<requester, item="logistic-robot", request=50, rate=1/s> @(5, 1)
 net load: botin -> port

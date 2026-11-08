@@ -1,6 +1,9 @@
-# red.fk: red science from plates the robots bring, into labs. Plot: 30x30.
-# Two input chests (iron, copper), a gear row, a science row that takes gears and copper on two
-# belts, and the labs at the end. Every row's head is at x = 8, so the router has columns 0..7.
+# red.fk: red science from plates the robots bring, into labs. Plot 30x30. Two input chests, a gear
+# row, a science row taking gears and copper on two belts, the labs at the end; every row's head
+# is at x = 8, so the router has columns 0..7. Shows: `assert INST.rate >= R`.
+# Run:  fk rates red.fk    fk build --to report_checks
+# Expect: `PASS red.rate >= 9/min: 18.000/min`; `could-pair net copp and gear` (left as two belts
+# here); `red: 4 nets: 4 connected, 0 open, 0 unrouted`.
 iron   = Chest<requester, item=iron-plate, rate=1/s>   @(2, 2)
 copper = Chest<requester, item=copper-plate, rate=1/s> @(2, 12)
 gears  = AsmRow<n=1, recipe=iron-gear-wheel>          @(8, 2)

@@ -25,7 +25,7 @@ holds of it and whether its recipe is researched (``fkcore.supply``): "no_materi
 x220: 204 transport-belt (the network holds 0), 18 electric-mining-drill (needs-research: research ...)". The cadence
 is the surface file's ``remind`` (default 10min, **a placeholder: the default is still open with
 Rory**). ``poll(r, game_dir)`` is what every agent command calls, as it reads the chat journal
-today: read the panel of the surface mode's force (lab -> ``lab``, play -> ``player``), track it
+today: read the panel of the surface file's force (its ``force`` line, default ``player``), track it
 with the state in ``<game>/out/alerts.json``, push the lines to game chat and the inbox when
 notify is ``all`` (``fkcore.notify``), and return them. It never raises: a failed read is one
 line. The game link is the caller's (``link.Rcon``, only with ``FK_LINK=on``).
@@ -291,9 +291,8 @@ class Poll:
 
 def check(r, game_dir, force=None) -> Poll:
     """Read the panel, track it (state in ``<game>/out/alerts.json``), push when notify is all."""
-    from .apply import force_for
     sf = surfacemod.load_game(game_dir)
-    force = force or force_for(sf.mode)
+    force = force or sf.force_name
     rd = read(r, force)
     path = state_path(game_dir)
     states = _load(path)

@@ -201,6 +201,8 @@ class _Ground:
         self.taken = taken                       # tile -> entity key
         self.keep_out = keep_out
         self.size = size                         # (W, H) or None
+        # 2.1.35: the box new poles stand in, (x0, y0, x1, y1): the frame, or a sealed unit's
+        self.bounds = None if size is None else (0, 0, size[0], size[1])
         self.pw, self.ph = pole_size
         self.placed = set()
         self.deny = list(deny)
@@ -215,9 +217,9 @@ class _Ground:
 
     def why(self, spot):
         """None when a pole fits on ``spot``, else what stops it: frame, entity, keep_out, pole."""
-        if self.size is not None:
-            w, h = self.size
-            if any(not (0 <= x < w and 0 <= y < h) for x, y in self.tiles(spot)):
+        if self.bounds is not None:
+            x0, y0, x1, y1 = self.bounds
+            if any(not (x0 <= x < x1 and y0 <= y < y1) for x, y in self.tiles(spot)):
                 return "frame"
         for t in self.tiles(spot):
             if t in self.taken:
@@ -239,9 +241,9 @@ class _Ground:
         within wire reach of every pole it walks from, and ``why`` built the tiles four times)."""
         i, j = spot
         pw, ph = self.pw, self.ph
-        if self.size is not None:
-            w, h = self.size
-            if i < 0 or j < 0 or i + pw > w or j + ph > h:
+        if self.bounds is not None:
+            x0, y0, x1, y1 = self.bounds
+            if i < x0 or j < y0 or i + pw > x1 or j + ph > y1:
                 return False
         taken, keep_out, placed = self.taken, self.keep_out, self.placed
         for y in range(j, j + ph):
@@ -340,15 +342,36 @@ def _search_links(ground, sources, targets, supply, reach):
     bx1 = max(p.x for p in every) + BRIDGE_PAD
     by0 = min(p.y for p in every) - BRIDGE_PAD
     by1 = max(p.y for p in every) + BRIDGE_PAD
-    nodes, parent, queue, seen = [], [], deque(), set()
+    # 2.1.35: across a long gap, best first (A*): the hops so far plus the hops the straight gap
+    # to the nearest target still needs at least (a plain BFS walked every spot around the
+    # megabase grid's 20-pole gaps). A short gap keeps the BFS order (h = 0) and its chains
+    import heapq
+    tpts = [(b.x, b.y) for b in targets]
+    gap = math.sqrt(min((a.x - tx) ** 2 + (a.y - ty) ** 2 for a in sources for tx, ty in tpts))
+    far = gap > 4 * reach
+
+    def h(x, y):
+        if not far:
+            return 0.0
+        d = math.sqrt(min((x - tx) ** 2 + (y - ty) ** 2 for tx, ty in tpts))
+        return max(0.0, d / reach - 1.0)
+
+    nodes, parent, queue, seen, hops = [], [], [], set(), []
     for a in sources:
         nodes.append(a)
         parent.append(None)
-        queue.append(len(nodes) - 1)
+        hops.append(0)
+        heapq.heappush(queue, (h(a.x, a.y), h(a.x, a.y), len(nodes) - 1))
     offsets = {}
     while queue:
-        index = queue.popleft()
+        _f, _h, index = heapq.heappop(queue)
         node = nodes[index]
+        if parent[index] is not None and any(_wired(node, b) for b in targets):
+            path, k = [], index
+            while parent[k] is not None:
+                path.append(nodes[k])
+                k = parent[k]
+            return path[::-1]
         if not (bx0 <= node.x <= bx1 and by0 <= node.y <= by1):
             continue
         step = min(node.reach, reach)
@@ -373,13 +396,12 @@ def _search_links(ground, sources, targets, supply, reach):
             child = _Node(cx, cy, supply, reach, spot=spot, bridge=True)
             nodes.append(child)
             parent.append(index)
-            if any(_wired(child, b) for b in targets):
-                path, k = [], len(nodes) - 1
-                while parent[k] is not None:
-                    path.append(nodes[k])
-                    k = parent[k]
-                return path[::-1]
-            queue.append(len(nodes) - 1)
+            hops.append(hops[index] + 1)
+            # a child that wires to a target needs no more hops: it comes off the queue first
+            # among its equals, the fewest spots still (the goal is tested as a node is taken)
+            # ties go to the child nearer the target (none on a short gap: h is 0 there)
+            hc = 0.0 if any(_wired(child, b) for b in targets) else max(1.0, h(cx, cy))
+            heapq.heappush(queue, (hops[-1] + hc, hc, len(nodes) - 1))
     return None
 
 
@@ -420,16 +442,18 @@ def _check_args(lay, cat, pole, owner):
 
 
 def cover_power(lay, cat, pole="medium-electric-pole", owner="power", keep_out=(), pinned=(),
-                standing=None, only=None, deny=(), attrs=None):
+                only=None, deny=(), attrs=None, frame=None):
     """``(poles, report)``: the poles to add to ``lay`` and a :class:`CoverReport`.
+
+    ``frame`` (2.1.35): the box (x0, y0, x1, y1) new poles stand in, in place of the layout's
+    frame (a sealed unit's, :func:`cover_power_units`).
 
     ``keep_out`` is an iterable of ``(x, y)`` tiles no pole may use (a route's tiles, a reserved
     lane). ``pinned``: the committed poles to keep where they still fit (they come back among
-    ``poles``, under their own keys). ``standing``: the keys of the pinned poles the last diff
-    found built; a pinned pole of another kind than ``pole`` (and its size) stays only when it
-    stands, so switching ``pole`` keeps the built grid and lays the new kind where the old one
-    never stood (2.0.1, the first lead run: medium poles were SHORT before steel, and switching to
-    small dropped every medium pole, the built ones too). ``lay`` is not changed.
+    ``poles``, under their own keys). A pinned pole of another kind than ``pole`` is not kept: it
+    is laid again in the new kind (3.1, Rory 11-08: nothing the diff found built reaches the
+    cover; 2.0.1 had kept a built pole of the old kind from ``out/standing.json``). ``lay`` is
+    not changed.
 
     2.1 (power domains, ``fkcore.domains``): ``only``, the keys of the entities and poles of one
     domain (None: all of them); every other entity's tiles stay taken, and its poles are no wire
@@ -465,9 +489,11 @@ def cover_power(lay, cat, pole="medium-electric-pole", owner="power", keep_out=(
             electric.append((e.key, _rect(tiles)))
     ground = _Ground(taken, {(math.floor(x), math.floor(y)) for x, y in keep_out}, lay.size,
                      cat.size(pole), deny, s)
+    if frame is not None:
+        ground.bounds = tuple(frame)
 
-    # The committed poles that still fit: kept as they stand (wire nodes, prunable last); one of
-    # another kind only when it stands built (``standing``) and takes the same footprint.
+    # The committed poles of this kind that still fit: kept as they stand (wire nodes, prunable
+    # last).
     kept, names = [], {}
     for e in sorted(pinned, key=lambda e: natural_key(e.key)):
         try:
@@ -475,9 +501,7 @@ def cover_power(lay, cat, pole="medium-electric-pole", owner="power", keep_out=(
         except (KeyError, ValueError):
             continue
         spot = (min(x for x, _y in tiles), min(y for _x, y in tiles))
-        if e.name != pole and (standing is None or e.key not in standing
-                               or cat.kind(e.name) != "electric-pole"
-                               or cat.size(e.name) != cat.size(pole)):
+        if e.name != pole:
             continue
         if not ground.free(spot):
             continue
@@ -536,9 +560,21 @@ def cover_power(lay, cat, pole="medium-electric-pole", owner="power", keep_out=(
             ranked.append((d, other[0], other))
         ranked.sort(key=lambda r: (r[0], r[1]))
         added = None
-        for _d, _first, other in ranked:
-            path = _search_links(ground, [nodes[i] for i in main], [nodes[i] for i in other],
-                                 s, wire)
+        for d, _first, other in ranked:
+            # 2.1.35: first from the poles near the gap only (the megabase grid's band pass
+            # walked out from every pole of a main grid hundreds strong, for each of 27 joins),
+            # then, when that finds no chain, from them all
+            src, dst = [nodes[i] for i in main], [nodes[i] for i in other]
+            lim = (math.sqrt(d) + 2 * wire) ** 2
+            near_src = [a for a in src
+                        if min((a.x - b.x) ** 2 + (a.y - b.y) ** 2 for b in dst) <= lim]
+            near_dst = [b for b in dst
+                        if min((a.x - b.x) ** 2 + (a.y - b.y) ** 2 for a in near_src) <= lim]
+            path = None
+            if len(near_src) < len(src) or len(near_dst) < len(dst):
+                path = _search_links(ground, near_src, near_dst, s, wire)
+            if not path:
+                path = _search_links(ground, src, dst, s, wire)
             if path:
                 added = path
                 break
@@ -550,7 +586,7 @@ def cover_power(lay, cat, pole="medium-electric-pole", owner="power", keep_out=(
         groups = _groups(nodes)
 
     # 3. Prune: a new pole whose entities others power too, and whose loss splits nothing, goes.
-    # New poles first (newest first), then the pinned ones, and a standing pole only when it
+    # New poles first (newest first), then the pinned ones, and a pinned pole only when it
     # powers nothing at all (a new one never replaces it). A bridge kept to join a pole that went
     # is looked at again.
     rects = [rect for _k, rect in electric]
@@ -610,6 +646,126 @@ def cover_power(lay, cat, pole="medium-electric-pole", owner="power", keep_out=(
     return poles, rep
 
 
+def cover_power_units(lay, cat, units, pole="medium-electric-pole", owner="power", keep_out=(),
+                      attrs=None):
+    """2.1.35 (Rory 2026-11-07: power in the hierarchy, as the routing is): ``(poles, report)``
+    as :func:`cover_power`, laid unit by unit. ``units``: [(path, (x0, y0, x1, y1), twin)] of the
+    sealed modules, innermost first; ``twin`` is what makes two units alike (their kind and turn),
+    None for none.
+
+    Each unit gets the poles its own electric entities need and the bridges between its
+    children's poles, standing in its frame; a unit alike to one laid already (the same twin, the
+    same entities and keep-out in its frame) takes that one's poles, moved. A last pass over the
+    whole layout powers what no unit could and joins the units' grids (the band and row
+    backbones). The megabase grid's flat cover tried every spot of 6263 machines for each of its
+    600 poles: ten minutes."""
+    _check_args(lay, cat, pole, owner)
+    from types import SimpleNamespace
+    S = 32
+    own = [e for e in lay.entities.values() if not _is_own_pole(e, owner, cat)]
+    tiles_of, buckets = {}, {}
+    for e in own:
+        try:
+            tiles_of[e.key] = fkp.tiles_of(cat, e)
+        except (KeyError, ValueError):
+            continue
+        xs = [t[0] for t in tiles_of[e.key]] or [math.floor(e.x)]
+        ys = [t[1] for t in tiles_of[e.key]] or [math.floor(e.y)]
+        for bx in range(min(xs) // S, max(xs) // S + 1):
+            for by in range(min(ys) // S, max(ys) // S + 1):
+                buckets.setdefault((bx, by), []).append(e)
+    ko_b = {}
+    for x, y in keep_out:
+        t = (math.floor(x), math.floor(y))
+        ko_b.setdefault((t[0] // S, t[1] // S), set()).add(t)
+    paths = [u[0] for u in units]
+    pset = set(paths)
+
+    def unit_of(key):
+        parts = key.split("/")[:-1]
+        best = ""
+        for i in range(1, len(parts) + 1):
+            if "/".join(parts[:i]) in pset:
+                best = "/".join(parts[:i])
+        return best
+
+    def in_box(e, box):
+        x0, y0, x1, y1 = box
+        return x0 <= e.x < x1 and y0 <= e.y < y1
+
+    def near(box, extra=()):
+        x0, y0, x1, y1 = box
+        seen, out = set(), []
+        for bx in range(math.floor(x0) // S, math.floor(x1 - 1) // S + 1):
+            for by in range(math.floor(y0) // S, math.floor(y1 - 1) // S + 1):
+                for e in buckets.get((bx, by), ()):
+                    if e.key not in seen:
+                        seen.add(e.key)
+                        ts = tiles_of[e.key]
+                        if any(x0 <= t[0] < x1 and y0 <= t[1] < y1 for t in ts) or in_box(e, box):
+                            out.append(e)
+        out += [p for p in extra if in_box(p, box)]
+        return out
+
+    def ko_in(box):
+        x0, y0, x1, y1 = box
+        out = set()
+        for bx in range(math.floor(x0) // S, math.floor(x1 - 1) // S + 1):
+            for by in range(math.floor(y0) // S, math.floor(y1 - 1) // S + 1):
+                out |= {t for t in ko_b.get((bx, by), ()) if x0 <= t[0] < x1 and y0 <= t[1] < y1}
+        return out
+
+    mine = {}
+    for e in own:
+        mine.setdefault(unit_of(e.key), set()).add(e.key)
+    placed, twins, laid, reused = [], {}, 0, 0
+    for i, (path, box, twin) in enumerate(units):
+        own_keys = mine.get(path, set())
+        rows = near(box, placed)
+        kids = [p for p in placed if in_box(p, box)]
+        kid_keys = {p.key for p in kids}
+        if not any(_needs_power(cat, e) for e in rows if e.key in own_keys) and len(kids) < 2:
+            continue
+        x0, y0 = box[0], box[1]
+        ko = ko_in(box)
+        key = None
+        if twin is not None:
+            key = (twin, box[2] - x0, box[3] - y0,
+                   tuple(sorted((e.name, e.x - x0, e.y - y0, -1 if e.dir is None else e.dir,
+                                 e.key in own_keys or e.key in kid_keys) for e in rows)),
+                   tuple(sorted((t[0] - x0, t[1] - y0) for t in ko)))
+        if key is not None and key in twins:
+            src_x, src_y, src_poles = twins[key]
+            got = [Entity(f"{owner}~{i}/p{k}", p.name, p.x - src_x + x0, p.y - src_y + y0,
+                          None, dict(p.attrs)) for k, p in enumerate(src_poles)]
+            reused += 1
+        else:
+            sub = SimpleNamespace(name=lay.name, size=None, insts={}, covers={},
+                                  entities={e.key: e for e in rows})
+            only = own_keys | {p.key for p in kids}
+            poles, _rep = cover_power(sub, cat, pole=pole, owner=f"pw{i}", keep_out=ko,
+                                      only=only, attrs=attrs, frame=box)
+            got = [Entity(f"{owner}~{i}/p{k}", p.name, p.x, p.y, None, dict(p.attrs))
+                   for k, p in enumerate(poles)]
+            laid += 1
+            if key is not None:
+                twins[key] = (x0, y0, got)
+        placed += got
+        for p in got:
+            tiles_of[p.key] = fkp.tiles_of(cat, p)
+    # the last pass: the whole layout, the units' poles standing as wire nodes
+    whole = SimpleNamespace(name=lay.name, size=lay.size, insts=lay.insts, covers=lay.covers,
+                            entities={**{e.key: e for e in own}, **{p.key: p for p in placed}})
+    last, rep = cover_power(whole, cat, pole=pole, owner=owner, keep_out=keep_out, attrs=attrs)
+    allp = sorted(placed + last, key=lambda p: (p.y, p.x))
+    poles = [Entity(f"{owner}/p{k}", p.name, p.x, p.y, None, dict(p.attrs))
+             for k, p in enumerate(allp)]
+    rep.poles = [p.key for p in poles]
+    rep.existing = max(0, rep.existing - len(placed))
+    rep.units = (laid, reused)
+    return poles, rep
+
+
 def _why_not(ground, rect, s, pole, size):
     """Why no pole powers an entity: what takes each spot that could."""
     spots = ground.spots_powering(rect, s)
@@ -642,13 +798,12 @@ def _why_not(ground, rect, s, pole, size):
 
 
 def apply_cover(lay, cat, pole="medium-electric-pole", owner="power", keep_out=(), pinned=(),
-                standing=None, only=None, deny=(), attrs=None, poles=None):
+                only=None, deny=(), attrs=None, poles=None):
     """A new Layout: ``lay`` without ``owner``'s previous poles, with the pinned ones that still
     fit, the new ones and the record ``cover <owner> power pole=<pole>``. ``lay`` is not changed.
     ``poles``: :func:`cover_power`'s, when the caller has them already."""
     if poles is None:
-        poles, _rep = cover_power(lay, cat, pole, owner, keep_out, pinned, standing, only, deny,
-                                  attrs)
+        poles, _rep = cover_power(lay, cat, pole, owner, keep_out, pinned, only, deny, attrs)
     out = copy.deepcopy(lay)
     out.entities = {k: e for k, e in out.entities.items() if not _is_own_pole(e, owner, cat)}
     old = out.covers.get(owner)

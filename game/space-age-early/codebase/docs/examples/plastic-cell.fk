@@ -1,0 +1,31 @@
+# plastic-cell.fk: a cell of your own around a Machine. Plot 200x200 (any). Shows: `kind`,
+# `Machine<entity, recipe>`, a sealed module with ports, `stack NEAR -> FAR`, a fluid port pair
+# (the gas runs up through all four cells on one pipe), a module parameter ($fuel), InfinityPipe
+# as a stand-in where things are free.
+# Run:  fk check plastic-cell.fk    fk rates plastic-cell.fk    fk lab plastic-cell
+# Expect: `check plastic-cell: 31 machines, 24 nets, 0 check lines`; four plants at full speed,
+# `plastic-bar 120.00` each; `plastic-cell: 24 nets: 24 connected, 0 open, 0 unrouted`.
+kind Plastics = Machine<entity=chemical-plant, recipe=plastic-bar>
+
+module PlasticCell<fuel=coal> size 12x5 {
+  port c_in    : in  $fuel         @s0
+  port c_out   : out $fuel         @n0
+  port gas_in  : in  petroleum-gas @s5
+  port gas_out : out petroleum-gas @n5
+  port p_in    : in  plastic-bar   @n11
+  port p_out   : out plastic-bar   @s11
+  stack c_in -> c_out, gas_in -> gas_out, p_out -> p_in
+  plant = Plastics @(5, 1)
+  net c: c_in -> plant, c_out
+  net g: gas_in -> plant, gas_out
+  net p: p_in, plant -> p_out
+}
+
+gas   = InfinityPipe<fluid=petroleum-gas, rate=80/s> @(7, 26)
+coal  = Chest<requester, item=coal, rate=4/s> @(2, 26)
+line  = Stack<cell=PlasticCell, n=4> @(2, 4)
+box   = Chest<provider, limit=8> @(18, 26)
+
+net fuel:    coal -> line.c_in
+net gas_:    gas -> line.gas_in
+net plastic: line.p_out -> box

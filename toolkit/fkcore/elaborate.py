@@ -100,6 +100,9 @@ class FlatNet:
     #: 3.0, a chained net's segment: the chain's path-qualified name (its first segment's), None
     #: for any other net. ``gear``, ``gear@wp``, ``gear@sp.a`` are one chain, ``gear``.
     chain: str | None = None
+    #: 3.0, `net NAME any:` connected when each driver reaches a consumer and each consumer is
+    #: reached (connect.Dealt), not every driver every consumer
+    any: bool = False
 
     @property
     def sushi(self):
@@ -265,13 +268,13 @@ def load(path):
 def _imports(f, folder, modules, seen, kinds=None, tiers=None, parsed=None):
     kinds = f.kinds if kinds is None else kinds
     tiers = f.tiers if tiers is None else tiers
+    # 2.1.31: one parse a file, so two files importing one cell file (a PU chain and an LDS
+    # chain, both of pucells.fk's FurnB) bring the same module, not "FurnB is defined twice"
     parsed = {} if parsed is None else parsed
     for names, rel, line in f.imports:
         target = os.path.abspath(os.path.join(folder, rel))
         if not os.path.exists(target):
             raise ElabError(f.path, line, f"import: no file {rel}")
-        # 3.0 (U9): each file is parsed once per load, so a module imported by two paths (a
-        # diamond: world.fk and d5.fk both import FurnacePair from cells.fk) is one module
         g = parsed.get(target)
         if g is None:
             g = parsed[target] = lang.parse(snapshot.read(target), target)
@@ -597,6 +600,9 @@ def elaborate(f, modules, cat, name="main", layout=None, sizes=None) -> Flat:
     for path, (line, src) in sorted(flat._dnp_named.items()):
         if path not in flat.insts:
             raise ElabError(src, line, f"dnp {path.replace('/', '.')}: no such instance")
+    from . import expand as _expandmod
+    _expandmod.origin_hints(flat, cat, final=False)    # 3.0.1: turned about the origin
+    _beacons(flat, cat)
     _bus_conns(flat, cat)
     _resolve_nets(flat, cat)
     _split_nets(flat, cat)
@@ -605,10 +611,18 @@ def elaborate(f, modules, cat, name="main", layout=None, sizes=None) -> Flat:
     _resolve_bundles(flat, cat)
     _port_pairs(flat, cat)
     _width_checks(flat, cat)
+    _both_port_checks(flat)
+    _literal_cut_checks(flat, [f.body] + list(modules.values()))
     _recorded_ports(flat, layout)
     _port_checks(flat)
     _endpoint_checks(flat, cat)
     _auto_gates(flat, cat)
+    # 3.0.1: the turned pieces whose frames needed the nets
+    flat._origin_notes = _expandmod.origin_hints(flat, cat)
+    for note in flat._origin_notes:
+        where, _, msg = note.partition(": ")
+        line = flat.insts[where].line if where in flat.insts else 0
+        flat.checks.append(Check("by-corner", where.replace("/", "."), msg, line))
     from . import circuits
     flat.circuit = circuits.resolve(flat, cat)
     if flat.dnp:
@@ -864,6 +878,8 @@ def _expand(flat, mod, prefix, modules, cat, duty, src, stack, dnp=False):
                 raise ElabError(src, inst.line, f"{path} = {inst.kind}: {exc}") from None
             keys = []
             for spec in specs:
+                for code, msg in spec.extra.pop("checks", ()):
+                    flat.checks.append(Check(code, path, msg, inst.line))
                 m = _machine(spec, path, inst.kind, d)
                 if dn:
                     m.extra["dnp"] = True
@@ -871,8 +887,9 @@ def _expand(flat, mod, prefix, modules, cat, duty, src, stack, dnp=False):
                 keys.append(m.key)
             if core == "Chest" and any(flat.machines[k].extra.get("buffer") for k in keys):
                 flat.buffers[path] = "chest"
-            if imported is not None and path in getattr(flat, "_lit_names", {}):
-                _literal_names(flat, path, imported, keys, inst, src, d)
+            if imported is not None and (path in getattr(flat, "_lit_names", {})
+                                         or path in getattr(flat, "_lit_ports", {})):
+                _literal_names(flat, path, imported, keys, inst, src, d, cat)
             node = Inst(path, inst.kind, inst.params, _placement_hints(inst), keys, None, None,
                         inst.line, imported, conns=inst.conns)
             if auto is not None:
@@ -1081,7 +1098,11 @@ def _buffer_module(flat, mod, path, inst, src):
     flat.buffers[path] = "module"
 
 
-def _literal_names(flat, path, imported, keys, inst, src, duty=1.0):
+#: 3.0: the entities a Literal's name can make a belt end of
+_BELT_ENDS = ("transport-belt", "underground-belt", "splitter")
+
+
+def _literal_names(flat, path, imported, keys, inst, src, duty=1.0, cat=None):
     """A Literal's ``names`` (2.1, PLAN-2.1 H): ``{name: entity key}`` from its file, each name of
     a machine a net end like any machine's (``automall.asm10``). A name of an entity that is no
     machine of the netlist (a pole, a crafter without a recipe, a chest without a role) is kept
@@ -1090,46 +1111,173 @@ def _literal_names(flat, path, imported, keys, inst, src, duty=1.0):
     2.1.19 (Rory's 42-lab block, ~4115k): a named belt is a **belt end**, a machine whose key is
     the belt's own: a net that ends at it is routed into the belt from behind (name the first belt
     of the Literal's line), and one that starts at it leaves from its front (the last). As a
-    consumer it takes what reaches it, like a chest; what the Literal does with it is its own."""
+    consumer it takes what reaches it, like a chest; what the Literal does with it is its own.
+
+    3.0: a port (``"ports"``) is a carrier end on one edge of the frame, a belt or pipe end. It
+    carries what the Literal's own recipes put on it or take from it (``literal.port_items``): a
+    net of another item at it is ``cannot-carry``, and a net that names no items takes the
+    port's. It drives what the machines behind it make, at their rate, and stands in for them on
+    its net (``lit_gives``, ``lit_takes``). A port nothing in the file explains carries what its
+    net says, without bound.
+
+    3.0 (the walker's blueprints): a named splitter or underground is a belt end too. An
+    underground's entry takes a net in and its exit gives one out; the other way round is not
+    laid, and the net shows unconnected."""
+    from . import literal
     names, other = {}, {}
-    for name, ekey in flat._lit_names[path].items():
+    for name, (ekey, side) in getattr(flat, "_lit_ports", {}).get(path, {}).items():
+        ent = next(e for e in imported[0] if e.key == ekey)
+        pipe = not ent.name.endswith("belt") and "splitter" not in ent.name \
+            and "loader" not in ent.name
+        extra = {"lit_port": side, ("pipe_end" if pipe else "belt_end"): True}
+        gives, takes = literal.port_items(imported[0], ekey, cat) if cat is not None \
+            else ({}, {})
+        makes = {}
+        for item, behind in sorted(gives.items()):
+            rate = sum(flat.machines[k].makes.get(item, 0) for k in behind if k in flat.machines)
+            makes[item] = rate if rate > 0 else INF
+        if gives:
+            extra["lit_gives"] = {i: sorted(ks) for i, ks in gives.items()}
+        if takes:
+            extra["lit_takes"] = {i: sorted(ks) for i, ks in takes.items()}
+        spec = MSpec(ekey.rsplit("/", 1)[-1], ent.name, None, {}, makes,
+                     frozenset(takes) if takes else None, sink=True,
+                     source=any(v == INF for v in makes.values()), extra=extra)
+        flat.machines[ekey] = _machine(spec, path, inst.kind, duty)
+        keys.append(ekey)
+        names[name] = ekey
+    for name, ekey in getattr(flat, "_lit_names", {}).get(path, {}).items():
         if ekey in keys:
             names[name] = ekey
             continue
         ent = next((e for e in imported[0] if e.key == ekey), None)
-        if ent is not None and ent.name.endswith("transport-belt") \
+        if ent is not None and ent.name.endswith(_BELT_ENDS) \
                 and _join(path, ekey.rsplit("/", 1)[-1]) == ekey:
+            extra = {"belt_end": True}
+            if ent.name.endswith("underground-belt"):
+                extra["ug"] = ent.attrs.get("ug")
             spec = MSpec(ekey.rsplit("/", 1)[-1], ent.name, None, {}, {}, None, sink=True,
-                         extra={"belt_end": True})
+                         extra=extra)
             flat.machines[ekey] = _machine(spec, path, inst.kind, duty)
             keys.append(ekey)
             names[name] = ekey
         else:
             other[name] = ent.name if ent is not None else "?"
+            if ent is not None:     # 2.1.31: a wire may end at it (a Literal's combinator)
+                flat._lit_ends = getattr(flat, "_lit_ends", {})
+                flat._lit_ends.setdefault(path, {})[name] = (ekey, ent.name)
     flat.literal_names[path] = names
     if other:
         flat._lit_other = getattr(flat, "_lit_other", {})
         flat._lit_other[path] = other
 
 
+def _literal_cut_checks(flat, bodies):
+    """2.1.33 (lab FRICTION 30): an entity a Literal's box cuts and leaves out, which no other
+    Literal cut from the same file keeps by its position: a hole in the build as it stood (the
+    station unit lost the last curve of each turn). Cutting one capture into Literals that meet
+    leaves each straddling entity to the box its position is in, and that says nothing. Kept is
+    by any Literal in any module's source (a sealed module's, compiled on its own, counts) whose
+    file has that entity at that position: captures in world tiles (2.1.31) share coordinates,
+    so a variant of a capture keeps what the original cut. One line for each box and loss,
+    however many Literals."""
+    from . import literal
+    cuts_of = getattr(flat, "_lit_cuts", {})
+    if not any(found for cuts in cuts_of.values() for _p, _b, found in cuts):
+        return
+    written = []
+    for body in bodies:
+        for inst in getattr(body, "insts", ()):
+            p = getattr(inst, "params", {}) or {}
+            if inst.kind == "Literal" and isinstance(p.get("file"), str) and p.get("box"):
+                written.append((p["file"], p["box"]))
+    dirs = sorted({os.path.dirname(f) for f in cuts_of})
+    rows_at = {}
+
+    def has(file, n, x, y):
+        if file not in rows_at:
+            rows_at[file] = set()
+            for d in dirs:
+                path = file if os.path.isabs(file) else os.path.join(d, file)
+                if os.path.exists(path):
+                    try:
+                        rows_at[file] = {(r[0], literal._clean(r[1]), literal._clean(r[2]))
+                                         for r in literal.read_entities(path)[0]}
+                    except (literal.LiteralError, OSError, ValueError):
+                        pass
+                    break
+        return (n, x, y) in rows_at[file]
+
+    def kept_elsewhere(n, x, y):
+        for file, box in written:
+            try:
+                x0, y0, x1, y1 = literal._box(box)
+            except literal.LiteralError:
+                continue
+            if x0 <= math.floor(x) < x1 and y0 <= math.floor(y) < y1 and has(file, n, x, y):
+                return True
+        return False
+    said = {}
+    for fpath, cuts in sorted(cuts_of.items()):
+        for path, box, found in cuts:
+            lost = [(n, x, y) for n, x, y, kept in found
+                    if not kept and not kept_elsewhere(n, x, y)]
+            if lost:
+                said.setdefault((os.path.basename(fpath), box, tuple(lost)), []).append(path)
+    for (_f, box, lost), paths in said.items():
+        shown = ", ".join(f"{n} at {x},{y}" for n, x, y in lost[:4])
+        more = f" and {len(lost) - 4} more" if len(lost) > 4 else ""
+        also = f" (and {len(paths) - 1} more Literals cut the same)" if len(paths) > 1 else ""
+        flat.checks.append(Check(
+            "literal-box", f"Literal {paths[0].replace('/', '.')}",
+            f"box {box} cuts {shown}{more} and leaves it out (a Literal keeps an entity "
+            f"by its position), and no other Literal of the file keeps it{also}"))
+
+
 def _literal_entities(flat, path, params, cat, src):
     """A Literal's entities: imported from ``file=`` (-> the import tuple), else pinned in the .fkp.
     2.1: the file's ``names`` ({name: entity key}) go to ``flat._lit_names[path]``."""
     from . import literal
-    extra = sorted(set(params) - {"file", "box"})
+    extra = sorted(set(params) - {"file", "box", "resource"})
     if extra:
-        raise TemplateError(f"a Literal takes file=, box=, duty= and dnp, not {', '.join(extra)}")
+        raise TemplateError(f"a Literal takes file=, box=, resource=, duty= and dnp, not "
+                            f"{', '.join(extra)}")
     if "file" in params:
+        notes = []
         try:
             ents, size, origin = literal.import_entities(literal.resolve(src, params["file"]),
-                                                         path, cat, params.get("box"))
+                                                         path, cat, params.get("box"), notes)
+            flat.checks.extend(Check("literal-snap", path, n) for n in notes)
+            if params.get("resource"):
+                # 3.0: what its drills mine (the ground's, so no blueprint says): a named drill is
+                # then a net end, as a MinerRow's is
+                for e in ents:
+                    if cat.kind(e.name) == "mining-drill" and e.name != "pumpjack":
+                        e.attrs.setdefault("resource", params["resource"])
             names = literal.names_of(literal.resolve(src, params["file"]), ents,
                                      params.get("box"))
         except (literal.LiteralError, OSError) as exc:
             raise TemplateError(str(exc)) from None
+        if params.get("box") is not None:
+            fpath = literal.resolve(src, params["file"])
+            flat._lit_cuts = getattr(flat, "_lit_cuts", {})
+            flat._lit_cuts.setdefault(fpath, []).append(
+                (path, params["box"], literal.box_cuts(fpath, params["box"], cat)))
+            # 2.1.33 (lab FRICTION 20): which capture row became which entity, so the circuit
+            # pass can lay again a captured wire a cut between two Literals dropped
+            flat._lit_rows = getattr(flat, "_lit_rows", {})
+            flat._lit_rows[path] = (fpath, literal.row_keys(fpath, path, params["box"]))
         if names:
             flat._lit_names = getattr(flat, "_lit_names", {})
             flat._lit_names[path] = names
+        try:
+            ports = literal.ports_of(literal.resolve(src, params["file"]), ents, cat,
+                                     params.get("box"))
+        except (literal.LiteralError, OSError) as exc:
+            raise TemplateError(str(exc)) from None
+        if ports:
+            flat._lit_ports = getattr(flat, "_lit_ports", {})
+            flat._lit_ports[path] = ports
         return ents, size, origin, literal.signature(ents, size)
     if flat._layout is None:
         raise TemplateError("a Literal without file= needs the factory's .fkp")
@@ -1860,6 +2008,153 @@ def _conn_want(flat, bus, keys):
     return min(got) if got else None
 
 
+_BEACON = []
+
+
+def _beacon_params():
+    """(distribution effectivity, supply area distance, profile) of the beacon, as read from the
+    game (facts.json; the lab's Space Age 2.1.24: 1.5, 3, 1/sqrt(n)). Read once."""
+    if _BEACON:
+        return _BEACON[0]
+    _BEACON.append(_read_beacon_params())
+    return _BEACON[0]
+
+
+def _read_beacon_params():
+    from . import facts
+    row = facts.load()["entities"].get("beacon", {})
+    # the game's profile is 1/sqrt(n) to 4 places (probed on the lab, 11-07)
+    prof = [round(1 / math.sqrt(n), 4) for n in range(1, 201)]
+    return (float(row.get("distribution_effectivity", 1.5)),
+            float(row.get("supply_area_distance", 3)), prof)
+
+
+def beacon_bonus(modules_each, cat=None):
+    """The speed a machine gets from beacons holding ``modules_each`` ([[module, ...] per
+    beacon]): effectivity x the sum of their modules' speed x the profile at their count."""
+    from .templates import MODULE_EFFECTS
+    if not modules_each:
+        return 0.0
+    eff, _reach, prof = _beacon_params()
+    n = len(modules_each)
+    p = prof[n - 1] if n <= len(prof) else prof[-1]
+    return eff * p * sum(MODULE_EFFECTS.get(m, (0.0, 0.0))[0] for ms in modules_each for m in ms)
+
+
+def _beacon_override(text):
+    """``beacons=N`` -> N."""
+    try:
+        n = float(text)
+    except (TypeError, ValueError):
+        n = -1
+    if n < 0 or n != int(n):
+        raise ValueError(f"beacons={text}: a count of beacons (beacons=6, and beacon=MODULE for "
+                         "the module in each)")
+    return int(n)
+
+
+def _beacons(flat, cat):
+    """2.1.33 (lab FRICTION 2): beacons in the rate model. Every placed ``beacon`` and every
+    single-machine instance whose place is known (``@(x, y)`` up to the same unplaced ancestor,
+    turns included) are matched as the game does: a beacon reaches a machine whose box touches the
+    beacon's box grown by its supply distance (3). A machine's speed then gains
+    effectivity (1.5) x its beacons' module speed x profile(n) (1/sqrt(n)), on top of its own
+    modules (max 0.2 in all), and its needs and makes scale with it. ``beacons=N`` (and
+    ``beacon=MODULE``, both slots) on an instance sets the count for each of its machines where
+    the layout can't say (a row, a beacon in a neighbouring band's module placed elsewhere); the
+    module is the design's beacons' when it is left out. -> ``flat.beacons`` {machine key:
+    (count, speed bonus, how)}: how is "counted" or "set". The 2.1.31 PU line undersized every
+    line about 2.5x: prod2 slows a machine on paper, and its speed2 beacons weren't counted."""
+    from . import expand
+    from .templates import MODULE_EFFECTS
+    flat.beacons = {}
+    _eff, reach, _prof = _beacon_params()
+    beacons, crafters, frames = [], [], {}
+
+    def group_of(path):
+        parts = path.split("/")
+        for i in range(len(parts) - 1, 0, -1):
+            anc = "/".join(parts[:i])
+            if anc in flat.insts and flat.insts[anc].hints.get("at") is None:
+                return anc
+        return ""
+    for path, inst in flat.insts.items():
+        if inst.module is not None or inst.hints.get("at") is None or len(inst.machines) != 1:
+            continue
+        m = flat.machines.get(inst.machines[0])
+        if m is None or not cat.has_entity(m.prototype):
+            continue
+        try:
+            size = cat.size(m.prototype)
+            at = expand._origin(flat, path, cat, size, frames)
+        except Exception:              # a frame the layout can't know yet: not counted
+            continue
+        if at is None:
+            continue
+        w, h = size if at[2] % 2 == 0 else size[::-1]
+        box = (at[0], at[1], at[0] + w, at[1] + h)
+        if cat.kind(m.prototype) == "beacon":
+            beacons.append((group_of(path), box, list(m.extra.get("modules") or ())))
+        elif m.makes or m.needs:
+            crafters.append((group_of(path), box, m.key))
+    design_mods = next((mods for _g, _b, mods in beacons if mods), None)
+    reached = {}
+    for g, (x0, y0, x1, y1), key in crafters:
+        got = [mods for bg, (a0, b0, a1, b1), mods in beacons if bg == g and mods and
+               x0 < a1 + reach and x1 > a0 - reach and y0 < b1 + reach and y1 > b0 - reach]
+        if got:
+            reached[key] = (got, "counted")
+    for path, inst in flat.insts.items():
+        params = dict(getattr(inst, "kparams", None) or {}, **(inst.params or {}))
+        text, mod = params.get("beacons"), params.get("beacon")
+        if text is None:
+            if mod is not None:
+                flat.checks.append(Check("beacons", f"{path.replace('/', '.')}",
+                                         f"beacon={mod} does nothing without beacons=N: the "
+                                         "count comes from the layout", inst.line))
+            continue
+        try:
+            n = _beacon_override(text)
+        except ValueError as exc:
+            flat.checks.append(Check("beacons", f"{path.replace('/', '.')}", str(exc), inst.line))
+            continue
+        if mod is not None and mod not in MODULE_EFFECTS:
+            flat.checks.append(Check("beacons", f"{path.replace('/', '.')}",
+                                     f"beacons={text}: {mod} is no module", inst.line))
+            continue
+        mods = [mod, mod] if mod else design_mods
+        if n and mods is None:
+            flat.checks.append(Check(
+                "beacons", f"{path.replace('/', '.')}",
+                f"beacons={text}: the design places no beacon to take the modules from, so it "
+                "counts none; say them (beacon=speed-module-2)", inst.line))
+            continue
+        for key in inst.machines:
+            if key in flat.machines:
+                reached[key] = ([list(mods)] * n, "set")
+    for key, (got, how) in sorted(reached.items()):
+        m = flat.machines[key]
+        own = m.extra.get("modules") or ()
+        allowed = _entity_effects(m.prototype)
+        if allowed is not None and "speed" not in allowed:
+            continue
+        bonus = beacon_bonus(got)
+        base = max(0.2, 1 + sum(MODULE_EFFECTS.get(x, (0.0, 0.0))[0] for x in own))
+        new = max(0.2, 1 + sum(MODULE_EFFECTS.get(x, (0.0, 0.0))[0] for x in own) + bonus)
+        f = new / base
+        m.needs = {i: r * f for i, r in m.needs.items()}
+        m.makes = {i: r * f for i, r in m.makes.items()}
+        flat.beacons[key] = (len(got), round(bonus, 4), how)
+
+
+def _entity_effects(proto):
+    """The effects ``proto`` allows (facts.json), or None when the facts don't say."""
+    from . import facts
+    row = facts.load()["entities"].get(proto) or {}
+    effects = row.get("allowed_effects")
+    return None if effects is None else set(effects)
+
+
 def _bus_conns(flat, cat):
     """A Bus's connection list (2.0.32, PLAN-MODULES §4): the named entries are nets, written in port
     order. Direction comes from the netlist — an out port or a maker is a load, an in port or a taker
@@ -2037,7 +2332,8 @@ def _resolve_nets(flat, cat):
         keys = machines_of(p, ref, "driver")
         for key in keys:
             m = flat.machines[key]
-            if m.extra.get("belt_end") and not m.makes and w["items"]:
+            if (m.extra.get("belt_end") or m.extra.get("pipe_end")) and not m.makes \
+                    and w["items"]:
                 # 2.1.19: a Literal's named belt drives what its net says it carries, without
                 # bound, as a requester does (what the Literal puts on it is its own)
                 m.makes, m.source = {i: INF for i in w["items"]}, True
@@ -2055,9 +2351,18 @@ def _resolve_nets(flat, cat):
             if keys and all(k in flat.ports for k in keys) and not free_only:
                 port_items_check(name, ref, w, keys)
             else:
+                # 2.1.33 (lab FRICTION 3): a chest that only takes (Chest<plain>, a provider)
+                # drives nothing; a relay between two nets is a Buffer
+                relay = keys and all(
+                    flat.machines[k].sink and not flat.machines[k].makes
+                    and "role" in flat.machines[k].extra
+                    and not flat.machines[k].extra.get("buffer") for k in keys)
                 flat.checks.append(Check("cannot-carry", f"net {name}", f"driver {ref} makes no "
                                          + _items_text(w["items"]) + (" that is still free"
-                                                                      if free_only else ""),
+                                                                      if free_only else "")
+                                         + (": it is a chest that only takes; a chest one net "
+                                            "fills and another drains is a Buffer "
+                                            "(Chest<plain, hold>)" if relay else ""),
                                          ref.line))
 
     def add_consumers(name, p, ref, free_only):
@@ -2120,7 +2425,8 @@ def _resolve_nets(flat, cat):
                                   getattr(p.net, "limited", False),
                                   None if when is None else (when, p.scope), p.scope,
                                   getattr(p.net, "width", 1), getattr(p.net, "lane", None),
-                                  getattr(p.net, "why", None), group=p.group, chain=p.chain)
+                                  getattr(p.net, "why", None), group=p.group, chain=p.chain,
+                                  any=getattr(p.net, "any", False))
     flat._out_hold, flat._in_hold = out_hold, in_hold
     _settle_inout(flat)
 
@@ -2362,6 +2668,36 @@ def _port_pairs(flat, cat):
         pk = f"{a}|{b}"
         flat.pairs[pk] = (a, b)
         flat.lane_of[a] = flat.lane_of[b] = pk
+
+
+def _both_port_checks(flat):
+    """2.1.33 (lab FRICTION 19): an in port that takes its item on both lanes (``X | X``) and is
+    fed by one net of one lane fills half its belt. The PU line's ``g_in`` took green from g1 and
+    g2 as one net on one lane (22.5/s for ~45/s of demand) and the chain made 1.5 PU/s; two nets
+    with ``lanes green1 | green2`` made 2.38. Only a net of two drivers or more: one driver's
+    belt is one lane whatever the port takes. A stack's own links between its cells are left out."""
+    for key in sorted(flat.ports):
+        port = flat.ports[key]
+        if not port.both or port.dir != "in":
+            continue
+        if key in flat.chain and key not in flat.stack_ends:
+            continue
+        for item in dict.fromkeys(port.items):
+            outer = [n for n in flat._in_hold.get((key, item), [])
+                     if not n.startswith(port.scope + "/") and n in flat.nets]
+            if len(outer) != 1:
+                continue
+            name = outer[0]
+            net = flat.nets[name]
+            if net.width > 1 or name in flat.lane_of:
+                continue
+            if len({flat.machines[k].inst if k in flat.machines else k
+                    for k, _i in net.drivers}) < 2:
+                continue
+            flat.checks.append(Check(
+                "width", f"net {name}",
+                f"port {key.replace('/', '.')} takes {item} on both lanes, and net {name} fills "
+                "one: give it `width 2`, or split it into two nets and `lanes A | B`", net.line))
 
 
 def _width_checks(flat, cat):
@@ -2744,13 +3080,16 @@ def _port_checks(flat):
                     "two lanes a tile", port.line))
             else:
                 lanes_taken[at] = key
+    # 2.1.32: every net's rows indexed by key once (a scan of every net for every port was 70%
+    # of a 3-band megabase grid's elaborate, and size elaborates again)
+    rows_of = {}
+    for name, net in flat.nets.items():
+        for side, rows in (("drivers", net.drivers), ("consumers", net.consumers)):
+            for k, item in rows:
+                if k in flat.ports:
+                    rows_of.setdefault(k, []).append((name, side, item))
     for key, port in flat.ports.items():
-        uses = []
-        for name, net in flat.nets.items():
-            for side, rows in (("drivers", net.drivers), ("consumers", net.consumers)):
-                for k, item in rows:
-                    if k == key and item in port.all_items:
-                        uses.append((name, side, item))
+        uses = [u for u in rows_of.get(key, ()) if u[2] in port.all_items]
         inside = [u for u in uses if flat.nets[u[0]].scope == port.scope]
         outside = [u for u in uses if flat.nets[u[0]].scope != port.scope]
         named_in = {n for n in named.get(key, ()) if flat.nets[n].scope == port.scope}
@@ -2833,18 +3172,27 @@ def _endpoint_checks(flat, cat):
                                          "nets: " + ", ".join(nets) + f". Name each net's items "
                                          f"(`net {nets[0]} items {item}: ...`) so one carries it"))
     fed = {key for key, _item in in_hold}
+    # 3.0: a Literal's machine behind a port its net names is on that net
+    by_port = {"out": set(), "in": set()}
+    for side, field_, hold in (("out", "lit_gives", out_hold), ("in", "lit_takes", in_hold)):
+        for pkey, pm in flat.machines.items():
+            for item, behind in (pm.extra.get(field_) or {}).items():
+                if (pkey, item) in hold:
+                    by_port[side] |= {(k, item) for k in behind}
     unfed, unconsumed = [], []
     for key, m in flat.machines.items():
-        if m.extra.get("port"):
-            continue                    # a bus port: one no net names is a spare, not a fault
+        if m.extra.get("port") or m.extra.get("lit_port"):
+            continue                    # a bus port: one no net names is a spare, not a fault;
+                                        # a Literal's port as well (its machines say the rest)
         for item in m.needs:
-            if (key, item) not in in_hold:
+            if (key, item) not in in_hold and (key, item) not in by_port["in"]:
                 unfed.append((m.inst, item, key))
         # a roboport with no robot net is a coverage roboport: it takes robots when it needs them
         if m.sink and key not in fed and cat.kind(m.prototype) != "roboport":
             unfed.append((m.inst, "anything", key))
         for item in m.makes:
-            if (key, item) not in out_hold and not m.extra.get("buffer"):
+            if (key, item) not in out_hold and not m.extra.get("buffer") \
+                    and (key, item) not in by_port["out"]:
                 unconsumed.append((m.inst, item, key))     # 2.1: a buffer may only fill
     for inst, item, n in _group(unfed):
         flat.checks.append(Check("no-feed", inst, f"{item} has no net"

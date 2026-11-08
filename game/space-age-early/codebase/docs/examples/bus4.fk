@@ -1,9 +1,10 @@
-# bus4.fk: Rory's 4-belt bus (2026-10-21), a river of iron, as the Bus template: four belts run
-# east (rows 11..14 here); a load from the south at x 11 merges into all four by a staircase of
-# splitters that fills the far belt first; two taps pull out by staircases, north at x 26 and south
-# at x 33, each taking from the far belt first. bus4.json is his demo exactly as he placed it; the
-# template at the same parameters lays the same bus, and the router lays the belts to and from it.
-# Grow it: make it longer, add loads and taps (load=s11|s40), and a net for each port.
+# bus4.fk: Rory's 4-belt bus (2026-10-21), a river of iron, as the Bus template. Plot 54x25. Four
+# belts run east (rows 11..14 here); a load from the south at x 11 merges into all four by a
+# staircase of splitters that fills the far belt first; two taps pull out by staircases, north at
+# x 26 and south at x 33. bus4.json is his demo exactly as he placed it (Literal<file="bus4.json">).
+# Run:  fk rates bus4.fk    fk build --to report_checks
+# Expect: `bus ... pool: loads bring 2.500/s, taps would take 2.000/s`; `bus4: 7 nets: 7
+# connected, 0 open, 0 unrouted`. Grow it: longer, more loads and taps (load=s11|s40), a net each.
 ore   = Chest<requester, item=iron-ore, rate=3/s>   @(1, 18)
 coal  = Chest<requester, item=coal, rate=1/s>       @(1, 21)
 smelt = SmelterRow<n=8, recipe=iron-plate>          @(4, 18)

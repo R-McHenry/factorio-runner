@@ -183,6 +183,16 @@ def buildable(name, need=1):
     return supply.ghost_state(snap.sup, name, max(int(need or 1), 1))[0] is None
 
 
+def locked(name):
+    """True when the snapshot read ``name`` and its force has not researched it (needs-research):
+    a stored inside holding one (compiled on the lab, whose force has everything) is laid again.
+    Not read, or only SHORT: False."""
+    snap = _snapshot
+    if snap.sup is None or not snap.known(name):
+        return False
+    return supply.ghost_state(snap.sup, name)[0] == "needs-research"
+
+
 def _say(line):
     if line not in _notes:
         _notes.append(line)

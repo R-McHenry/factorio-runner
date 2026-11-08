@@ -1,9 +1,9 @@
-# bus4ribs.fk: one iron bus, four sealed ribs (PLAN-MODULES phase 6, 2.0.38)
-# A rib is a module with ports: gear plates in at its west port, gears out at its east one. The bus
-# takes the ribs' inputs by taps, in list order, and the toolkit writes each rib's contract:
-#   fk contract bus4ribs.fk
-#     rib0: in iron-plate 2.0/s via bus tap n7 (got 2.0) | out iron-gear-wheel 1.0/s via box0/c0
-# A rib is sealed: its internal net routes inside its 16x10 frame and crosses only at its ports.
+# bus4ribs.fk: one iron bus, four sealed ribs. Plot 100x40. A rib is a module with ports: plates
+# in at its west port, gears out at its east one; the bus binds its ports with a connection list
+# (in1 a mouth, r0..r3 taps in list order). Shows: the connection list, `fk contract`.
+# Run:  fk contract bus4ribs.fk    fk build --to report_checks
+# Expect: `rib0: out iron-gear-wheel 1.0/s via box0/c0 (got 1.0) | in iron-plate 2.0/s via bus tap
+# n7 (got 2.0)` and the same for rib1..3; `bus4ribs: 18 nets: 18 connected, 0 open, 0 unrouted`.
 module GearRib size 16x10 {
   port iron : in iron-plate @w
   port gear : out iron-gear-wheel @e

@@ -84,10 +84,20 @@ use the game link, and only with FK_LINK=on)
   with the game link (FK_LINK=on, on the game host):
     measure GAME_DIR --area X0,Y0,X1,Y1 [--seconds 30]
                                           what the machines there make, against the model
-    lab GAME_DIR NAME [--from DIR] [--size WxH] | NAME --measure S | NAME --clear | --list
-                                          a factory (or a stage's) built on its own lab slot,
-                                          powered and stocked; then what it really makes
-    sim GAME_DIR start [NAME] | stop | status | save NAME | load NAME | saves | speed X |
+    alone GAME_DIR NAME [--surface S] [--from DIR] [--size WxH] [--keep] | NAME --measure SECS
+          | NAME --clear | --list         a module built alone on a slot of a surface (3.1;
+                                          default lab); then what it really makes there
+    standin GAME_DIR NAME supply|feed|ore [--surface S] [ore: --ore R --area A | --copy-ore A
+          [--to X,Y] | --clear-ore]       a god-mode stand-in on it, by name: power, stock and
+                                          fuel; a source or sink at each open port; ore (free
+                                          surfaces only)
+    lab GAME_DIR NAME [--from DIR] [--size WxH] [--keep] | NAME --measure S | NAME --clear | --list
+                                          the lab alias: alone --surface lab, then the stand-ins
+                                          supply and feed
+    map GAME_DIR save NAME | saves | load NAME | restart | pause | resume
+                                          the live map: saved, loaded (the server restarted on
+                                          it), started over, paused (fkcore.mapctl; the host)
+    sim GAME_DIR start [NAME] | stop | status | kickoff [NAME] | save NAME | load NAME | saves | speed X |
          run N | until T | place FILE @X,Y | paste FILE @X,Y | remove AREA | decon AREA |
          play SCRIPT | env      the speedrun planner: the run's own map on this machine, paused
                                           between actions (fkcore.sim)
@@ -108,8 +118,8 @@ use the game link, and only with FK_LINK=on)
     request GAME_DIR X,Y|KEY ITEM N [--name ENTITY] [--inventory NAME]
                                           an item request: robots bring N of ITEM from the
                                           network to the entity that stands there (a proxy)
-    capture GAME_DIR lab NAME | world X0,Y0,X1,Y1 | design [FACTORY/]INST [--to FILE]
-                                          something built (a lab slot, an area of the game or
+    capture GAME_DIR slot NAME [--surface S] | lab NAME | world X0,Y0,X1,Y1 | design [FACTORY/]INST
+            [--to FILE]                   something built (a slot of a module alone, an area of the game or
                                           the planner, a laid-out instance) as a Literal file:
                                           Literal<file=...> anywhere, a module included
     lua GAME_DIR CODE | --file F          run a Lua chunk in the game (RCON); its rcon.print is the
@@ -123,14 +133,23 @@ use the game link, and only with FK_LINK=on)
     recipes GAME_DIR [NAME...] [--enabled]
                                           the locked recipes (or the enabled ones) and what
                                           unlocks each (a free read)
-    read-terrain GAME_DIR --surface S --area X0,Y0,X1,Y1 [--name map] [--replace]
+    read-terrain GAME_DIR --surface S --area X0,Y0,X1,Y1 [--name map] [--replace] [--entities]
                                           a free read of the bare world (ore, water, cliffs;
-                                          trees and rocks counted) into GAME_DIR/<name>.terrain.json
+                                          trees and rocks counted) into GAME_DIR/<name>.terrain.json;
+                                          --entities (3.1): what stands there and the design
+                                          does not own becomes blocked tiles too, so the design
+                                          routes round it (only when asked; the file says when)
+    robots GAME_DIR [--area X0,Y0,X1,Y1] [--force F]
+                                          3.1: the roboports that stand against the design's
+                                          logistic chests: covered chests, redundant roboports,
+                                          and how few would do (a free read, changes nothing)
 """
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
+import math
 import os
 import re
 import sys
@@ -185,6 +204,30 @@ def _game_link(what):
     return r
 
 
+def _catalog(a):
+    """fk catalog learn|show|forget (3.0, fkcore.learn): the run's learned overlay."""
+    from . import learn, learned
+    path = learned.path() or os.path.join(os.path.abspath(a.game), learned.NAME)
+    if a.verb == "show":
+        print("\n".join(learn.show(a.names[0] if a.names else None, learned.path())))
+        return 0
+    if a.verb == "forget":
+        if len(a.names) != 1:
+            raise SystemExit("error: fk catalog forget NAME")
+        print("\n".join(learn.forget(a.names[0], path)))
+        return 0
+    if not (a.names or a.mod or a.all_mods):
+        raise SystemExit("error: fk catalog learn NAME... | --mod MOD | --all-mods")
+    how = "fk catalog learn " + (" ".join(a.names) or (f"--mod {a.mod}" if a.mod else "--all-mods"))
+
+    def body(r):
+        ov, lines = learn.learn(r, a.names, a.mod, a.all_mods, how=how)
+        if ov and not a.dry:
+            lines.append(f"wrote {learn.write(ov, path)}: every design step plans with it now")
+        return lines
+    return _world(a, None, "catalog learn", body)
+
+
 def _world(a, cat, what, body):
     """Run ``body(r)`` -> lines with the game link open; errors are one line, never a trace."""
     from . import link, look
@@ -211,12 +254,253 @@ def _view(a):
     return vision.View(a.zoom, layers, a.image)
 
 
+def _area_or_placement(game, text, surface=None):
+    """3.1: ``X0,Y0,X1,Y1`` -> (area, None, None); a placement id -> (its area, its head line,
+    its record). The record says which surface it stands on (3.1.1: a placement on another
+    surface than the game's own, the lab's say, is read there)."""
+    from . import placements
+    if not text:
+        return None, None, None
+    if placements.is_area(text):
+        return _area(text), None, None
+    try:
+        rec, area = placements.resolve(game, text, surface)
+    except (KeyError, ValueError) as exc:
+        raise SystemExit(f"error: {str(exc).strip(chr(34)).strip(chr(39))}") from None
+    return area, placements.head(rec), rec
+
+
+def _scope(game, cat, surface=None, rec=None):
+    """(surface file, composed design) a world command judges against (3.1.1). The game's own
+    surface and design, unless ``rec`` (a placement) or ``surface`` names another surface: then
+    the surface file is the game's with that name and force, and the design is empty (nothing
+    of the game codebase is designed there; what stands is judged by the placements alone)."""
+    sf, _surface_lay, _lay_path, s = _composed(game, cat)
+    want = rec.surface if rec is not None else surface
+    if want and want != sf.name:
+        force, _name = _surface_force(game, want)
+        sf = dataclasses.replace(sf, name=want, force=force)
+        s = compose.Surface(name=want)
+    return sf, s
+
+
+def _surface_force(game, surface=None, force=None):
+    """(force, surface) of a command: the run's own, or ``surface`` (its game/<surface>.surface
+    names the force; the lab's is ``lab``), ``force`` given wins."""
+    from . import alone
+    got_force, got_surface = _force_surface(game)
+    if surface and surface != got_surface:
+        got_surface = surface
+        path = os.path.join(game, f"{surface}.surface")
+        if os.path.exists(path):
+            got_force = surfacemod.load(path, derive=False).force_name
+        elif surface == alone.LAB:
+            got_force = "lab"
+    return force or got_force, got_surface
+
+
+def _is_free(game, surface):
+    from . import alone
+    path = os.path.join(game, f"{surface}.surface")
+    if os.path.exists(path):
+        return surfacemod.load(path, derive=False).free
+    return surface == alone.LAB
+
+
 def _look_world(a, cat):
     from . import look
-    area = _area(a.area)
+    area, head, rec = _area_or_placement(a.game, a.area)
     view = _view(a)
-    return _world(a, cat, "look --source world", lambda r: look.run(
-        r, a.game, cat, area, a.notify, a.watch, a.write_marks, view=view).lines())
+    surface = rec.surface if rec is not None else getattr(a, "surface", None)
+    force = _surface_force(a.game, surface)[0] if surface else None
+    return _world(a, cat, "look --source world", lambda r: ([head] if head else []) + look.run(
+        r, a.game, cat, area, a.notify, a.watch, a.write_marks, view=view, surface=surface,
+        force=force).lines())
+
+
+def _paste(a, cat):
+    """fk paste FILE --at X,Y [--rot R] [--as NAME] (3.1, fkcore.placements): a captured Literal
+    file or a blueprint string pasted as ghosts with its origin (the file's 0,0) at X,Y, turned R
+    quarter turns about it, and recorded as a placement."""
+    from . import apply as applymod, codec, link, literal, placements
+    file = a.file if os.path.isabs(a.file) else os.path.join(a.game, a.file)
+    if not os.path.exists(file):
+        print(f"error: paste: no file {a.file}", file=sys.stderr)
+        return 2
+    try:
+        x, y = (int(v) for v in a.at.split(","))
+    except ValueError:
+        print("error: paste: --at X,Y (whole tiles)", file=sys.stderr)
+        return 2
+    rot = int(a.rot or 0) % 4
+    force, surface = _surface_force(a.game, a.surface, a.force_name)
+    stem = a.as_name or re.sub(r"\.(json|bp|txt)$", "", os.path.basename(a.file), flags=re.I)
+    stem = re.sub(r"[^A-Za-z0-9_.-]+", "-", stem).strip("-") or "paste"
+    try:
+        rows = placements.paste_rows(file, stem, cat, (x, y), rot)
+    except literal.LiteralError as exc:
+        print(f"error: paste: {exc}", file=sys.stderr)
+        return 2
+    rel = os.path.relpath(file, a.game).replace(os.sep, "/") if not os.path.isabs(a.file) else a.file
+    free = _is_free(a.game, surface)
+
+    def body(r):
+        bp = codec.blueprint(rows, description=f"fk paste {rel} at {x},{y} rot {rot}",
+                             label=f"fk paste {stem}", wires=codec.pole_wires(rows, cat))
+        n = applymod._int(link.paste(r, surface, force, bp, applymod._anchor(rows, cat)))
+        box = applymod.scope_area(rows, cat, margin=0)
+        # the record's area spans the origin too: a paste at the same origin is the rebuild
+        area = (min(x, box[0]), min(y, box[1]), max(x + 1, box[2]), max(y + 1, box[3]))
+        revived = None
+        if free:
+            got = r.lua(link.lua_revive(surface, area)).split()
+            revived = int(got[0]) if got and got[0].isdigit() else 0
+        tick = r.lua("rcon.print(game.tick)").strip()
+        tick = int(tick) if tick.isdigit() else None
+        recs = placements.load(a.game, surface)
+        pid = a.as_name or placements.unique_id(recs, stem, stem, (x, y))
+        rec = placements.Record(pid, surface, stem, None, placements.rows_key(rows, (x, y)),
+                                [x, y], rot, list(area), tick, f"fk paste {rel}", "paste", rel,
+                                len(rows))
+        placements.put_all(a.game, surface, [rec])
+        out = [f"paste {rel}: {len(rows)} entities as ghosts on {surface} (force {force}), origin "
+               f"{x},{y}" + (f" rot {rot}" if rot else "") + f", {n} placed by the game"
+               + (f", {revived} revived (free surface)" if revived is not None else
+                  "; robots build them"),
+               f"  {placements.head(rec)}",
+               f"  fk look {pid} / fk diff {pid} judge its area; fk capture --from {pid} --into "
+               f"FILE writes it as source again, anchored where it stands"]
+        return out
+    return _world(a, cat, "paste", body)
+
+
+def _register(a, cat):
+    """fk register AREA MODULE[/INSTANCE] | AREA --as NAME (3.1): what stands in AREA is that
+    artifact (built by hand, Lua or an older toolkit): a placement is recorded, and the
+    differences against the design are reported (the diff's report). For a factory placed on
+    the surface the standing entities become the toolkit's own (``fkcore.own``), so the next
+    build converges them."""
+    from . import link, own as ownmod, placements, scene, sense
+    area = _area(a.area)
+    if not a.what and not a.as_name:
+        print("error: register AREA MODULE[/INSTANCE], or register AREA --as NAME", file=sys.stderr)
+        return 2
+    sf, s = _scope(a.game, cat, getattr(a, "surface", None))
+    module, _, inst = (a.what or "").partition("/")
+    place = None
+    if a.as_name:
+        pid, module = a.as_name, a.as_name
+    else:
+        place = sf.places.get(inst or module) \
+            or next((p for p in sf.places.values() if p.module == module), None)
+        pid = inst or (place.factory if place is not None else module)
+        if place is not None:
+            module = place.module
+
+    def inside(t):
+        return any(area[0] <= tx < area[2] and area[1] <= ty < area[3] for tx, ty in t["tiles"])
+
+    def body(r):
+        live = scene.from_capture(link.snapshot(r, sf.name, area, "register"))
+        things = [t for t in live["things"] if t["force"] not in ("enemy", "neutral")
+                  and inside(t) and not t["ghost"]]
+        own = ownmod.load(a.game, sf.name) or {}
+        others = [rec for rec in placements.explaining(placements.load(a.game, sf.name), s)
+                  if rec.id != pid]
+        lines = []
+        if place is not None:
+            # the standing entities are the factory's: the design's where they match it, the
+            # rest under <factory>/registered; the next build lays the differences fresh
+            rep = sense.sense(s, live, cat, list(area), sf, own=own, placements=others)
+            design = ownmod.rows_of(s)
+            matched = {ownmod.at(v.name, v.x, v.y) for v in rep.verdicts
+                       if v.verdict in ("ok", "settings-changed")}
+            n, k = 0, 0
+            for t in things:
+                key = ownmod.at(t["name"], t["x"], t["y"])
+                if key in own:
+                    continue
+                if key in matched and key in design:
+                    own[key] = design[key]
+                else:
+                    own[key] = ownmod.Row(f"{sf.name}:{pid}/registered/{t['name']}{k}", t["name"],
+                                          t["x"], t["y"], t["direction"], None, None)
+                    k += 1
+                n += 1
+            ownmod.save(a.game, sf.name, own)
+            lines.append(f"  own: {n} standing entities are the toolkit's own under {pid} now "
+                         f"({k} of them not where the design has them: the next build of {pid} "
+                         "takes them up or swaps them, as any difference)")
+        rows = [{"name": t["name"], "x": t["x"], "y": t["y"], "direction": t["direction"]}
+                for t in things]
+        origin = [place.x, place.y] if place is not None else [area[0], area[1]]
+        rec = placements.Record(pid, sf.name, module, (inst or place.factory) if place is not None
+                                else None, placements.rows_key(rows, origin), origin,
+                                int(place.rot) if place is not None else 0, list(area),
+                                live.get("tick"), f"fk register {a.area} {a.what or a.as_name}",
+                                "register", None, len(things))
+        placements.put_all(a.game, sf.name, [rec])
+        head = [f"register {a.area} as {pid}: {len(things)} entities stand there, recorded as "
+                f"{module}" + (" (a factory of this surface)" if place is not None else
+                               " (no factory of this surface places it: a placement only)"),
+                f"  {placements.head(rec)}"]
+        # a --as placement explains its own entities (placed), a factory's are judged against it
+        rep = sense.sense(s, live, cat, list(area), sf, own=ownmod.load(a.game, sf.name),
+                          placements=others if place is not None else others + [rec])
+        lines = head + lines + ["differences against the design (as fk diff says them):"] \
+            + [f"  {ln}" for ln in rep.lines()]
+        bad = sense.conflicts(rep)
+        if bad:
+            lines.append(f"  mismatch: {len(bad)} design tiles something else stands on; the apply "
+                         "refuses them:")
+            lines += [f"    {c.line()}" for c in bad]
+        return lines
+    return _world(a, cat, "register", body)
+
+
+def _diff_cmd(a, cat):
+    """fk diff PLACEMENT_ID|AREA (3.1): the diff of the game codebase's design over that area,
+    headed by the placement (its module and origin). Cheap: the area is already there."""
+    from . import apply as applymod, look, own as ownmod, placements, sense
+    area, head, rec = _area_or_placement(a.game, a.what)
+    if area is None:
+        print("error: diff PLACEMENT_ID | X0,Y0,X1,Y1", file=sys.stderr)
+        return 2
+    sf, s = _scope(a.game, cat, getattr(a, "surface", None), rec)
+
+    def body(r):
+        items, notes = look.net_items(a.game, sf, cat)
+        recs = placements.explaining(placements.load(a.game, sf.name), s)
+        rep = applymod.diff(r, s, cat, area, sf, items, own=ownmod.load(a.game, sf.name),
+                            force=sf.force_name, placements=recs)
+        lines = ([head] if head else []) + rep.lines()
+        bad = sense.conflicts(rep)
+        if bad:
+            lines.append(f"mismatch: {len(bad)} design tiles have something standing on them the "
+                         "toolkit did not paste; the apply refuses them and pastes the rest:")
+            lines += [f"  {c.line()}" for c in bad]
+        hand = sense.hand_edits(rep)
+        if hand:
+            lines.append(f"hand: {len(hand)} hand edits the apply would replace, remove or set back:")
+            lines += [f"  {ln}" for ln in hand]
+        lines += [f"note: {n}" for n in notes]
+        return lines
+    return _world(a, cat, "diff", body)
+
+
+def _placements_cmd(a):
+    """fk placements (3.1): the registry, every surface of the game."""
+    from . import placements
+    folder = os.path.join(a.game, "out", "placements")
+    names = sorted(f[:-5] for f in os.listdir(folder) if f.endswith(".json")) \
+        if os.path.isdir(folder) else []
+    if not names:
+        print("\n".join(placements.lines({})))
+        return 0
+    for name in names:
+        print("\n".join(placements.lines(placements.load(a.game, name))).replace(
+            "placements:", f"placements on {name}:", 1))
+    return 0
 
 
 def _alerts(a, cat):
@@ -226,13 +510,12 @@ def _alerts(a, cat):
 
 def _free_read(a, cat):
     from . import freereads
-    from .apply import force_for
     try:
         sf = surfacemod.load_game(a.game)
     except (surfacemod.SurfaceError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    force = a.force or force_for(sf.mode)
+    force = a.force or sf.force_name
     if a.cmd == "stats" and (a.sample or a.history or a.page):
         return _run_stats(a, cat, force, sf.name)
     if a.cmd == "chart":
@@ -270,7 +553,6 @@ def _run_stats(a, cat, force, surface):
 def _capital(a, cat):
     """``capital``: the working capital read (fkcore.capital), or a change to what is parked."""
     from . import capital
-    from .apply import force_for
     store = capital.Store(a.game, _area(a.area) if a.area else None)
     cfg = store.config
     if a.park or a.unpark or a.weight:
@@ -303,7 +585,7 @@ def _capital(a, cat):
     except (surfacemod.SurfaceError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    force = a.force or force_for(sf.mode)
+    force = a.force or sf.force_name
     return _world(a, cat, "capital", lambda r: capital.run(
         r, a.game, cat, force, sf.name, _area(a.area) if a.area else None, a.brief))
 
@@ -317,7 +599,9 @@ def _look(a, cat):
     except surfacemod.SurfaceError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    box = _area(a.area)
+    box, head, _rec = _area_or_placement(a.game, a.area, sf.name)
+    if head:
+        print(head)
     view = _view(a)
     if not view.plain:
         from . import scene, vision
@@ -444,22 +728,57 @@ def _talk(a):
     return 0
 
 
+def _migrate_origins(a, cat):
+    """``fk migrate-origins FILE [--write]`` (3.0.1): see ``fkcore.origins``."""
+    from . import origins
+    fkp_path = os.path.splitext(a.file)[0] + ".fkp"
+    layout = fkp.load(fkp_path) if os.path.exists(fkp_path) else None
+    try:
+        texts, notes = origins.migrate(a.file, cat, layout)
+    except Exception as exc:                 # noqa: BLE001 - say why, change nothing
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    for note in notes:
+        print(f"  {note}")
+    for path, text in sorted(texts.items()):
+        if a.write:
+            with open(path, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(text)
+        print(f"  {'wrote' if a.write else 'would write'} {path}")
+    if not texts:
+        print("  no turned hint changes: nothing to write")
+    elif not a.write:
+        print("  (--write writes them)")
+    return 0
+
+
 def _migrate_surface(a):
     """``fk migrate-surface GAME`` (2.0.43, PLAN-GLOBAL phase B): write the world design
     ``<surface>.fk`` from the surface's ``place`` lines, and put ``design`` in the surface file.
-    The place lines stay as commented-out record; nothing else changes."""
+    The place lines stay as commented-out record; nothing else changes. 3.1: afterwards (or
+    alone, with ``--mode-only`` or when the design needs no migration), every ``*.surface`` of
+    the game with an old ``mode`` line gets it written as the properties it implied (``free``
+    and ``force lab``, or nothing)."""
     from . import root as rootmod
     game = a.game
+    if getattr(a, "mode_only", False):
+        if not _migrate_modes(game):
+            print(f"migrate-surface {game}: no surface file has a mode line")
+        return 0
     try:
         sf = surfacemod.load_game(game, derive=False)
     except (surfacemod.SurfaceError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     if sf.design:
+        if _migrate_modes(game):
+            return 0
         print(f"error: {sf.name} already has `design {sf.design}`: nothing to migrate",
               file=sys.stderr)
         return 2
     if not sf.places:
+        if _migrate_modes(game):
+            return 0
         print(f"error: {os.path.basename(sf.path)} has no place lines to migrate", file=sys.stderr)
         return 2
     rootname = f"{sf.name}.fk"
@@ -502,7 +821,30 @@ def _migrate_surface(a):
             print(f"  note {note}")
     print(f"  the design derives {len(after.places)} plots; "
           f"`fk build` reads it from now on (`place` lines no longer place anything)")
+    _migrate_modes(game)
     return 0
+
+
+def _migrate_modes(game):
+    """3.1: every ``*.surface`` of ``game`` with an old ``mode`` line gets it written as the
+    properties it implied (``surfacemod.migrate_mode``). -> how many files changed."""
+    modes = 0
+    for f in sorted(os.listdir(game)):
+        if not f.endswith(".surface"):
+            continue
+        path = os.path.join(game, f)
+        with open(path, encoding="utf-8") as fh:
+            was = fh.read()
+        now, mode = surfacemod.migrate_mode(was)
+        if mode is None:
+            continue
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(now)
+        modes += 1
+        print(f"migrate-surface {f}: `mode {mode}` written as "
+              + ("`free` and `force lab`" if mode == "lab" else "nothing (it implied none)")
+              + " (3.1: a surface has properties, not a mode)")
+    return modes
 
 
 def _migrate_mismatch(was, now):
@@ -521,9 +863,8 @@ def _migrate_mismatch(was, now):
 
 
 def _force_surface(game):
-    from .apply import force_for
     sf = surfacemod.load_game(game)
-    return getattr(sf, "force", None) or force_for(sf.mode), sf.name
+    return sf.force_name, sf.name
 
 
 def dnp_edit(text, names, off=False):
@@ -690,10 +1031,69 @@ def _decon(a, cat):
     return _world(a, cat, "decon", body)
 
 
+def _capture_from(a, cat):
+    """fk capture --from PLACEMENT_ID|AREA --into FILE [--names] (3.1, Rory 11-08: "pull a
+    selection of world objects from the registry right into new source"): the selection as a
+    Literal file anchored where it stands (its entities relative to the anchor, the placement's
+    origin or the area's corner), and the two .fk lines that put it back exactly there, so a
+    module written against it mates with the standing objects."""
+    from . import capture, link, placements
+    try:
+        rec, area = placements.resolve(a.game, a.frm)
+    except (KeyError, ValueError) as exc:
+        print(f"error: capture: {str(exc).strip(chr(34)).strip(chr(39))}", file=sys.stderr)
+        return 2
+    surface = rec.surface if rec is not None else (a.surface or _force_surface(a.game)[1])
+    force, surface = _surface_force(a.game, surface, getattr(a, "force_name", None))
+    anchor = (int(rec.origin[0]), int(rec.origin[1])) if rec is not None else (area[0], area[1])
+    to = a.into or os.path.join("captured", f"{rec.id if rec is not None else 'area'}.json")
+    dest = to if os.path.isabs(to) else os.path.join(a.game, to)
+    rel = os.path.relpath(dest, a.game).replace(os.sep, "/")
+    stem = re.sub(r"[^A-Za-z0-9_]+", "_", os.path.splitext(os.path.basename(dest))[0]).lower()
+    try:
+        r = _game_link("capture")
+        if r is None:
+            return 2
+        with r:
+            got = capture.from_game(r, surface, force, area)
+        data = capture.anchored(got, anchor, cat)
+    except (capture.CaptureError, link.LinkError, OSError) as exc:
+        print(f"error: capture: {exc}", file=sys.stderr)
+        return 2
+    data["from"] = (f"placement {rec.id} on {surface}" if rec is not None
+                    else f"area {','.join(str(v) for v in area)} on {surface}")
+    data["surface"] = surface
+    capture.write(dest, data)
+    names = got.get("names") or {}
+    named = data.get("names") or {}
+    print(f"capture: {got['n']} entities into {rel}, anchored at {anchor[0]},{anchor[1]} on "
+          f"{surface}: {capture.summary(names)}")
+    print("  in a module whose frame is the world's (the world design, or a plot at 0,0):")
+    print(f'    {stem} = Literal<file="{rel}"> @({anchor[0]}, {anchor[1]})')
+    end = f"{stem}.{sorted(named, key=lambda n: (re.sub(chr(92) + 'd', '', n), int(re.sub(chr(92) + 'D', '', n) or 0)))[0]}" \
+        if named else f"{stem}.<port>"
+    print(f"    net out: {end} -> <your new instance>")
+    print("  on a plot at X,Y: @(%d - X, %d - Y). Placed there, its entities land on the standing "
+          "ones (ok, mated) and your new ones are ghosts" % anchor)
+    if named and (a.names or len(named) <= 12):
+        print(f"  names: {', '.join(sorted(named, key=lambda n: (re.sub(chr(92) + 'd', '', n), int(re.sub(chr(92) + 'D', '', n) or 0))))}")
+    elif named:
+        print(f"  names: {capture.name_span(named)} (--names lists them)")
+    if data.get("ports"):
+        print(f"  ports: {', '.join(sorted(data['ports'], key=lambda p: (p[0], int(p[1:]))))}")
+    return 0
+
+
 def _capture(a, cat):
     """fk capture (2.0.62): something built, as a Literal file that can go anywhere
     (fkcore.capture)."""
-    from . import capture, lab, link
+    from . import alone, capture, link
+    if a.frm:
+        return _capture_from(a, cat)
+    if not a.source or not a.what:
+        print("error: capture slot NAME | world X0,Y0,X1,Y1 | design INST, or --from "
+              "PLACEMENT_ID|AREA --into FILE", file=sys.stderr)
+        return 2
     to = a.to or os.path.join("captured", f"{re.sub(r'[^A-Za-z0-9_-]+', '-', a.what)}.json")
     dest = to if os.path.isabs(to) else os.path.join(a.game, to)
     try:
@@ -720,6 +1120,10 @@ def _capture(a, cat):
             named = capture.names([row["name"] for row in rows], cat)
             if named:
                 data["names"] = named
+            edge = capture.ports([(row["name"], float(row["x"]), float(row["y"]),
+                                   row.get("direction")) for row in rows], cat)
+            if edge:
+                data["ports"] = edge
             capture.write(dest, data)
             names = {}
             for row in rows:
@@ -730,23 +1134,43 @@ def _capture(a, cat):
             if r is None:
                 return 2
             with r:
-                if a.source == "lab":
-                    held = lab.slots(a.game)
+                if a.source in ("lab", "slot"):
+                    # 3.1: a slot of a module built alone on a surface (`lab` is `slot --surface lab`)
+                    surface = alone.LAB if a.source == "lab" else (a.surface or alone.LAB)
+                    held = alone.slots(a.game, surface)
                     if a.what not in held:
                         raise capture.CaptureError(
-                            f"no lab slot {a.what} (slots: {', '.join(sorted(held)) or 'none'})")
+                            f"no slot {a.what} on {surface} (slots: "
+                            f"{', '.join(sorted(held)) or 'none'})")
                     x, y, w, h = held[a.what]
                     area = (x, y, x + w, y + h)
-                    surface, force = lab.SURFACE, lab.FORCE
+                    force = alone.surface_of(a.game, a.what, surface).force_name
+                    if getattr(a, "force_name", None):
+                        force = a.force_name
                 else:
                     area = _area(a.what)
                     force, surface = _force_surface(a.game)
+                    if getattr(a, "surface", None):
+                        surface = a.surface
+                        path = os.path.join(a.game, f"{surface}.surface")
+                        if os.path.exists(path):
+                            force = surfacemod.load(path, derive=False).force_name
+                        elif surface == alone.LAB:
+                            force = "lab"
+                    if getattr(a, "force_name", None):
+                        force = a.force_name
                 got = capture.from_game(r, surface, force, area)
             n, names = got["n"], got.get("names") or {}
             data = {"bp": got["bp"], "from": f"{a.source} {a.what} on {surface}"}
+            listed = capture.world_list(got["bp"], got.get("at"))
+            if listed:
+                data["entities"] = listed
             named = capture.names_of_bp(got["bp"], cat)
             if named:
                 data["names"] = named
+            edge = capture.ports_of_bp(got["bp"], cat)
+            if edge:
+                data["ports"] = edge
             capture.write(dest, data)
     except (capture.CaptureError, link.LinkError, surfacemod.SurfaceError, OSError) as exc:
         print(f"error: capture: {exc}", file=sys.stderr)
@@ -756,8 +1180,17 @@ def _capture(a, cat):
     if named:
         print(f"  names: {capture.name_span(named)}: a net ends on one as X.asm1 when the Literal "
               "is X")
+    if edge:
+        print(f"  ports: {', '.join(sorted(edge, key=lambda p: (p[0], int(p[1:]))))}: the belts "
+              "and pipes that cross the frame's edge; a net ends on one as X.e1 (rename them in "
+              "the file)")
     print(f'  use it anywhere, a module included:  X = Literal<file="{rel}"> @(x, y)'
           f"   (or fk sim place game\\{rel.replace('/', chr(92))} @X,Y)")
+    if a.source == "design":
+        print("  its (0, 0) is the instance's origin: at the instance's own @(x, y) it lays the "
+              "tiles the instance laid")
+    elif "entities" in data:
+        print("  its (0, 0) is the map's (0, 0): the file holds world positions")
     return 0
 
 
@@ -905,14 +1338,75 @@ def _measure(a, cat):
     return 0
 
 
+def _slots_line(held, surface):
+    return f"slots on {surface}: " + (", ".join(f"{n} at {x},{y} ({w}x{h})"
+                                              for n, (x, y, w, h) in sorted(held.items()))
+                                    or "none in use")
+
+
+def _alone(a, cat):
+    """fk alone (3.1): a module built alone on a slot of a surface (fkcore.alone)."""
+    from . import alone
+    surface = a.surface or alone.LAB
+    if a.list or not a.name:
+        print(_slots_line(alone.slots(a.game, surface), surface))
+        return 0
+    r = _game_link("alone")
+    if r is None:
+        return 2
+    size = tuple(int(v) for v in a.size.lower().split("x")) if a.size else None
+    try:
+        with r:
+            if a.clear:
+                lines = alone.clear(r, a.game, a.name, surface)
+            elif a.measure is not None:
+                lines = alone.measure_alone(r, a.game, a.name, a.measure, cat, surface)
+            else:
+                lines = alone.build(r, a.game, a.name, a.src, size, cat, extra=a.extra,
+                                    keep=a.keep, surface=surface).lines
+    except (alone.AloneError, surfacemod.SurfaceError) as exc:
+        print(f"error: alone: {exc}", file=sys.stderr)
+        return 2
+    print("\n".join(lines))
+    return 0
+
+
+def _standin(a, cat):
+    """fk standin (3.1): a god-mode stand-in on a module built alone, by name (fkcore.standin)."""
+    from . import alone, standin
+    surface = a.surface or alone.LAB
+    r = _game_link("standin")
+    if r is None:
+        return 2
+    try:
+        sf = alone.surface_of(a.game, a.name, surface)
+        standin.require_free(sf, f"standin {a.what}")
+        x, y, w, h = alone.slots(a.game, surface)[a.name]
+        with r:
+            if a.what == "supply":
+                line, _got = standin.supply(r, surface, sf.force_name, alone.box(x, y, w, h))
+                lines = [line.strip()]
+            elif a.what == "feed":
+                ctx = alone.layout(a.game, a.name, surface, cat)
+                px, py = sf.places[a.name].x, sf.places[a.name].y
+                lines = [ln.strip() for ln in standin.feed(r, ctx, a.name, surface, sf.force_name,
+                                                           px, py)] or ["no open port to feed"]
+            else:
+                to = tuple(int(float(v)) for v in a.to.split(","))
+                lines = standin.ore(r, a.game, a.name, surface, a.ore, a.area, a.amount,
+                                    a.copy_ore, to, a.clear_ore)
+    except (alone.AloneError, standin.StandinError, surfacemod.SurfaceError) as exc:
+        print(f"error: standin: {exc}", file=sys.stderr)
+        return 2
+    print("\n".join(lines))
+    return 0
+
+
 def _lab(a, cat):
-    """fk lab (2.0.3): a design built and measured on the lab surface (fkcore.lab)."""
+    """fk lab: the lab alias (fkcore.lab): fk alone --surface lab, then the lab's stand-ins."""
     from . import lab
     if a.list or not a.name:
-        held = lab.slots(a.game)
-        print("lab slots: " + (", ".join(f"{n} at {x},{y} ({w}x{h})"
-                                         for n, (x, y, w, h) in sorted(held.items()))
-                               or "none in use"))
+        print(_slots_line(lab.slots(a.game), lab.SURFACE))
         return 0
     r = _game_link("lab")
     if r is None:
@@ -927,13 +1421,26 @@ def _lab(a, cat):
                 lines = lab.ore(r, a.game, a.name, a.ore, a.area, a.amount, a.copy_ore, to,
                                 a.clear_ore)
             elif a.measure is not None:
-                lines = lab.measure_lab(r, a.game, a.name, a.measure, cat)
+                lines = lab.measure(r, a.game, a.name, a.measure, cat)
             else:
-                lines = lab.build(r, a.game, a.name, a.src, size, cat)
-    except lab.LabError as exc:
+                lines = lab.build(r, a.game, a.name, a.src, size, cat, extra=a.extra, keep=a.keep)
+    except (lab.LabError, lab.standin.StandinError, surfacemod.SurfaceError) as exc:
         print(f"lab: {exc}", file=sys.stderr)
         return 2
     print("\n".join(lines))
+    return 0
+
+
+def _map(a):
+    """fk map (3.0): the live map's saves, loads, start-over and pause (fkcore.mapctl), on the
+    game host."""
+    from . import link, mapctl
+    from . import pack as packmod
+    try:
+        print("\n".join(mapctl.run(a.game, a.verb, list(a.rest), pack=packmod.name() or None)))
+    except (mapctl.MapError, OSError, link.LinkError) as exc:
+        print(f"map: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 
@@ -955,6 +1462,8 @@ def _sim(a, cat):
             print(s.start(names[0] if names else "start", spectate=spectate))
         elif v == "stop":
             print(s.stop())
+        elif v == "kickoff":
+            print("\n".join(s.kickoff(rest[0] if rest else "start")))
         elif v == "status":
             st = s.state()
             print("sim: not running" if st is None else
@@ -998,7 +1507,7 @@ def _sim(a, cat):
                 raise simmod.SimError("fk sim add-save FILE NAME")
             print(s.add_save(rest[0], rest[1]))
         else:
-            raise simmod.SimError(f"fk sim {v}: start, stop, status, save, load, saves, speed, "
+            raise simmod.SimError(f"fk sim {v}: start, stop, status, kickoff, save, load, saves, speed, "
                                   "run, until, place, paste, remove, decon, play, explore")
     except (simmod.SimError, OSError, link.LinkError, ValueError) as exc:
         print(f"sim: {exc}", file=sys.stderr)
@@ -1103,16 +1612,147 @@ def _explore(s, rest):
                           "best [CELL] [--to plan.sim] | reset")
 
 
+def _walk(a, cat):
+    """fk walk (3.0, PLAN-3.0 3f): what a machine waits on, up and down its nets (fkcore.walk)."""
+    from . import walk
+    parts = a.what.split(",")
+    box = len(parts) == 4
+
+    frame = _area(a.frame) if a.frame else None
+
+    def body(dump):
+        w = walk.infer(dump, cat)
+        if frame:
+            return walk.summary(w)[:1] + walk.crossings(w, frame)
+        if box:
+            return walk.summary(w)
+        root = walk.find_root(w, a.what)
+        if root is None:
+            return walk.summary(w)[:1] + [f"walk: nothing to walk at {a.what}"]
+        return walk.summary(w)[:1] + walk.tree(w, root, a.up, a.down)
+
+    if a.frm:
+        with open(a.frm, encoding="utf-8") as fh:
+            print("\n".join(body(json.load(fh))))
+        return 0
+    if frame:
+        # what reaches over the edge from outside: an underground's far end, a long hand
+        m = 12
+        area = (frame[0] - m, frame[1] - m, frame[2] + m, frame[3] + m)
+    elif box:
+        area = _area(a.what)
+    else:
+        try:
+            x, y = (float(v) for v in parts)
+        except ValueError:
+            raise SystemExit("error: walk from the game takes X,Y or X0,Y0,X1,Y1 (a net or a key "
+                             "needs --from)")
+        r = a.radius
+        area = (math.floor(x) - r, math.floor(y) - r, math.floor(x) + r + 1, math.floor(y) + r + 1)
+
+    def run(r):
+        dump = walk.read(r, a.surface, area)
+        if a.save:
+            with open(a.save, "w", encoding="utf-8") as fh:
+                json.dump(dump, fh)
+        return body(dump)
+    return _world(a, cat, "walk", run)
+
+
+def _adopt_edits(a, cat):
+    """fk adopt PLACEMENT_ID|AREA|X,Y[;X,Y] [--write] (3.1): the world edits inside, each turned
+    into source as far as a small step goes (fkcore.adopt.propose): a changed setting is a
+    proposed set line (a diff of the module source; --write appends it), a carrier next to a net
+    is V1's carrier adoption (--into), the rest needs a Literal patch."""
+    import math
+    from . import adopt, apply as applymod, look, own as ownmod, placements
+    sf, _surface_lay, _lay_path, s = _composed(a.game, cat)
+    text = a.what
+    if placements.is_area(text) or not re.fullmatch(r"[-\d.,; ]+", text):
+        area, head, rec = _area_or_placement(a.game, text)     # any surface's placement
+        if rec is not None and rec.surface != sf.name:
+            sf, s = _scope(a.game, cat, None, rec)
+    else:
+        tiles = [tuple(math.floor(float(v)) for v in t.split(","))
+                 for t in text.replace(";", " ").split()]
+        xs, ys = [t[0] for t in tiles], [t[1] for t in tiles]
+        area, head = (min(xs) - 1, min(ys) - 1, max(xs) + 2, max(ys) + 2), None
+    carriers = fkp.CARRIER_TYPES
+
+    def nets_near(t):
+        near = set()
+        for x, y in t["tiles"]:
+            for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                key = s.tiles.get((nx, ny))
+                if key is not None:
+                    e = s.entities[key]
+                    if e.attrs.get("net") and cat.kind(e.name) in carriers:
+                        near.add(f"{e.plot}/{e.attrs['net']}" if e.plot else e.attrs["net"])
+        return sorted(near)
+
+    def body(r):
+        items, _notes = look.net_items(a.game, sf, cat)
+        recs = placements.explaining(placements.load(a.game, sf.name), s)
+        rep = applymod.diff(r, s, cat, area, sf, items, own=ownmod.load(a.game, sf.name),
+                            force=sf.force_name, placements=recs, tag="adopt")
+        modules = {p.factory: p.module for p in sf.places.values()}
+        props = adopt.propose(rep.settings or [], cat, modules)
+        lines = ([head] if head else []) + [
+            f"adopt {text}: {len(props)} setting changes on standing design entities"]
+        texts = {}
+        for p in props:
+            if p.module and p.module not in texts:
+                path = os.path.join(a.game, f"{p.module}.fk")
+                texts[p.module] = None
+                if os.path.exists(path):
+                    with open(path, encoding="utf-8") as fh:
+                        texts[p.module] = fh.read()
+            lines += [f"  {ln}" for ln in p.diff_lines(texts.get(p.module))]
+        if rep.settings_error:
+            lines.append(f"  settings not read ({rep.settings_error})")
+        foreign = [v for v in rep.verdicts if v.verdict in ("conflict", "marked", "placed")
+                   or (v.verdict == "unowned" and v.action != "own")]
+        if foreign:
+            lines.append(f"  {len(foreign)} things stand here that the design does not have:")
+        for v in foreign:
+            t = {"tiles": cat.tiles(v.name, float(v.x), float(v.y), 0) if cat.has_entity(v.name)
+                 else [(math.floor(v.x), math.floor(v.y))]}
+            who = v.owner or (f"hand edit by {v.actor}" if v.actor and v.actor != "unknown"
+                              else "unknown")
+            near = nets_near(t) if cat.has_entity(v.name) and cat.kind(v.name) in carriers else []
+            where = f"{fkp.fmt(v.x)},{fkp.fmt(v.y)}"
+            if near:
+                lines.append(f"    {v.name} at {where} ({who}): a carrier next to net "
+                             f"{', '.join(near)}: fk adopt {where} --into {near[0]} takes it into "
+                             "the net")
+            else:
+                lines.append(f"    {v.name} at {where} ({who}): needs a Literal patch: fk capture "
+                             f"--from {','.join(str(int(c)) for c in area)} --into captured/patch.json, "
+                             "then Literal<file=\"captured/patch.json\"> @(x, y) in the module")
+        if a.write:
+            done = adopt.write_proposals(a.game, props)
+            lines += [f"wrote {m}.fk: {ln}" for m, ln in done]
+            if not done:
+                lines.append("  nothing written: no set line to write")
+        elif any(p.line for p in props):
+            lines.append("  --write appends these set lines to the module files (after the "
+                         "instance's line)")
+        return lines
+    return _world(a, cat, "adopt", body)
+
+
 def _adopt(a, cat):
     import math
     from . import adopt, link, scene
+    if not a.into:
+        return _adopt_edits(a, cat)
     factory, _, net = a.into.partition("/")
     if not net:
         print("error: --into FACTORY/NET", file=sys.stderr)
         return 2
     # 2.2 (FRICTION ~4480k): a tile is the floor of a position, so -128.5 is tile -129 (int()
     # truncated it to -128, the tile beside it)
-    tiles = [tuple(math.floor(float(v)) for v in t.split(",")) for t in a.tiles.replace(";", " ").split()]
+    tiles = [tuple(math.floor(float(v)) for v in t.split(",")) for t in a.what.replace(";", " ").split()]
     sf, surface_lay, lay_path, s = _composed(a.game, cat)
     place = next((p for p in sf.places.values() if p.factory == factory), None)
     if place is None or factory not in surface_lay.plots:
@@ -1158,15 +1798,33 @@ def _read_terrain(a):
     if len(area) != 4 or area[2] <= area[0] or area[3] <= area[1]:
         print(f"error: --area X0,Y0,X1,Y1 with X1 > X0 and Y1 > Y0, got {a.area}", file=sys.stderr)
         return 2
+    owned = None
+    if a.entities:
+        # 3.1: the design's tiles (the diff's business) and the toolkit's own record are not
+        # obstacles; everything else built in the area is
+        from . import look, own
+        cat = Catalog.load()
+        try:
+            sf, _lay, _path, composed = look.composed(a.game, cat)
+            record = own.load(a.game, sf.name) if sf.name == a.surface else None
+            owned = terrain.owned_tiles(composed if sf.name == a.surface else None,
+                                        (record or {}).values(), cat)
+        except (surfacemod.SurfaceError, OSError, ValueError, KeyError) as exc:
+            print(f"read-terrain --entities: no design read ({exc}): every standing entity "
+                  "there is an obstacle", file=sys.stderr)
+            owned = set()
     try:
         with link.Rcon() as r:
             data = terrain.read(r, a.surface, area)
+            ents = terrain.read_entities(r, a.surface, area, owned) if a.entities else None
     except (OSError, link.LinkError) as exc:
         print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
     os.makedirs(a.game, exist_ok=True)
     path = os.path.join(a.game, f"{a.name}.terrain.json")
     got, note = terrain.from_dict(data), None
+    if ents is not None:
+        got = terrain.with_entities(got, *ents)
     # 2.1.3: an area is read into the file, never over it (the 10-29 run's north read dropped the
     # whole base's terrain); --replace writes the one area alone, as before
     if os.path.exists(path) and not a.replace:
@@ -1185,6 +1843,24 @@ def _read_terrain(a):
         print(note)
     print(f"wrote {path}")
     return 0
+
+
+def _robots(a, cat):
+    """``robots [--area A] [--force F]`` (3.1, fkcore.robots.report): the roboports that stand,
+    read once, against the design's logistic chests. A read and a report; it changes nothing."""
+    from . import link, robots
+    area = _area(a.area)
+    sf, s = _scope(a.game, cat, getattr(a, "surface", None))
+    force = a.force or sf.force_name
+    chests = [(k, e.name, float(e.x), float(e.y)) for k, e in s.entities.items()
+              if e.name in robots.LOGISTIC_CHESTS and not e.attrs.get("dnp")]
+
+    def body(r):
+        tag = f"robots-{os.getpid()}"
+        rows = link.read_output(r, robots.lua_standing(sf.name, force, tag), tag, "roboports",
+                                keep=False)
+        return robots.report(robots.standing_rows(rows, cat), chests, cat, area).lines(sf.name)
+    return _world(a, cat, "robots", body)
 
 
 def _plan(a, cat):
@@ -1240,6 +1916,7 @@ def _design(a):
     """3.0 ``fk status|hold|unhold|unroute|seed``: the design database's net files
     (``fkcore.design``), read even while a build runs; a hold written now is taken when the router
     reaches that net."""
+    from . import compiled as compiledmod
     from . import design
     out = os.path.join(a.game, "out")
     factories = design.factories(out)
@@ -1251,6 +1928,8 @@ def _design(a):
         for f in factories:
             if a.net is None or a.net in design.read_all(out, f):
                 print("\n".join(design.status_lines(out, f, a.net)))
+        if a.net is None:
+            print("\n".join(compiledmod.status_lines(out)))    # 3.1: the compile store
         return 0
     where = [f for f in factories if a.net in design.read_all(out, f)]
     if a.cmd == "seed" and a.pieces and not where and len(factories) == 1:
@@ -1300,6 +1979,13 @@ def main(argv=None):
                                                        "`design` to its surface file (2.0.43, "
                                                        "PLAN-GLOBAL phase B)")
     ms.add_argument("game")
+    ms.add_argument("--mode-only", dest="mode_only", action="store_true",
+                    help="3.1: only write an old `mode` line as the surface's properties")
+    mo = sub.add_parser("migrate-origins", description="3.0.1: rewrite a design's turned "
+                        "@(x, y, rot r) hints from the turned frame's corner to the instance's "
+                        "origin, so it lays what it laid before (fkcore.origins)")
+    mo.add_argument("file", help="the factory's .fk (its imports are rewritten too)")
+    mo.add_argument("--write", action="store_true", help="write the files (default: show)")
     ct = sub.add_parser("contract", description="every sealed module's contract: each port's "
                         "direction, item, rate at full speed, where it crosses and what it got "
                         "(fkcore.contract)")
@@ -1354,7 +2040,13 @@ def main(argv=None):
     sp.add_argument("--with", dest="extra", action="append", default=[], metavar="'STEP OPTS'")
     sp.add_argument("--try", dest="try_", nargs=2, metavar="X,Y",
                     help="how a belt would go from tile A to tile B here; nothing laid")
-    st = sub.add_parser("status", help="3.0: the nets as the route step left them (out/design)")
+    cp = sub.add_parser("compile", help="3.0: a sealed module's insides routed alone and stored "
+                                         "(out/compiled, the compile store); the next build "
+                                         "lays them from there")
+    cp.add_argument("script")
+    cp.add_argument("module")
+    st = sub.add_parser("status", help="3.0: the nets as the route step left them (out/design) "
+                                        "and the compile store (out/compiled)")
     st.add_argument("game")
     st.add_argument("net", nargs="?")
     for name, what in (("hold", "keep a net's route as it stands, whatever the router would do"),
@@ -1373,6 +2065,8 @@ def main(argv=None):
     lk.add_argument("game")
     lk.add_argument("--source", default="design", choices=("design", "world"))
     lk.add_argument("--area")
+    lk.add_argument("--surface", help="--source world: another surface than the game's own (a "
+                    "placement id brings its own)")
     lk.add_argument("--notify", choices=("nearby", "all", "off"))
     lk.add_argument("--watch", help="strict | keep | revert | mark DUR, or plots=A,sanctioned=B")
     lk.add_argument("--write-marks", action="store_true")
@@ -1475,13 +2169,51 @@ def main(argv=None):
     sm.add_argument("game")
     sm.add_argument("verb")
     sm.add_argument("rest", nargs=argparse.REMAINDER)
-    lb = sub.add_parser("lab")
+    mp = sub.add_parser("map")
+    mp.add_argument("game")
+    mp.add_argument("verb")
+    mp.add_argument("rest", nargs=argparse.REMAINDER)
+    al = sub.add_parser("alone", description="3.1: a module built alone on a slot of a surface "
+                        "(fkcore.alone); free surfaces revive the ghosts, others leave them to "
+                        "robots. Power, stock and feeds are stand-ins: fk standin")
+    al.add_argument("game")
+    al.add_argument("name", nargs="?")
+    al.add_argument("--surface", help="the surface (default lab); GAME/<surface>.surface gives "
+                    "its properties, the lab needs none")
+    al.add_argument("--from", dest="src")
+    al.add_argument("--size")
+    al.add_argument("--measure", type=float, help="what its machines make over SECONDS")
+    al.add_argument("--with", dest="extra", action="append", default=[], metavar="'STEP OPTS'",
+                    help="a step's options for this build only, as fk build --with")
+    al.add_argument("--clear", action="store_true")
+    al.add_argument("--keep", action="store_true",
+                    help="build over what stands (the slot not emptied)")
+    al.add_argument("--list", action="store_true")
+    si = sub.add_parser("standin", description="3.1: a god-mode stand-in on a module built alone "
+                        "(fkcore.standin): supply (power, stock, fuel), feed (a source or sink at "
+                        "each open port), ore. Only where things are free")
+    si.add_argument("game")
+    si.add_argument("name")
+    si.add_argument("what", choices=("supply", "feed", "ore"))
+    si.add_argument("--surface", help="the surface the module stands alone on (default lab)")
+    si.add_argument("--ore")                      # 2.0.56: RESOURCE over --area
+    si.add_argument("--area")
+    si.add_argument("--amount", type=int, default=100000)
+    si.add_argument("--copy-ore", dest="copy_ore")    # X0,Y0,X1,Y1 of the world
+    si.add_argument("--to", default="0,0")
+    si.add_argument("--clear-ore", dest="clear_ore", action="store_true")
+    lb = sub.add_parser("lab", description="the lab alias: fk alone NAME --surface lab, then the "
+                        "lab's stand-ins (supply, feed); --measure tops the requesters up first")
     lb.add_argument("game")
     lb.add_argument("name", nargs="?")
     lb.add_argument("--from", dest="src")
     lb.add_argument("--size")
     lb.add_argument("--measure", type=float)
+    lb.add_argument("--with", dest="extra", action="append", default=[], metavar="'STEP OPTS'",
+                    help="a step's options for this build only, as fk build --with")
     lb.add_argument("--clear", action="store_true")
+    lb.add_argument("--keep", action="store_true",
+                    help="3.0.2-lab: build over what stands (the slot not emptied, nothing stocked)")
     lb.add_argument("--list", action="store_true")
     lb.add_argument("--ore")                      # 2.0.56: RESOURCE over --area
     lb.add_argument("--area")
@@ -1489,10 +2221,40 @@ def main(argv=None):
     lb.add_argument("--copy-ore", dest="copy_ore")    # X0,Y0,X1,Y1 of the world
     lb.add_argument("--to", default="0,0")
     lb.add_argument("--clear-ore", dest="clear_ore", action="store_true")
-    ad = sub.add_parser("adopt")
+    ad = sub.add_parser("adopt", description="a world edit taken into the source: carriers at X,Y"
+                        " into a net (--into FACTORY/NET, V1); 3.1: fk adopt PLACEMENT_ID|AREA "
+                        "proposes set lines for changed settings (--write appends them)")
     ad.add_argument("game")
-    ad.add_argument("tiles")
-    ad.add_argument("--into", required=True)
+    ad.add_argument("what", help="X,Y[;X,Y] tiles (with --into), or a placement id or area")
+    ad.add_argument("--into", help="FACTORY/NET: adopt the carriers on the tiles into it")
+    ad.add_argument("--write", action="store_true", help="append the proposed set lines")
+    pa = sub.add_parser("paste", description="3.1: a captured Literal file or blueprint string "
+                        "pasted as ghosts with its origin at X,Y, recorded as a placement "
+                        "(fkcore.placements)")
+    pa.add_argument("game")
+    pa.add_argument("file", help="a Literal file (.json with bp or entities) or a blueprint string "
+                   "file (.bp, .txt), relative to GAME_DIR")
+    pa.add_argument("--at", required=True, help="X,Y: where the file's origin (0,0) goes")
+    pa.add_argument("--rot", type=int, default=0, help="quarter turns clockwise about the origin")
+    pa.add_argument("--as", dest="as_name", help="the placement's id (default the file's stem)")
+    pa.add_argument("--surface", help="the surface (default the run's own)")
+    pa.add_argument("--force", dest="force_name", help="the force (default the surface file's)")
+    rg = sub.add_parser("register", description="3.1: what stands in AREA is that artifact (built "
+                        "by hand, Lua or an older toolkit): recorded as a placement, differences "
+                        "reported")
+    rg.add_argument("game")
+    rg.add_argument("area", help="X0,Y0,X1,Y1")
+    rg.add_argument("what", nargs="?", help="MODULE[/INSTANCE]: a factory of the surface, or a module")
+    rg.add_argument("--as", dest="as_name", help="NAME for something no module stands for")
+    rg.add_argument("--surface", help="another surface than the game's own (the lab)")
+    df = sub.add_parser("diff", description="3.1: the diff over a placement's area (or an area), "
+                        "headed by the placement")
+    df.add_argument("game")
+    df.add_argument("what", help="PLACEMENT_ID or X0,Y0,X1,Y1")
+    df.add_argument("--surface", help="for an area: another surface than the game's own (a "
+                    "placement id brings its own)")
+    pls = sub.add_parser("placements", description="3.1: the registry of what was pasted")
+    pls.add_argument("game")
     ch = sub.add_parser("chat")
     ch.add_argument("game")
     ch.add_argument("--all", action="store_true")
@@ -1522,14 +2284,34 @@ def main(argv=None):
     rq.add_argument("--name", default="", metavar="ENTITY", help="the entity's prototype there")
     rq.add_argument("--inventory", default="", metavar="NAME",
                     help="a defines.inventory name (default: the one its kind takes ITEM in)")
+    wk = sub.add_parser("walk", description="the net walker, world mode (fkcore.walk, PLAN-3.0 3f)")
+    wk.add_argument("game")
+    wk.add_argument("what", help="X,Y (a machine or belt there), an entity key, a net (n7), "
+                    "or X0,Y0,X1,Y1 (every net in the area)")
+    wk.add_argument("--up", type=int, default=2)
+    wk.add_argument("--down", type=int, default=1)
+    wk.add_argument("--radius", type=int, default=32, help="tiles read around X,Y (default 32)")
+    wk.add_argument("--surface", default="nauvis")
+    wk.add_argument("--save", metavar="FILE", help="keep the read as JSON")
+    wk.add_argument("--from", dest="frm", metavar="FILE", help="walk a kept read, no game")
+    wk.add_argument("--frame", metavar="X0,Y0,X1,Y1", help="a module frame drawn on the base: "
+                    "where belts, undergrounds, hands and pipes cross it (the ports it needs)")
     cp = sub.add_parser("capture", description="something built, as a Literal file that can go "
                         "anywhere (fkcore.capture)")
     cp.add_argument("game")
-    cp.add_argument("source", choices=("lab", "world", "design"))
-    cp.add_argument("what", help="lab: a slot's NAME; world: X0,Y0,X1,Y1; design: "
-                    "[FACTORY/]INST")
+    cp.add_argument("source", nargs="?", choices=("lab", "slot", "world", "design"))
+    cp.add_argument("what", nargs="?", help="slot: the NAME of a module built alone (--surface; "
+                    "`lab` is slot --surface lab); world: X0,Y0,X1,Y1; design: [FACTORY/]INST")
     cp.add_argument("--to", help="the file (default captured/<what>.json, in GAME_DIR)")
+    cp.add_argument("--from", dest="frm", help="3.1: a placement id or X0,Y0,X1,Y1: the selection "
+                    "as source, anchored where it stands (fkcore.placements)")
+    cp.add_argument("--into", help="--from: the file (default captured/<id>.json)")
+    cp.add_argument("--names", action="store_true", help="--from: list every machine name")
     cp.add_argument("--fkp", help="design: the layout to read (default the committed one)")
+    cp.add_argument("--surface", help="world, slot: the surface to read (default the run's own); "
+                    "its GAME/<surface>.surface names the force")
+    cp.add_argument("--force", dest="force_name", help="world, slot: the force whose build it is "
+                    "(default the surface file's)")
     lu = sub.add_parser("lua")
     lu.add_argument("game")
     lu.add_argument("code", nargs="?")
@@ -1556,9 +2338,28 @@ def main(argv=None):
     rt.add_argument("--area", required=True)
     rt.add_argument("--name", default="map")
     rt.add_argument("--replace", action="store_true")
+    rt.add_argument("--entities", action="store_true",
+                    help="3.1: standing entities the design does not own become blocked tiles")
+    rb = sub.add_parser("robots", description="3.1: the roboports standing on the surface against "
+                        "the design's logistic chests: coverage, redundancy, a minimal set (a free "
+                        "read; nothing in the world or the design changes)")
+    rb.add_argument("game")
+    rb.add_argument("--area")
+    rb.add_argument("--force")
+    rb.add_argument("--surface", help="another surface than the game's own (the lab)")
     sg = sub.add_parser("stage", add_help=False)
     sg.add_argument("game")
     sg.add_argument("rest", nargs=argparse.REMAINDER)
+    cl = sub.add_parser("catalog", description="the run's own catalog overlay (fkcore.learn): "
+                        "learn reads buildings from the game into learned.json, show says what "
+                        "it holds (or what the catalog knows of NAME), forget takes one out")
+    cl.add_argument("game")
+    cl.add_argument("verb", choices=("learn", "show", "forget"))
+    cl.add_argument("names", nargs="*", metavar="NAME", help="buildings (entity or item names)")
+    cl.add_argument("--mod", help="learn: every building this mod adds")
+    cl.add_argument("--all-mods", action="store_true",
+                    help="learn: every building a mod adds (not base)")
+    cl.add_argument("--dry", action="store_true", help="learn: say what it read, write nothing")
     a = ap.parse_args(_glue(sys.argv[1:] if argv is None else list(argv)))
     if a.cmd == "stage":
         from . import stage
@@ -1573,19 +2374,33 @@ def main(argv=None):
         return _lua(a)
     if a.cmd == "read-terrain":
         return _read_terrain(a)
+    if a.cmd == "catalog":
+        return _catalog(a)
     cat = Catalog.load()
+    if a.cmd == "robots":
+        return _robots(a, cat)
     if a.cmd == "migrate-surface":
         return _migrate_surface(a)
+    if a.cmd == "migrate-origins":
+        return _migrate_origins(a, cat)
     if a.cmd in ("merge", "insert", "chests-to-net", "net-to-chests"):
         return _rewire(a)
     if a.cmd == "measure":
         return _measure(a, cat)
     if a.cmd == "sim":
         return _sim(a, cat)
+    if a.cmd == "map":
+        return _map(a)
     if a.cmd == "lab":
         return _lab(a, cat)
+    if a.cmd == "alone":
+        return _alone(a, cat)
+    if a.cmd == "standin":
+        return _standin(a, cat)
     if a.cmd == "capture":
         return _capture(a, cat)
+    if a.cmd == "walk":
+        return _walk(a, cat)
     if a.cmd == "decon":
         return _decon(a, cat)
     if a.cmd == "request":
@@ -1594,6 +2409,14 @@ def main(argv=None):
         return _dnp(a, cat)
     if a.cmd == "adopt":
         return _adopt(a, cat)
+    if a.cmd == "paste":
+        return _paste(a, cat)
+    if a.cmd == "register":
+        return _register(a, cat)
+    if a.cmd == "diff":
+        return _diff_cmd(a, cat)
+    if a.cmd == "placements":
+        return _placements_cmd(a)
 
     if a.cmd == "plan":
         return _plan(a, cat)
@@ -1614,6 +2437,16 @@ def main(argv=None):
         return code
     if a.cmd in ("status", "hold", "unhold", "unroute", "seed"):
         return _design(a)
+    if a.cmd == "compile":
+        # 3.0 (PLAN-3.0 §4): the script up to its route step, which routes and stores MODULE's
+        # insides alone (route --compile); nothing is pasted
+        try:
+            code, _ctx = flow.run(a.script, None, "route", cat,
+                                  extra=[f"route --compile {a.module}"])
+        except (flow.FlowError, surfacemod.SurfaceError, OSError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        return code
     if a.cmd == "step":
         # 3.0 (PLAN-3.0 §2, every step a command): the script's own line for that step, alone;
         # the nets named are laid again, every other route kept from the net files

@@ -37,20 +37,21 @@ _EPS = 1e-6
 _SHOW = 4
 
 
-def _rate(name, hand, bulk_hand, onto, cat):
-    return lanesmod.inserter_rate(name, hand, bulk_hand, onto_belt=onto, cat=cat)
+def _rate(name, hand, bulk_hand, onto, cat, turn=0.5):
+    return lanesmod.inserter_rate(name, hand, bulk_hand, onto_belt=onto, cat=cat, turn=turn)
 
 
 def _many(n, word):
     return f"{n} {word}" + ("" if n == 1 else "s")
 
 
-def choose(need, onto, hands=HANDS, hand=1, bulk_hand=1, cat=None):
+def choose(need, onto, hands=HANDS, hand=1, bulk_hand=1, cat=None, turn=0.5):
     """The lowest rung whose rate carries ``need`` items/s on a connector that drops onto a belt
-    (``onto``): -> (name, rate). The top rung when none does (its rate says by how much)."""
+    (``onto``): -> (name, rate). The top rung when none does (its rate says by how much).
+    ``turn``: its swing (3.0: a corner hand's 0.25, ``lanes.inserter_rate``)."""
     fits = []
     for name in hands:
-        rate = _rate(name, hand, bulk_hand, onto, cat)
+        rate = _rate(name, hand, bulk_hand, onto, cat, turn)
         if rate is None:
             continue
         if rate >= need - _EPS:
@@ -102,11 +103,13 @@ def assign(lay, flat, cat, prev=None, mode="minimize", allow=HANDS, hand=1, bulk
         mine[key] = e
     want, over, rates = {}, [], {}
     for key, e in mine.items():
-        rates[key] = {n: _rate(n, hand, bulk_hand, onto[key], cat) for n in set(hands) | {e.name}}
+        turn = lanesmod._turn_of(g.nodes[key])
+        rates[key] = {n: _rate(n, hand, bulk_hand, onto[key], cat, turn)
+                      for n in set(hands) | {e.name}}
         if mode == "maximize":
             want[key] = hands[-1]
             continue
-        got, rate = choose(need[key], onto[key], hands, hand, bulk_hand, cat)
+        got, rate = choose(need[key], onto[key], hands, hand, bulk_hand, cat, turn)
         want[key] = got
         if rate is None or rate < need[key] - _EPS:
             over.append((key, need[key], rate))

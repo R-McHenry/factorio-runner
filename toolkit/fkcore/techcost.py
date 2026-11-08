@@ -52,9 +52,24 @@ for name, t in pairs(prototypes.technology) do
   row.researched = game.forces['player'].technologies[name].researched
   techs[name] = row
 end
+-- the least power per crafting second a machine of each category burns (J/s at speed 1)
+local jps = {}
+for _, ty in pairs({'assembling-machine', 'furnace', 'rocket-silo'}) do
+  for _, m in pairs(prototypes.get_entity_filtered{{filter = 'type', type = ty}}) do
+    local ok, sp = pcall(function() return m.get_crafting_speed() end)
+    if not ok then sp = m.crafting_speed end
+    local use = m.energy_usage or 0
+    if sp and sp > 0 and use > 0 then
+      local w = use * 60 / sp
+      for c in pairs(m.crafting_categories or {}) do
+        if not jps[c] or w < jps[c] then jps[c] = w end
+      end
+    end
+  end
+end
 for name, r in pairs(prototypes.recipe) do
   if not r.hidden and r.category ~= 'recycling' and r.category ~= 'parameters' then
-    local row = {ins = {}, outs = {}, ina = {}, outa = {},
+    local row = {ins = {}, outs = {}, ina = {}, outa = {}, energy = r.energy, jps = jps[r.category],
                  enabled = game.forces['player'].recipes[name].enabled, default = r.enabled}
     for _, i in pairs(r.ingredients) do
       row.ins[#row.ins + 1] = i.name
@@ -311,10 +326,26 @@ class Tree:
     # -- worth (2.0.67) ---------------------------------------------------------------------------
     #: what a unit of a raw thing is worth: an ore, a chunk, a fruit, and a unit of fluid
     RAW, RAW_FLUID = 1.0, 0.1
+    #: 3.0 (Rory, 11-02: "We could try adding power consumption in as some cost"): what a MJ of
+    #: a machine's power is worth, and the power of a recipe no machine of the dump makes (W at
+    #: speed 1). An electric drill spends ~0.18 MJ an ore, a stone furnace ~0.29 MJ a plate. Without
+    #: it a loop that gives back more than it takes (Sea Block's gardens double themselves; a
+    #: barrel filled and emptied) priced everything after it down to ~1e-13
+    POWER, POWER_W = 1.0, 100e3
+
+    def craft_cost(self, r):
+        """A craft's power in raw units: its time x its machine's power / speed (0 for a dump from
+        before 3.0, which has no ``energy``)."""
+        e = r.get("energy")
+        if not isinstance(e, (int, float)) or e <= 0:
+            return 0.0
+        w = r.get("jps") if isinstance(r.get("jps"), (int, float)) else self.POWER_W
+        return e * w / 1e6 * self.POWER
 
     def values(self):
         """{item: its worth in raw units}: a raw thing (mined, pumped, grown, gathered) is RAW (a
-        fluid RAW_FLUID); anything made is the cheapest recipe's ingredients over its products,
+        fluid RAW_FLUID); anything made is the cheapest recipe's ingredients and power (3.0,
+        ``craft_cost``) over its products,
         net of what the recipe gives back (a catalyst), its by-products at the same unit worth.
         Found by relaxing to a fixed point; something nothing reaches has none."""
         if getattr(self, "_values", None) is not None:
@@ -350,7 +381,8 @@ class Tree:
                 net_out = {o: a - ina.get(o, 0) for o, a in outa.items() if a - ina.get(o, 0) > 0}
                 if not net_out or any(i not in val for i in net_in):
                     continue
-                each = sum(a * val[i] for i, a in net_in.items()) / sum(net_out.values())
+                each = (sum(a * val[i] for i, a in net_in.items()) + self.craft_cost(r)) \
+                    / sum(net_out.values())
                 for o in net_out:
                     if o not in frozen and (o not in val or each < val[o] - 1e-12):
                         val[o] = each

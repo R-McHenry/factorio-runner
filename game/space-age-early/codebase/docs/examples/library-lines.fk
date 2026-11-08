@@ -1,0 +1,22 @@
+# library-lines.fk: two lines from the library's cells. Plot 200x200 (any). Copper ore and coal
+# into a line of SmelterPairs, its plates into a line of AsmCell1s making copper cable. Shows: a
+# Stack passing its parameters to every cell (the iron cells of cells.fk make copper here), a
+# `kind` of a cell with its parameters set, two plate belts joining one feed.
+# Run:  fk check library-lines.fk    fk rates library-lines.fk
+# Expect: `check library-lines: 58 machines, 46 nets, 0 check lines`; the first four pairs at 98%
+# and the last at 89% (3 ore/s is a little short of ten furnaces); 360 cable/min.
+import SmelterPair, AsmCell1 from "cells.fk"
+
+kind CableCell = AsmCell1<recipe=copper-cable, ins=copper-plate, out=copper-cable>
+
+ore   = Chest<requester, item=copper-ore, rate=3/s> @(4, 2)
+coal  = Chest<requester, item=coal, rate=0.3/s>     @(14, 2)
+smelt = Stack<cell=SmelterPair, n=5, plate=copper-plate, ore=copper-ore> @(10, 8)
+cable = Stack<cell=CableCell, n=3>                  @(30, 8)
+box   = Chest<provider, limit=8>                    @(36, 22)
+
+net ore_:  ore -> smelt.f_in
+net fuel:  coal -> smelt.f_in
+lanes ore_ | fuel
+net plates: smelt.pw_out, smelt.pe_out -> cable.in_in
+net wire:   cable.out_out -> box

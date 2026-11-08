@@ -30,12 +30,14 @@ INF = float("inf")
 #: straight holds at most N; ``guard``: its input inserters carry only what its recipe takes.
 CIRCUIT_PARAMS = ("keep", "fill", "guard")
 #: Parameters every instance may carry; the elaborator reads them, the templates ignore them.
-COMMON_PARAMS = ("duty", "dnp", "inserter", "modules") + CIRCUIT_PARAMS
+COMMON_PARAMS = ("duty", "dnp", "inserter", "modules", "beacons", "beacon") + CIRCUIT_PARAMS
 #: 2.0.53, ``modules=``: the module slots of the machines that take them, and each module's
 #: effect on speed and productivity (normal quality; efficiency changes no rate). 2.1.1: read
 #: from facts.json (``fkcore.facts``): every entity with module slots, every module.
 MODULE_SLOTS = _facts.module_slots()
 MODULE_EFFECTS = _facts.module_effects()
+#: 3.0: the recipes that take productivity (a machine's built-in bonus, too)
+PRODUCTIVE = _facts.productive()
 #: Items that pass by contact, with no carrier (2.0): a reactor heats the exchanger it touches.
 #: A net of only these has no route; it is connected when its machines touch.
 CONTACT = frozenset({"heat"})
@@ -112,17 +114,62 @@ def _crafter(cat, local, machine, recipe, fuel=None):
     if speed is None:
         raise TemplateError(f"{machine} does not craft")
     needs, makes = cat.recipe_rates(recipe, speed)
+    f = _facts.entity(machine)
+    # 3.0: a machine's built-in productivity (a foundry's or an electromagnetic plant's +50%,
+    # the game's effect_receiver.base_effect), on the recipes that take productivity
+    bonus = float((f.get("base_effect") or {}).get("productivity") or 0.0)
+    if bonus and recipe in PRODUCTIVE:
+        makes = {k: v * (1.0 + bonus) for k, v in makes.items()}
     if fuel is not None:
         needs[fuel] = needs.get(fuel, 0.0) + _fuel_rate(machine, fuel)
-    return MSpec(local, machine, recipe, needs, makes, frozenset(needs))
+    extra = {}
+    cats = f.get("crafting_categories")
+    category = cat.recipe(recipe).get("category")
+    if cats and category and category not in cats:
+        # 3.0: a check, never a gate (a catalog may lag the game, a mod may add a category)
+        extra["checks"] = [("wrong-category", f"{machine} doesn't craft {recipe}: it is a "
+                                              f"{category} recipe, and {machine} crafts "
+                                              f"{', '.join(cats)}")]
+    return MSpec(local, machine, recipe, needs, makes, frozenset(needs), extra=extra)
+
+
+def _burner(machine):
+    """3.0: the fuel categories a machine's burner takes, from the facts (a learned machine too:
+    the biochamber burns nutrients), or () for a machine with no burner."""
+    f = _facts.entity(machine)
+    if machine in FUEL_USE_W:
+        return tuple(f.get("fuel_categories") or ("chemical",))
+    return tuple(f.get("fuel_categories") or ()) if f.get("burner") else ()
+
+
+def _fuel(params, machine):
+    """``fuel=`` of a burner machine, None for any other. The default is coal for a chemical
+    burner, else the first fuel of its category by name (nutrients for a biochamber)."""
+    cats = _burner(machine)
+    if not cats:
+        return None
+    if "chemical" in cats:
+        return _word(params, "fuel", "coal")
+    known = sorted(n for c in cats for n in _facts.fuels(c))
+    if "fuel" not in params and not known:
+        raise TemplateError(f"{machine} burns {'/'.join(cats)} fuel, and the catalog knows none "
+                            "(fk catalog learn reads it from the game): give fuel=")
+    return _word(params, "fuel", known[0] if known else None)
 
 
 def _fuel_rate(machine, fuel):
-    if machine not in FUEL_USE_W:
+    cats = _burner(machine)
+    if not cats:
         raise TemplateError(f"{machine} burns no fuel")
-    if fuel not in FUEL_VALUE_J:
+    if machine in FUEL_USE_W and fuel in FUEL_VALUE_J:
+        return FUEL_USE_W[machine] / FUEL_VALUE_J[fuel]
+    value = _facts.fuel_value(fuel)
+    if value is None:
         raise TemplateError(f"{fuel} is not a fuel")
-    return FUEL_USE_W[machine] / FUEL_VALUE_J[fuel]
+    cat = (_facts.load()["fuels"].get(fuel) or {}).get("category")
+    if cat not in cats:
+        raise TemplateError(f"{machine} burns {'/'.join(cats)} fuel, and {fuel} is {cat} fuel")
+    return float(_facts.energy_w(machine)) / value
 
 
 # -- templates ------------------------------------------------------------------------------------
@@ -170,7 +217,7 @@ def machine(params, cat):
     else:
         raise TemplateError("needs recipe=" + (" (or ore=)" if cat.kind(entity) == "furnace"
                                                else ""))
-    fuel = _word(params, "fuel", "coal") if entity in FUEL_USE_W else None
+    fuel = _fuel(params, entity)
     spec = _crafter(cat, "m0", entity, recipe, fuel)
     no_fluidbox(cat, entity, recipe)
     return [spec]
@@ -278,7 +325,7 @@ def smelter_row(params, cat):
     n = _int(params, "n")
     recipe = _smelt_recipe(params, cat)
     machine = _word(params, "machine", "stone-furnace")
-    fuel = _word(params, "fuel", "coal") if machine in FUEL_USE_W else None
+    fuel = _fuel(params, machine)
     return [_crafter(cat, f"m{k}", machine, recipe, fuel) for k in range(n)]
 
 
@@ -344,8 +391,8 @@ def miner_row(params, cat):
     out = []
     for k in range(n):
         needs = {}
-        if drill in FUEL_USE_W:
-            fuel = _word(params, "fuel", "coal")
+        fuel = _fuel(params, drill)
+        if fuel is not None:
             needs[fuel] = _fuel_rate(drill, fuel)
         if wet is not None:
             needs[wet[0]] = speed / MINING_TIME[resource] * wet[1]

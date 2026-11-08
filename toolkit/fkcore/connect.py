@@ -19,10 +19,11 @@ Every entity is a node; an edge is one way items move from one entity into anoth
   else leaves it alone (v4's rule, C:\\fk-lead\\repo\\fk\\sight\\flow.py d6018d3).
 - ``pickup`` / ``drop``: an inserter faces the side it picks from (v4 convention) and reaches one
   tile, a long-handed one two (geometry from fk\\lanes.py). It picks from a belt, an underground, a
-  splitter or a machine, and drops onto the same, except an underground output: its edge is no
-  belt surface (v4 B-120).
+  splitter or a machine, and drops onto the same, an underground output too (measured on 2.0.77,
+  as lanes.py has it; v4's B-120 said no, and the walker found 96 game drops it missed).
 - ``mine``: a mining drill drops just past its front edge (the game's vector_to_place_result:
   centred, half a tile to its left on an even width) onto a carrier or straight into a machine.
+  3.0: so does anything else with a drop vector (``Catalog.drop_tile``: a recycler).
 
 Fluids are a second graph over **fluid boxes** (``Graph.fluid``), one node per live box
 (``(key, box)``: a pipe has one, a boiler two, a chemical plant what its recipe makes live), with
@@ -78,12 +79,14 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections import deque
 from dataclasses import dataclass, field
 
+from . import arms as armsmod
 from .catalog import FluidBox
 from .elaborate import Check
-from .fkp import CARRIER_TYPES, map_nets, net_names
+from .fkp import CARRIER_TYPES, map_nets, net_names, rails_share
 # 2.1.30: every use here is a sort key: the remembered tuple, not a fresh list per call (route's
 # standing nets sorted ~1.7M keys building graphs on the 20261030-2352 world)
 from .fkp import _natural_key as natural_key
@@ -99,9 +102,13 @@ _GIVES_FLUID = frozenset({"output", "input-output"})
 _TAKES_FLUID = frozenset({"input", "input-output"})
 #: Entity types an inserter drops into or picks from: the machine endpoints.
 HOLDER_TYPES = frozenset({"assembling-machine", "furnace", "mining-drill", "lab", "container",
-                          "logistic-container", "boiler", "reactor", "ammo-turret", "roboport"})
+                          "logistic-container", "boiler", "reactor", "ammo-turret", "roboport",
+                          # Space Age: inserters take from and drop into these too
+                          "rocket-silo", "asteroid-collector", "fusion-reactor",
+                          "cargo-landing-pad", "space-platform-hub", "cargo-bay",
+                          "agricultural-tower"})
 #: Tiles from an inserter to its pickup and drop tile; every other inserter reaches 1.
-REACH = {"long-handed-inserter": 2}
+REACH = armsmod.REACH
 _FLUID_DRILLS = frozenset({"pumpjack"})
 _UG_REACH = 5                      # a tier the catalog gives no max_distance
 _SHOW = 4
@@ -124,6 +131,7 @@ class Node:
     recipe: str | None = None      # a crafting machine's recipe (it decides its fluid boxes)
     prio: tuple | None = None      # a splitter's (input, output) priority: left, right or None
     resource: str | None = None    # a drill's ore (2.1: on uranium ore its fluid box is live)
+    arms: dict | None = None       # an inserter's own vectors: {"pick": "dx,dy", "drop": ...}
 
     @property
     def carrier(self):
@@ -284,8 +292,9 @@ def graph(ents, cat, ports=None) -> Graph:
                 _edge(g, src, key, "pickup")
             if dst is not None and _takes(g.nodes[dst]):
                 _edge(g, key, dst, "drop")
-        elif n.kind == "mining-drill" and n.name not in _FLUID_DRILLS and n.dir in _STEP:
-            dst = g.at.get(_drill_drop(n, cat))
+        elif n.name not in _FLUID_DRILLS and n.dir in _STEP and hasattr(cat, "drop_tile") \
+                and cat.drop_tile(n.name, n.x, n.y, n.dir) is not None:
+            dst = g.at.get(cat.drop_tile(n.name, n.x, n.y, n.dir))
             if dst is not None and dst != key and _takes(g.nodes[dst]):
                 _edge(g, key, dst, "mine")
     if ports:
@@ -413,8 +422,13 @@ def _add_node(g, e, cat):
             ug = None
     g.nodes[e.key] = Node(e.key, e.name, kind, net, float(e.x), float(e.y), d, tiles, ug,
                           e.attrs.get("recipe"), _priority(e) if kind == "splitter" else None,
-                          e.attrs.get("resource") if kind == "mining-drill" else None)
+                          e.attrs.get("resource") if kind == "mining-drill" else None,
+                          {k: e.attrs[k] for k in ("pick", "drop") if k in e.attrs}
+                          if kind == "inserter" else None)
     for t in tiles:
+        if t in g.at and g.at[t] in g.nodes and \
+                rails_share(e.name, g.nodes[g.at[t]].name):
+            continue
         if t in g.at:
             g.problems.append(f"{e.key}: tile {t[0]},{t[1]} is already {g.at[t]}")
         else:
@@ -555,12 +569,9 @@ def _fluid_join(g, a, b, via, done):
 
 
 def _hand(n):
-    step = _STEP.get(n.dir)
-    if step is None:
-        return None
-    r = REACH.get(n.name, 1)
-    tx, ty = n.tiles[0]
-    return (tx + step[0] * r, ty + step[1] * r), (tx - step[0] * r, ty - step[1] * r)
+    """(pickup tile, drop tile) of an inserter node: its own vectors (``pick=``/``drop=``, 3.0:
+    Bob's adjustable inserters, ``fkcore.arms``) where it has them, else its direction and reach."""
+    return armsmod.tiles(n.name, n.dir, n.arms, n.tiles[0])
 
 
 def _gives(m):
@@ -572,17 +583,7 @@ def _gives(m):
 
 def _takes(m):
     """An inserter or a drill can drop into ``m``."""
-    if m.kind in _BELTS:
-        return m.kind != "underground-belt" or m.ug == "in"
-    return m.kind in HOLDER_TYPES
-
-
-def _drill_drop(n, cat):
-    w, h = cat.size(n.name)
-    vx, vy = (-0.5 if w % 2 == 0 else 0.0), -(h / 2 + 0.3)     # facing north
-    for _ in range(n.dir // 4):
-        vx, vy = -vy, vx                                       # a quarter turn clockwise
-    return math.floor(n.x + vx), math.floor(n.y + vy)
+    return m.kind in _BELTS or m.kind in HOLDER_TYPES
 
 
 # -- the checks -----------------------------------------------------------------------------------
@@ -592,7 +593,8 @@ def endpoints(flat, surface=None, factory=None):
     ``main/gear``)."""
     pre = f"{surface}:{factory}/" if surface and factory else ""
     netpre = f"{factory}/" if surface and factory else ""
-    table = {netpre + name: (Dealt if getattr(n, "width", 1) > 2 else tuple)(
+    table = {netpre + name: (Dealt if getattr(n, "width", 1) > 2 or getattr(n, "any", False)
+                             else tuple)(
                  ([(pre + k, i) for k, i in n.drivers], [(pre + k, i) for k, i in n.consumers]))
              for name, n in flat.nets.items()}
     # A bus's mouth has no entity of its own: the bus's own belt under the mouth is its carrier.
@@ -620,8 +622,9 @@ def endpoints(flat, surface=None, factory=None):
 
 class Dealt(tuple):
     """(drivers, consumers) of a wide net (2.1, ``width`` above 2: a ribbon of belts, its drivers
-    and consumers dealt out to them, ``fkcore.ribbons``): it is connected when every driver reaches
-    a consumer and every consumer is reached, not every driver every consumer."""
+    and consumers dealt out to them, ``fkcore.ribbons``) or an ``any`` net (3.0: a pass-through,
+    a split output): it is connected when every driver reaches a consumer and every consumer is
+    reached, not every driver every consumer."""
     dealt = True
 
 
@@ -762,6 +765,10 @@ def _fluid_leaks(g, owners, table):
             continue
         elif na.carrier or nb.carrier:
             (c, oc), m = ((a, oa), b) if na.carrier else ((b, ob), a)
+            inst = c[0].rsplit("/", 1)[0]
+            if oc in table and m[0].rsplit("/", 1)[0] == inst and any(
+                    k.rsplit("/", 1)[0] == inst for k in list(table[oc][0]) + list(table[oc][1])):
+                continue      # 3.0: a Literal port's own carriers into its own machine: its inside
             if oc in table:
                 out.append(Leak(oc, c[0], m[0], via, f"{c[0]} joins {m[0]} ({_box_word(g, m)}), "
                                                      f"which is not an endpoint of {oc}"))
@@ -789,16 +796,35 @@ def _joint(a, b, na, nb, table):
                for y in nb.nets if y in table for k in (a, b))
 
 
+_LIT_NET = re.compile(r"^(.+)/(hand|belt|fluid)\d+$")
+
+
+def _one_literal(na, nb):
+    """2.1.31: both carriers are one Literal's own (``fkcore.literal`` nets a captured build by
+    connectivity: ``<inst>/hand<k>``, ``<inst>/belt<k>``, ``<inst>/fluid<k>``), so the edge is the
+    build working as it was built, not a spill: a captured hub's 600 inserters all read SPILL."""
+    insts = set()
+    for n in (na, nb):
+        for x in n.nets or [None]:
+            m = _LIT_NET.match(x or "")
+            if m is None:
+                return False
+            insts.add(m.group(1))
+    return len(insts) == 1
+
+
 def _leak(g, a, b, via, table, cat=None):
     """The Leak an edge makes, or None. Between two carriers, the items of a net the second one
     does not carry escape (``ore|fuel`` into a belt of ``ore``: the fuel)."""
     na, nb = g.nodes[a], g.nodes[b]
+    if na.carrier and nb.carrier and _one_literal(na, nb):
+        return None
     if na.carrier and nb.carrier:
         if na.nets:
             out = [x for x in na.nets if x not in nb.nets]
         else:
             out = [None] if nb.nets else []
-        if not out or _joint(a, b, na, nb, table):
+        if not out or _joint(a, b, na, nb, table) or _lit_inside(g, a, b, table):
             return None
         if table is not None and (all(x in table and b in table[x][1] for x in out)
                                   or (nb.nets and all(y in table and a in table[y][0]
@@ -822,6 +848,24 @@ def _leak(g, a, b, via, table, cat=None):
         return Leak(mine[0], a, b, via, f"{b} picks from {a}, which does not drive "
                                         f"{_either(mine)}")
     return None
+
+
+def _lit_inside(g, a, b, table):
+    """3.0: an edge inside one Literal between its port's belts and its own inserters: the port's
+    net ends at a carrier of the same instance (a Literal port's key is its carrier's), so what
+    its inserters take from or put on that belt is the Literal's inside."""
+    if table is None or "/" not in a or "/" not in b:
+        return False
+    inst = a.rsplit("/", 1)[0]
+    if b.rsplit("/", 1)[0] != inst:
+        return False
+    for k in (a, b):
+        for x in g.nodes[k].nets:
+            if x in table and any(isinstance(e, str) and e in g.nodes and g.nodes[e].carrier
+                                  and e.rsplit("/", 1)[0] == inst
+                                  for e in list(table[x][0]) + list(table[x][1])):
+                return True
+    return False
 
 
 def _relay(g, key, nets, table, cat):

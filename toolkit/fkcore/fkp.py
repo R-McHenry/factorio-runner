@@ -92,6 +92,17 @@ _PORTS = ("in", "out", "left", "right")   # a combinator's sides; a power switch
 #: The carriers with two lanes, whose ``net=`` may name a net per lane (``iron|copper``).
 LANE_TYPES = frozenset({"transport-belt", "underground-belt", "splitter", "loader", "loader-1x1",
                         "linked-belt"})
+#: 2.1.31: rail pieces overlap where they meet (a curve's ends lie on the straights of a
+#: junction), as the game builds them, so a tile two rails share is no clash
+RAILS = frozenset({"straight-rail", "curved-rail-a", "curved-rail-b", "half-diagonal-rail",
+                   "legacy-straight-rail", "legacy-curved-rail", "elevated-straight-rail",
+                   "elevated-curved-rail-a", "elevated-curved-rail-b",
+                   "elevated-half-diagonal-rail"})
+
+
+def rails_share(a, b):
+    """Two entity names that may stand on one tile: both rail pieces."""
+    return a in RAILS and b in RAILS
 
 
 # -- a carrier's nets (2.0: a net is one lane) ----------------------------------------------------
@@ -626,6 +637,8 @@ def invariants(lay: Layout, cat, nets=None) -> list:
             problems.append(f"{key}: {exc}")
             continue
         for t in sorted(tiles):
+            if t in taken and rails_share(e.name, lay.entities[taken[t]].name):
+                continue
             if t in taken:
                 problems.append(f"{key}: tile {t[0]},{t[1]} is already {taken[t]}")
             else:

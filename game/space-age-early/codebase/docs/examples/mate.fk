@@ -1,0 +1,14 @@
+# mate.fk: new source over something that already stands (the mating workflow, 3.1).
+# captured\mate-block.json is what `fk capture --from 10,10,16,14 --into captured/mate-block.json`
+# wrote for a gear assembler and an iron chest standing in the world: a Literal file anchored at
+# 10,10, its one machine named asm1. The Literal puts them back exactly where they stand, and a
+# new provider chest takes the gears from asm1: the standing entities are `ok` (mated) in the
+# diff, the new chest and its inserter are ghosts, and there is no mismatch line.
+# Run:  fk check mate.fk    fk build --to report_checks    (fk build pastes it; fk diff mate)
+# Expect: 1 net connected; `routed out: 1 -> 1, ...`; the build's diff says ok for the two
+# standing entities and ghost for the new ones.
+std = Literal<file="captured/mate-block.json"> @(10, 10)
+fe  = Chest<requester, item=iron-plate, rate=1/s> @(10, 16)
+box = Chest<provider, limit=4>                    @(22, 11)
+net fe:  fe -> std.asm1
+net out: std.asm1 -> box

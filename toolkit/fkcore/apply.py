@@ -1,11 +1,12 @@
 """fkcore.apply: the only world write (CORE: the writer rule), and the diff that judges it.
 
-``apply(r, s, cat, area, mode)`` pastes the composed layout ``s`` (a ``compose.Surface``) inside
-``area`` as one named blueprint. Every entity is keyed (``tags.src``), pole wires are derived, and
-it goes through ``link.paste`` (superforced: ghosts go over what stands in the way, and the game
-marks that for deconstruction). Then, by mode:
+``apply(r, s, cat, area, free=False)`` pastes the composed layout ``s`` (a ``compose.Surface``)
+inside ``area`` as one named blueprint. Every entity is keyed (``tags.src``), pole wires are
+derived, and it goes through ``link.paste`` (superforced: ghosts go over what stands in the way,
+and the game marks that for deconstruction). Then, by the surface's ``free`` property (3.1:
+surface files have properties, not a play or lab mode; ``fkcore.surface``):
 
-- ``play``: ghosts only; robots build them. A world entity in the area that the design does not
+- not free (the default, a base): ghosts only; robots build them. A world entity in the area that the design does not
   explain and the watch policy leaves to the apply (``unowned``) is ordered for deconstruction, an
   unbuilt ghost too (the game removes a ghost ordered out at once); ``marked`` and ``claimed``
   ones stay. The paste must land where designed: a shifted paste is reported (``not-where-designed``),
@@ -22,11 +23,11 @@ marks that for deconstruction). Then, by mode:
   robots take the old one up with what it holds and build the new one (``relaid``; the game
   keeps both, checked on a laptop test server, 2.0.77). ``ApplyReport.own`` is the record after
   the paste, for the caller to save.
-- ``lab``: the chunks under the area (and no others) are generated and charted first (a new
-  surface has none), each drill row's designed resource is seeded under it (lab ground has no
-  ore; ``seed=False`` when the surface has a real terrain, whose ore is already there), a
-  shifted paste is measured and pasted again, and the ghosts are revived at once (lab rules:
-  free materials).
+- ``free`` (the lab, or any surface where things are free): the chunks under the area (and no
+  others) are generated and charted first (a new surface has none), each drill row's designed
+  resource is seeded under it (bare ground has no ore; ``seed=False`` when the surface has a real
+  terrain, whose ore is already there), a shifted paste is measured and pasted again, and the
+  ghosts are revived at once (free materials).
 
 What the paste refuses (the game won't place an offshore pump from a blueprint: the kickoff
 found it on 2026-10-18, the V1 rehearsal again; nor anything on uncharted ground: a map with no
@@ -68,6 +69,16 @@ The report names each change and why (``changes``). Then the wire pass (``fkcore
 design's missing wires and cuts the ones between design entities that the design doesn't have:
 one count line. It runs after every paste (and ``fk wait built`` runs it once robots are done).
 
+MISMATCH (3.1, placements; Rory 11-08: "a conflicting design must produce a MISMATCH, never a
+silently adjusted plan or a build over or around"): a design tile that something stands on which
+the toolkit did not paste there (not in ``own``: another placement's, a hand edit, or unknown) is
+refused. Its row is left out of the paste, one line names what stands there, whose it is and the
+command that would resolve it (``fk register``, ``fk capture --from``, ``fk adopt``, or taking it
+out), and the rest of the paste goes (``refused``, ``sense.conflicts``). Mating is no mismatch: an
+entity standing as the design has it is ``ok``. ``placements`` are the registry's records that
+are not this design's own (``placements.explaining``); the pasted rows (``rows``) and the paste's
+tick are on the report, for the caller to record the placements (``placements.from_apply``).
+
 ``diff(r, s, cat, area, policy)`` is a snapshot of the area judged by ``sense``: after robots finish
 (or a lab revive) it is all ``ok``, which is 1:1. Nothing here registers anything; every game
 call is one RCON command with the link's 5 s timeout.
@@ -92,10 +103,11 @@ from . import own as ownmod
 from . import settings as settingsmod
 from . import wires as wiresmod
 from .fkp import natural_key
+from .surface import DEFAULT_FORCE
 
 __all__ = ["ApplyReport", "apply", "diff", "scope_rows", "scope_area", "default_area",
            "paste_blueprint", "turned_rows",
-           "force_for", "scaffold", "rip_points", "rip_load", "rip_minutes", "moved",
+           "scaffold", "rip_points", "rip_load", "rip_minutes", "moved",
            "rip_report"]
 
 #: a rip worth a RIP check: this many minutes of robot time, or this many structures
@@ -112,7 +124,7 @@ SCAFFOLD_KINDS = ("electric-pole", "roboport")
 class ApplyReport:
     surface: str
     force: str
-    mode: str
+    free: bool                         # the surface's property: revived by Lua, not robots
     area: tuple
     design: int = 0                    # entities in the scope
     pasted: int = 0                    # what build_blueprint placed (new ghosts)
@@ -135,6 +147,9 @@ class ApplyReport:
     fresh: list = field(default_factory=list)      # (key, why): laid fresh, and why (2.1)
     wires: object = None               # the wire pass (``fkcore.wires.Pass``)
     own: dict | None = None            # the record of what the applies pasted, after this one
+    refused: list = field(default_factory=list)   # 3.1: MISMATCH tiles left out (sense.Conflict)
+    rows: list = field(default_factory=list)      # 3.1: the codec rows pasted (for placements)
+    tick: int | None = None                       # the game tick after the paste
     dnp_kept: int = 0                  # built on DNP entities, kept standing (2.0.63)
     dnp_taken: int = 0                 # on DNP entities, ordered out: ghosts, and --confirm
     chunks: int = 0
@@ -146,15 +161,16 @@ class ApplyReport:
 
     def lines(self):
         a = ",".join(str(int(v)) for v in self.area)
-        head = (f"apply {self.surface} area {a} ({self.mode}, force {self.force}): {self.design} "
-                f"entities designed, {self.pasted} ghosts placed, {self.present} where designed")
+        head = (f"apply {self.surface} area {a} ({'free' if self.free else 'robots'}, force "
+                f"{self.force}): {self.design} entities designed, {self.pasted} ghosts placed, "
+                f"{self.present} where designed")
         out = [head]
-        if self.mode == "lab":
-            out.append(f"  lab: {self.chunks} chunks generated, {self.seeded} ore tiles seeded, "
+        if self.free:
+            out.append(f"  free: {self.chunks} chunks generated, {self.seeded} ore tiles seeded, "
                        f"{self.revived} revived, {self.revive_failed} not revivable"
                        + (f", paste corrected by {self.corrected}" if self.corrected else ""))
         else:
-            out.append(f"  play: {self.decon} unowned entities ordered for deconstruction"
+            out.append(f"  robots: {self.decon} unowned entities ordered for deconstruction"
                        + (f" ({self.dropped} of them the toolkit's own, dropped from the design)"
                           if self.dropped else "") + "; robots build the ghosts")
             if self.dnp_taken:
@@ -182,6 +198,10 @@ class ApplyReport:
             out.append(f"  {len(self.resettled)} with new settings a paste can't write (a ghost, "
                        "a drill, an offshore pump): ordered out, and the paste lays them fresh "
                        "with the new ones")
+        if self.refused:
+            out.append(f"  mismatch: {len(self.refused)} design tiles have something standing on "
+                       "them the toolkit did not paste; refused (not pasted), the rest went:")
+            out += [f"    {c.line()}" for c in self.refused]
         out += self.change_lines()
         if self.turned:
             shown = ", ".join(k.split(":", 1)[-1] for k in self.turned[:6])
@@ -228,10 +248,6 @@ class ApplyReport:
 
 def _local(key):
     return (key or "").split(":", 1)[-1]
-
-
-def force_for(mode):
-    return "lab" if mode == "lab" else "player"
 
 
 def scope_rows(s, area=None, keys=None, dnp=False):
@@ -376,14 +392,15 @@ def single_ghosts(rows, s, cat, refused, poles=None):
 
 
 def diff(r, s, cat, area, policy, net_items=None, tag="diff", own=None, force=None,
-         confirm=False):
+         confirm=False, placements=None):
     """Snapshot ``area`` and judge it against the design: a ``sense.SenseReport``. With
     ``force`` (2.0.12), the standing entities' settings too (``fkcore.settings``): those that
     differ from the design's are in the report's ``settings``, and so in its hand edits.
-    ``confirm`` (2.0.63): what stands on a DNP entity is taken up (``sense``)."""
+    ``confirm`` (2.0.63): what stands on a DNP entity is taken up (``sense``). ``placements``
+    (3.1): the registry's records that explain what stands (``placements.explaining``)."""
     live = scene.from_capture(link.snapshot(r, s.name, area, tag))
     rep = sense.sense(s, live, cat, list(area), policy, net_items=net_items, own=own,
-                      confirm=confirm)
+                      confirm=confirm, placements=placements)
     if force is not None:
         try:
             have = settingsmod.read(r, s.name, force, area, f"{tag}-settings")
@@ -396,26 +413,37 @@ def diff(r, s, cat, area, policy, net_items=None, tag="diff", own=None, force=No
     return rep
 
 
-def apply(r, s, cat, area=None, mode="play", force=None, label=None, policy=None, keys=None,
-          net_items=None, tag="apply", seed=True, own=None, confirm=False) -> ApplyReport:
+def apply(r, s, cat, area=None, free=False, force=None, label=None, policy=None, keys=None,
+          net_items=None, tag="apply", seed=True, own=None, confirm=False,
+          placements=None) -> ApplyReport:
     """Paste the design inside ``area`` (default: all of ``s``, and the toolkit's own entities it
-    dropped) as one named blueprint. ``own``: the record of what the applies pasted."""
+    dropped) as one named blueprint. ``free``: the surface's property (ghosts revived by Lua,
+    nothing built by robots). ``own``: the record of what the applies pasted. ``placements``
+    (3.1): the registry's records that are not this design's (``placements.explaining``); a
+    design tile something else stands on is a MISMATCH, refused (``refused``)."""
     t0 = time.time()
     given = area
     rows = scope_rows(s, area, keys)
     if area is None:
         area = default_area(s, cat, keys, own)
-    force = force or force_for(mode)
-    rep = ApplyReport(s.name, force, mode, tuple(area or (0, 0, 0, 0)), design=len(rows))
+    force = force or DEFAULT_FORCE
+    rep = ApplyReport(s.name, force, bool(free), tuple(area or (0, 0, 0, 0)), design=len(rows))
     if area is None:
         rep.notes.append("nothing designed in this scope")
         return rep
     standing = []
     poles = design_poles(s, cat)
     upped = {}
-    if mode != "lab" and policy is not None:
+    if not free and policy is not None:
         before = diff(r, s, cat, area, policy, net_items, tag=f"{tag}-before", own=own,
-                      force=force, confirm=confirm)
+                      force=force, confirm=confirm, placements=placements)
+        # 3.1: a design tile something stands on that the toolkit did not paste is refused: its
+        # row leaves the paste, and one line says what stands there and whose it is
+        rep.refused = sense.conflicts(before)
+        bad = {c.key for c in rep.refused}
+        if bad:
+            rows = [row for row in rows if row["src"] not in bad]
+            rep.design = len(rows)
         rep.dnp_kept = sum(1 for v in before.verdicts if v.verdict == "dnp-standing")
         rep.dnp_taken = sum(1 for v in before.verdicts if v.verdict == "unowned"
                             and v.key and v.detail.startswith(("DNP", "a ghost of a DNP")))
@@ -436,7 +464,8 @@ def apply(r, s, cat, area=None, mode="play", force=None, label=None, policy=None
         asked = {c["key"] for c in cands}
         rep.fresh += [(v.key, f"{v.detail.replace(' stands there', '')} stood on its tiles")
                       for v in before.verdicts if v.verdict == "other-entity"
-                      and v.key not in asked and any(not u[4] for u in v.under)]
+                      and v.key not in asked and v.key not in bad
+                      and any(not u[4] for u in v.under)]
         gone = [v for v in before.verdicts if v.verdict == "unowned"
                 and (v.name, v.x, v.y) not in held and (v.name, v.x, v.y) not in upped]
         # the toolkit's own that still stand stay in the record: ordered out, held up or upgrading
@@ -476,10 +505,11 @@ def apply(r, s, cat, area=None, mode="play", force=None, label=None, policy=None
                 rep.written.append((d.key, "set back from a hand edit"))
         rep.own = ownmod.update(own, s, cat, None if given is None else area, keys, standing)
     if not rows:
-        rep.notes.append("nothing designed in this scope")
+        rep.notes.append("nothing designed in this scope" if not rep.refused else
+                         "nothing pasted: every designed tile in this scope is a mismatch")
         rep.seconds = time.time() - t0
         return rep
-    if mode == "lab":
+    if free:
         rep.chunks = int(r.lua(link.lua_generate_area(s.name, force, area)).strip() or 0)
         ore = {}
         for e in s.entities.values():
@@ -495,7 +525,9 @@ def apply(r, s, cat, area=None, mode="play", force=None, label=None, policy=None
     at = _anchor(rows, cat)
     rep.pasted = _int(link.paste(r, s.name, force, bp, at))
     want = {(row["name"], float(row["x"]), float(row["y"])) for row in rows}
+    rep.rows = rows
     cap = link.snapshot(r, s.name, area, f"{tag}-ghosts")
+    rep.tick = cap.get("tick") if isinstance(cap, dict) else None
     # an entity ordered up stands for its design entity until robots swap it
     up_now = {(c["new"], float(c["x"]), float(c["y"])) for (o, x, y), c in upped.items()
               if any(t["n"] == o and float(t["x"]) == float(x) and float(t["y"]) == float(y)
@@ -504,7 +536,7 @@ def apply(r, s, cat, area=None, mode="play", force=None, label=None, policy=None
     rep.present = len(want & (set(seen) | up_now))
     ghosts = {k for k, gs in seen.items() if any(gs)}
     stray = ghosts - want
-    if stray and mode == "lab" and rep.present < len(want):
+    if stray and free and rep.present < len(want):
         shift = _shift(stray, want)
         if shift:
             r.lua(link.lua_destroy(s.name, area, names=["entity-ghost"]))
@@ -514,10 +546,10 @@ def apply(r, s, cat, area=None, mode="play", force=None, label=None, policy=None
             seen = _things(cap)
             rep.present = len(want & set(seen))
             stray = {k for k, gs in seen.items() if any(gs)} - want
-    if mode != "lab":
+    if not free:
         rep.misplaced = len(stray)
     placed = _placed(cap) | up_now
-    if mode != "lab" and not rep.misplaced:
+    if not free and not rep.misplaced:
         # what the paste left turned goes, and its single ghost takes its place (2.0.5)
         bad = turned_rows(rows, cap, cat)
         if bad:
@@ -540,8 +572,13 @@ def apply(r, s, cat, area=None, mode="play", force=None, label=None, policy=None
         if rep.placed_alone:
             seen = _things(link.snapshot(r, s.name, area, f"{tag}-ghosts"))
             rep.present = len(want & (set(seen) | up_now))
-    if mode == "lab":
-        got = r.lua(link.lua_revive(s.name, area)).split()
+    if free:
+        said = r.lua(link.lua_revive(s.name, area))
+        got = said.split()
+        # 2.1.31: a game error ("Cannot execute command ...") stopped the build after its route
+        if got and not all(g.isdigit() for g in got[:2]):
+            rep.notes.append(f"revive: {said.strip()}")
+            got = []
         rep.revived = int(got[0]) if got else 0
         rep.revive_failed = int(got[1]) if len(got) > 1 else 0
     # 2.1: the wires as the design has them, quietly (the hand edits above named any made by hand)
@@ -563,15 +600,17 @@ def _skips(name):
 
 def upgrade_candidates(before, s):
     """What could go up to its design entity (2.1): a built entity of another name standing on a
-    design entity's position (``other-entity`` in the diff ``before``), not ordered out. ->
-    [{old, x, y, new, key, dir, ug}]."""
+    design entity's position (``other-entity`` in the diff ``before``), not ordered out. 3.1: the
+    toolkit's own only (the ``own`` record has it); anything else there is a MISMATCH, refused.
+    -> [{old, x, y, new, key, dir, ug}]."""
     out = []
     for v in before.verdicts:
-        if v.verdict != "other-entity":
+        if v.verdict != "other-entity" or v.owner:
             continue
         e = s.entities.get(v.key)
-        for name, x, y, _user, ghost, _mine in v.under:
-            if ghost or name == v.name or (float(x), float(y)) != (float(v.x), float(v.y)):
+        for name, x, y, _user, ghost, mine in v.under:
+            if ghost or not mine or name == v.name \
+                    or (float(x), float(y)) != (float(v.x), float(v.y)):
                 continue
             out.append({"old": name, "x": float(x), "y": float(y), "new": v.name, "key": v.key,
                         "dir": e.dir if e is not None else None,
@@ -612,7 +651,6 @@ rcon.print(helpers.table_to_json(out))
 
 
 #: why an old roboport is not held up (2.1.3)
-MOVED_OUT = "the toolkit's own, moved or dropped in the design"
 STOCK_OUT = "since the network holds too few roboports to build the design's: theirs build them"
 
 
@@ -690,18 +728,17 @@ def _upgrade(r, surface, force, cands, batch=40):
 
 
 def _released(before, s, cat, area, held):
-    """{why: how many} of the built unowned roboports :func:`scaffold` would have held before
-    2.1.3 and orders out now."""
-    old = scaffold(before, s, cat, area, moved=False)
+    """{why: how many} of the built unowned roboports :func:`scaffold` would have held but for
+    the stock rule (2.1.3) and orders out now."""
+    old = scaffold(before, s, cat, area)
     out = {}
     for v in before.verdicts:
         if (v.name, v.x, v.y) in old and (v.name, v.x, v.y) not in held:
-            why = MOVED_OUT if v.action == "own" else STOCK_OUT
-            out[why] = out.get(why, 0) + 1
+            out[STOCK_OUT] = out.get(STOCK_OUT, 0) + 1
     return out
 
 
-def scaffold(before, s, cat, area, stock=None, moved=True):
+def scaffold(before, s, cat, area, stock=None):
     """What an apply leaves standing for now (1.7, Rory 2026-10-21: old poles and roboports stay
     up until the new grid stands, so a rebuild doesn't cut power or the robot network; both
     overnight players lost power to a re-laid grid): the built ``unowned`` poles and roboports on
@@ -709,12 +746,13 @@ def scaffold(before, s, cat, area, stock=None, moved=True):
     yet (a ghost, missing, or under something else). One under a design tile goes as before (the
     paste needs its ground). ``before``: the diff before the paste. -> {(name, x, y)}.
 
-    2.1.3: a roboport the design moved or dropped (the toolkit's own) is never held: it goes as
-    any unowned entity does (the 10-31 run's moved roboports stood after two applies; ``moved``
-    False keeps the 1.7 rule). ``stock``: {roboport name: items in the network} for the design's
-    roboports waiting; no old roboport is held while the network holds fewer than they need: the
-    old ones are taken up first and their items build the new (10-29: the replacements waited as
-    ghosts for the scaffold's own items, a deadlock)."""
+    3.1 (Rory 11-08): a roboport the design moved or dropped is held like any other old one
+    (2.1.3 had ordered the toolkit's own moved roboports out at once, a rule read off the own
+    record: the design says where roboports go, what stands is a difference, and the 1.7 rule
+    holds it until the design's own stand). ``stock``: {roboport name: items in the network} for
+    the design's roboports waiting; no old roboport is held while the network holds fewer than
+    they need: the old ones are taken up first and their items build the new (10-29: the
+    replacements waited as ghosts for the scaffold's own items, a deadlock)."""
     def kind(name):
         return _kind(cat, name)
 
@@ -733,8 +771,6 @@ def scaffold(before, s, cat, area, stock=None, moved=True):
     out = set()
     for v in before.verdicts:
         if v.verdict != "unowned" or v.ghost or kind(v.name) not in waiting:
-            continue
-        if moved and kind(v.name) == "roboport" and v.action == "own":
             continue
         tiles = {tuple(t) for t in cat.tiles(v.name, float(v.x), float(v.y), 0)}
         if not tiles & taken:

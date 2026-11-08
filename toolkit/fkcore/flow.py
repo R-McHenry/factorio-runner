@@ -41,8 +41,8 @@ reach. They are checks, never gates. With a terrain, a lab ``apply`` seeds no or
 the terrain's.
 
 ``diff`` and ``apply`` use the game link (``fkcore.link``: RCON, 5 s per call; the
-surface file's name is the game surface, its mode picks the force and the rules, see
-``fkcore.apply``). The link is used only when ``FK_LINK=on`` is set (so a paper game run on the
+surface file's name is the game surface, its ``force`` and ``free`` properties pick whose the
+paste is and whether Lua revives it, see ``fkcore.apply``). The link is used only when ``FK_LINK=on`` is set (so a paper game run on the
 game host never pastes by accident); without it, or with no RCON password file or nothing
 listening, they report that they were skipped. Apart from those two steps it is pure: it reads
 the game codebase and writes ``out/`` and, in write_layout, the ``.fkp`` files.
@@ -57,9 +57,12 @@ import shlex
 import time
 from dataclasses import dataclass, field
 
+from . import arms as armsmod
 from . import avail as availmod
+from . import compiled as compiledmod
 from . import compose, connect, design, expand, fkp, placer, rates, route, snapshot
 from . import own as ownmod
+from . import placements as placementsmod
 from . import pack as packmod
 from . import surface as surfacemod
 from . import terrain as terrainmod
@@ -113,6 +116,7 @@ class Ctx:
     source: dict = field(default_factory=dict)       # {source file: sha1} as the run began
     echo: object = None                              # the run's echo, for a long step's progress
     models: dict = field(default_factory=dict)       # factory -> (flat, its rates.solve), reused
+    compiled: str | None = None                      # the compiled-module store (PLAN-3.0 §4)
 
     def model(self, factory):
         """The nominal rate model of ``flats[factory]``, solved once per flat (2.1.27: hands, tier
@@ -210,7 +214,6 @@ def _hands(ctx, o):
 
 
 _FORCE_FILE = "force.json"                           # in out/: the force's hands, by diff
-_STANDING_FILE = "standing.json"                     # in out/: the poles built, by diff (2.0.1)
 _STAMP_FILE = "source.json"             # in out/<step>/: the source its checkpoint was laid from
 _LAID_FILE = "layout-source.json"       # in out/: the source write_layout's .fkp files came from
 #: the source files of a game codebase (beside the build script): what a layout is laid from.
@@ -305,54 +308,11 @@ def _save_hands(ctx, r):
     return 1 + a, 1 + b
 
 
-def _save_standing(ctx, rep, roboports=None):
-    """The poles the diff finds built (ok) in ``out/standing.json``, updated over the diff's
-    scope and kept elsewhere: the next build's cover step runs where there is no game link, and
-    keeps a built pole of another kind than its own (2.0.1). ``roboports`` (2.1.3): every roboport
-    that stands with power, [[x, y, logistic radius, construction radius]], for the next build's
-    ``cover robots`` (kept as it was when this diff read none)."""
-    path = os.path.join(ctx.out, _STANDING_FILE)
-    poles, ports = {}, None
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as fh:
-            was = json.load(fh)
-        poles, ports = dict(was.get("poles") or {}), was.get("roboports")
-    if roboports is not None:
-        ports = [list(p) for p in roboports]
-    for v in rep.verdicts:
-        if not v.key or not ctx.cat.has_entity(v.name) \
-                or ctx.cat.kind(v.name) != "electric-pole":
-            continue
-        if v.verdict.split()[0] == "ok":
-            poles[v.key] = v.name
-        else:
-            poles.pop(v.key, None)
-    os.makedirs(ctx.out, exist_ok=True)
-    data = {"poles": dict(sorted(poles.items()))}
-    if ports is not None:
-        data["roboports"] = ports
-    with open(path, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(data, fh, indent=0)
-        fh.write("\n")
-
-
-def _standing_roboports(ctx):
-    """The roboports the last diff found standing with power, [(x, y, logistic radius,
-    construction radius)] in map coordinates, or None when no diff has said (2.1.3)."""
-    path = os.path.join(ctx.out, _STANDING_FILE)
-    try:
-        with open(path, encoding="utf-8") as fh:
-            ports = json.load(fh).get("roboports")
-    except (OSError, ValueError, AttributeError):
-        return None
-    if not isinstance(ports, list):
-        return None
-    return [tuple(float(v) for v in p[:4]) for p in ports if len(p) >= 4]
-
-
 def _read_roboports(ctx, r):
-    """The live read behind ``_standing_roboports`` and ``REACH``: [(x, y, logistic radius,
-    construction radius)], or None when the read fails."""
+    """The diff's live read of the roboports that stand with power, for ``REACH`` and
+    ``UNREACHED`` (the diff's and report_bom's business, this build only; 3.1: no cover step
+    reads it, see ``fk robots``): [(x, y, logistic radius, construction radius)], or None when the
+    read fails."""
     from . import link, robots
     tag = f"roboports-{os.getpid()}"
     try:
@@ -362,21 +322,6 @@ def _read_roboports(ctx, r):
         return None
     rows = got if isinstance(got, list) else list(got.values()) if isinstance(got, dict) else []
     return [tuple(float(v) for v in p[:4]) for p in rows if len(p) >= 4]
-
-
-def _standing(ctx, factory):
-    """The keys (``power/p3``) of ``factory``'s poles the last diff found built, or None when no
-    diff has said (then a pole of another kind is never kept, as before)."""
-    path = os.path.join(ctx.out, _STANDING_FILE)
-    if ctx.surface is None or not os.path.exists(path):
-        return None
-    try:
-        with open(path, encoding="utf-8") as fh:
-            poles = json.load(fh).get("poles") or {}
-    except (OSError, ValueError):
-        return None
-    head = f"{ctx.surface.name}:{factory}/"
-    return {k[len(head):] for k in poles if k.startswith(head)}
 
 
 def _factories(ctx):
@@ -397,9 +342,10 @@ def s_read_surface(ctx, args):
     path = os.path.join(ctx.root, f"{name}.surface")
     ctx.surface = surfacemod.load(path)
     sf = ctx.surface
-    lines = [f"surface {sf.name}: mode {sf.mode}, terrain {sf.terrain}, catalog {sf.catalog}, "
-             f"notify {sf.notify_mode}, watch plots {sf.watch['plots']} / sanctioned "
-             f"{sf.watch['sanctioned']}"]
+    lines = [f"surface {sf.name}: {'free, ' if sf.free else ''}force {sf.force_name}, terrain "
+             f"{sf.terrain}, catalog {sf.catalog}, notify {sf.notify_mode}, watch plots "
+             f"{sf.watch['plots']} / sanctioned {sf.watch['sanctioned']}"]
+    lines += [f"  note: {n}" for n in sf.notes]
     if sf.design:
         lines.append(f"design {sf.design}: {len(sf.places)} plots from its top-level sealed "
                      f"instances" + (f" (the {len(sf.lines_places)} place lines are not read "
@@ -457,6 +403,9 @@ def _plot_ground(t, p):
     parts = [f"{sum(1 for b in t.water if inside(b))} water",
              f"{sum(1 for b in t.cliff_tiles if inside(b))} cliff",
              f"{sum(1 for b in t.other if inside(b))} other blocked tiles"]
+    if t.entities_read is not None:
+        parts.append(f"{sum(1 for b in t.entities if inside(b))} standing-entity tiles "
+                     "(read-terrain --entities)")
     for res, ps in sorted(t.patches.items()):
         held = [(pt.n, sum(1 for tile in pt.tiles if inside(tile))) for pt in ps]
         held = [(n, k) for n, k in held if k]
@@ -928,6 +877,50 @@ def _one_inserter(ctx, factory, flat, lay):
             "only what the sink accepts: no CLOG" for n in sorted(clear)]
 
 
+def _power_units(ctx, factory, lay):
+    """2.1.35: the sealed modules of ``factory`` as cover units, innermost first:
+    [(path, frame, (kind, rot))]; [] for a layout without them."""
+    flat = ctx.flats.get(factory)
+    if flat is None or not getattr(flat, "sealed", None):
+        return []
+    from .expand import frame_of
+    out = []
+    for path in flat.sealed:
+        rec = lay.insts.get(path)
+        if rec is None or path not in flat.insts:
+            continue
+        try:
+            box = tuple(int(v) for v in frame_of(flat, lay, path, ctx.cat))
+        except Exception:            # a frame the fragment can't size: the last pass covers it
+            continue
+        out.append((path, box, (rec.kind, int(rec.rot or 0) % 4)))
+    out.sort(key=lambda u: (-u[0].count("/"), u[0]))
+    return out
+
+
+def _empty_slots(ctx, factory, lay):
+    """2.1.34: the tiles of every sealed module that holds nothing (a slot a paste will fill, as
+    the megabase grid's bay slots are): cover power keeps its poles out of them, so the paste
+    finds its frame empty. -> frozenset of tiles."""
+    flat = ctx.flats.get(factory)
+    if flat is None or not getattr(flat, "sealed", None):
+        return frozenset()
+    from .expand import frame_of
+    full = {e.key.split("/")[:-1] and "/".join(e.key.split("/")[:-1]) for e in lay.entities.values()}
+    tiles = set()
+    for path in flat.sealed:
+        if path not in lay.insts or path not in flat.insts:
+            continue
+        if any(o == path or o.startswith(path + "/") for o in full if o):
+            continue
+        try:
+            x0, y0, x1, y1 = frame_of(flat, lay, path, ctx.cat)
+        except Exception:            # a frame the fragment can't size: leave it to the poles
+            continue
+        tiles |= {(x, y) for x in range(x0, x1) for y in range(y0, y1)}
+    return frozenset(tiles)
+
+
 def _frame_blocked(ctx, factory, size):
     """The terrain's blocked tiles in ``factory``'s frame (empty on a paper surface)."""
     if ctx.ground is None or ctx.surface is None or factory not in ctx.surface.places:
@@ -968,6 +961,22 @@ def _ribbon_ug(word):
     return "yellow", None
 
 
+def _pipe(ctx, word, lines):
+    """(pipe, pipe-to-ground) for ``route --pipe`` (a material or a pipe entity; empty: the
+    pack's default, else iron); an unresearched one falls back to iron, with a line."""
+    from . import fluid_route as fluidmod
+    try:
+        pipe = fluidmod.material(word, ctx.cat)
+    except ValueError as exc:
+        raise FlowError(str(exc)) from None
+    if pipe[0] != fluidmod.PIPE and (availmod.locked(pipe[0]) or availmod.locked(pipe[1])):
+        lines.append(f"pipe: {pipe[0]} is not researched here: iron pipes instead")
+        return fluidmod.PIPE, fluidmod.PTG
+    if pipe[0] != fluidmod.PIPE:
+        lines.append(f"pipe: {pipe[0]} and {pipe[1]}")
+    return pipe
+
+
 def s_route(ctx, args):
     # 3.0: the routing policy is the build script's: --group-budget S (a failed net's group try,
     # 0 = every net once and alone), --group-max N, --first NET,... (patterns too: mall/*), and
@@ -976,22 +985,37 @@ def s_route(ctx, args):
     # stands, or loses it), --area X0,Y0,X1,Y1 (only the nets there are routed; the rest stand)
     o = _opts(args, only="all", effort="normal", hand="any", module="", again="", ug="any",
               m2m=False, group_budget=route.GROUP_BUDGET, group_max=route.GROUP_MAX, first="",
-              skip="", retry_failed="changed", failed="keep", area="", **{"try": ""})
+              skip="", retry_failed="changed", failed="keep", area="", compiled="yes",
+              reuse_lab=False, compile="", pipe="", store="", **{"try": ""})
     if o["try"]:
         return _route_try(ctx, str(o["try"]))
+    if o["compile"]:
+        return _route_compile(ctx, str(o["compile"]), str(o["hand"]))
     if o["retry_failed"] not in ("changed", "always", "never"):
         raise FlowError(f"route --retry-failed changed|always|never, got {o['retry_failed']!r}")
     if o["failed"] not in ("keep", "drop"):
         raise FlowError(f"route --failed keep|drop, got {o['failed']!r}")
     area = _area(o["area"]) if o["area"] else None
+    # 3.1, the one compile store (fkcore.compiled): the game folder's out/compiled (fk lab shares
+    # its game's); --store DIR elsewhere, --store none (or --compiled no) to lay every module
+    # afresh; --reuse-lab reads the lab builds' own stores too
+    store = str(o["store"]) or ctx.compiled or os.path.join(ctx.out, "compiled")
+    if store.lower() in ("none", "no", "off") or str(o["compiled"]) == "no":
+        store = None
+    else:
+        if not os.path.isabs(store):
+            store = os.path.join(ctx.root, store)
+        store = compiledmod.Store(store, more=_compiled_dirs(ctx, o["reuse_lab"]),
+                                  locked=availmod.locked)
     ctx.hand_requested = str(o["hand"])
     hand, _note = availmod.choose("hand", o["hand"], need=_need(ctx, "inserter"))
     limit, retries = (400000, None) if o["effort"] == "high" else (60000, None)
     lines, checks = [], []
     ug, ug_note = _ribbon_ug(str(o["ug"]))
+    pipe = _pipe(ctx, o["pipe"], lines)
     for factory, lay in list(ctx.layouts.items()):
         flat = ctx.flats[factory]
-        pinned, again = {}, {}
+        pinned, again, comp = {}, {}, {}
         if o["module"]:
             if o["module"] not in flat.insts or o["module"] not in flat.sealed:
                 lines.append(f"{factory}: --module {o['module']} is not a sealed instance here")
@@ -1077,7 +1101,7 @@ def s_route(ctx, args):
             return rec["ents"] if rec and rec["status"] == "held" else None
         try:
             r = route.route_layout(flat, lay, ctx.cat, limit=limit, retries=retries,
-                                   blocked=blocked, hand=hand, patch=pinned, ug=ug,
+                                   blocked=blocked, hand=hand, patch=pinned, ug=ug, pipe=pipe,
                                    m2m="left" if o["m2m"] == "left"
                                    else o["m2m"] not in (False, "no"),
                                    group_budget=float(o["group_budget"]),
@@ -1089,7 +1113,7 @@ def s_route(ctx, args):
                                                  if o["again"] else set()) | inside),
                                    on_net=on_net, on_reach=on_reach,
                                    seeds={n: s for n, s in seeds.items() if n not in pinned},
-                                   retry=str(o["retry_failed"]))
+                                   retry=str(o["retry_failed"]), store=store)
         finally:
             route.PROGRESS = saved
             design.clear_now(ctx.out, factory)
@@ -1100,13 +1124,18 @@ def s_route(ctx, args):
             lines += [f"  standing  {n}: unrouted; its last route ({k} carriers) stands until it "
                       f"routes (route --failed keep)" for n, k in sorted(standing.items())]
         _write_nets(ctx, factory, r, held, seeds, stood)
+        # 3.1: what the compile store did for each sealed unit (route.Routed.compiled)
+        comp = {n for c in r.compiled.values() if c["from"] == "store" for n in c["nets"]}
+        lines += _compiled_lines(factory, r)
         r.layout, rehanded = _rehand(r.layout, ctx.cat, hand)
         dnp = route.tag_dnp(flat, r.layout, ctx.cat)
         again.update(r.again)
         ctx.layouts[factory] = r.layout
         lines.append(f"{factory}: {len(r.routed)} routed, {len(r.kept)} kept"
                      + (f", {len(r.patched)} patched" if r.patched else "")
-                     + f" ({len(pinned)} pinned from the committed .fkp), {len(r.failed)} failed, "
+                     + f" ({len(pinned)} pinned from the committed .fkp"
+                     + (f", {len(comp)} laid from the compiled store" if comp else "")
+                     + f"), {len(r.failed)} failed, "
                      f"{r.passes} pass{'es' if r.passes != 1 else ''}"
                      + (f"; {len(blocked)} terrain tiles kept clear" if ctx.ground is not None
                         else ""))
@@ -1129,6 +1158,79 @@ def s_route(ctx, args):
     if ug_note and any(ln.lstrip().startswith("ribbon ") for ln in lines):
         lines.append(f"  {ug_note}")
     return lines, checks
+
+
+def _route_compile(ctx, module, hand_word):
+    """``route --compile MODULE`` (``fk compile MODULE``): every placed sealed instance of MODULE
+    routed alone (its own nets and its children's, the router's compile units) and stored in
+    the one compile store (fkcore.compiled); a twin routes once. Nothing else is laid, written
+    or pasted."""
+    hand, _note = availmod.choose("hand", hand_word, need=_need(ctx, "inserter"))
+    store = compiledmod.Store(ctx.compiled or os.path.join(ctx.out, "compiled"),
+                              locked=availmod.locked)
+    lines = []
+    for factory, lay in ctx.layouts.items():
+        flat = ctx.flats[factory]
+        mine = sorted(p for p in lay.insts if p in flat.sealed and p in flat.insts
+                      and (flat.insts[p].module or flat.insts[p].kind) == module)
+        if not mine:
+            lines.append(f"{factory}: compile: no sealed instance of {module} is placed here")
+            continue
+        inside = {n for n in flat.nets if any(n.startswith(p + "/") for p in mine)}
+        began = time.time()
+        r = route.route_layout(flat, lay, ctx.cat, hand=hand, pipe=_pipe(ctx, "", []),
+                               blocked=_frame_blocked(ctx, factory, lay.size),
+                               skip=[n for n in flat.nets if n not in inside], store=store)
+        took = time.time() - began
+        for path in mine:
+            c = r.compiled.get(path)
+            if c is None:
+                lines.append(f"{factory}: compile {path}: no net of its own to route")
+            elif c["from"] == "store":
+                lines.append(f"{factory}: compile {path}: already compiled ({module} {c['key']})")
+            elif c["from"] and c["from"].startswith("twin "):
+                lines.append(f"{factory}: compile {path}: the same inside as {c['from'][5:]}")
+            elif c["stored"]:
+                lines.append(f"{factory}: compile {path}: {len(c['nets'])} nets routed and stored "
+                             f"({module} {c['key']}, {took:.1f} s); the next build lays them "
+                             "from there")
+            else:
+                failed = sorted(n for n in r.failed if n in c["nets"])
+                lines.append(f"{factory}: compile {path}: {len(failed)} of {len(c['nets'])} nets "
+                             f"did not route ({', '.join(failed)}), not stored ({took:.1f} s)")
+        lines += [f"{factory}: {ln}" for ln in r.lines if ln.startswith("compiled  old")]
+    return lines, []
+
+
+def _compiled_lines(factory, r):
+    """The route step's lines on the compile store: what each sealed unit was laid from, the
+    entries written, the entries refused (an entity the force can't build)."""
+    lines = []
+    for path, c in sorted(r.compiled.items()):
+        if c["from"] == "store":
+            lines.append(f"{factory}: compiled  {path}: {len(c['nets'])} nets laid from the store "
+                         f"({c['module']} {c['key']})")
+        elif c["refused"]:
+            lines.append(f"{factory}: compiled  {path}: its stored entry ({c['module']}) holds "
+                         f"{', '.join(c['refused'])}, not researched here: routed again")
+    stored = sorted(p for p, c in r.compiled.items() if c["stored"])
+    if stored:
+        lines.append(f"{factory}: compiled  stored {', '.join(stored)} (out/compiled): laid from "
+                     "there wherever each stands next")
+    return lines
+
+
+def _compiled_dirs(ctx, lab):
+    """The stores the route step reads besides its own: with ``route --reuse-lab`` every lab
+    build's (``<run>/lab/<name>/out/compiled``, fkcore.lab; a lab build of the game folder
+    writes the game's own store, so this is for a lab built elsewhere)."""
+    dirs = []
+    if lab:
+        labs = os.path.join(os.path.dirname(os.path.abspath(ctx.root)), "lab")
+        if os.path.isdir(labs):
+            dirs += [os.path.join(labs, d, "out", "compiled") for d in sorted(os.listdir(labs))
+                     if os.path.isdir(os.path.join(labs, d, "out", "compiled"))]
+    return dirs
 
 
 def _area(spec):
@@ -1350,7 +1452,7 @@ def s_tier(ctx, args):
     ``--downgrade`` (minimize and maximize may go below the tier a belt has; without it they
     never do), ``--hand N`` / ``--bulk-hand N`` (the inserter hand sizes, as for report_rates)."""
     from . import tiers
-    o = _opts(args, allow="yellow", hand="auto", bulk_hand="auto")
+    o = _opts(args, allow="yellow", hand="auto", bulk_hand="auto", all=False)
     mode = (o.get("_") or ["minimize"])[0]
     allow = [t.strip() for t in str(o["allow"]).split(",") if t.strip()] \
         if o["allow"] is not True else []
@@ -1366,7 +1468,8 @@ def s_tier(ctx, args):
         new, tlines, _changed = tiers.assign(ctx.flats[factory], lay, ctx.cat, mode, allow,
                                              budgets, hand=hand, bulk_hand=bulk,
                                              downgrade=o.get("downgrade") is True,
-                                             model=ctx.model(factory))
+                                             model=ctx.model(factory),
+                                             every=o.get("all") is True)
         ctx.layouts[factory] = new
         lines += [f"{factory}: {tlines[0]}"] + tlines[1:]
         checks += _invariant_checks(factory, fkp.invariants(new, ctx.cat))
@@ -1385,7 +1488,9 @@ def _own(prev, owner, prefix):
 def s_cover_power(ctx, args):
     """Poles for every electric entity (``fkcore.cover``). 1.7 (Rory, 2026-10-21: pin and patch):
     the committed poles stay where they still fit and new ones go only where coverage is missing;
-    ``--fresh`` lays every pole anew, as before."""
+    ``--fresh`` lays every pole anew, as before. 3.1 (Rory 11-08: the world never feeds a step):
+    what the diff found built does not reach here; a pinned pole of another kind than ``--pole``
+    is laid again in the new kind, and what stands is the diff's difference."""
     o = _opts(args, pole="medium-electric-pole")
     pole, _note = availmod.choose("pole", o["pole"], need=_need(ctx, "electric-pole"))
     if not ctx.cat.has_entity(pole) or ctx.cat.kind(pole) != "electric-pole":
@@ -1399,28 +1504,38 @@ def s_cover_power(ctx, args):
     from . import domains
     lines, checks = [], []
     for factory, lay in list(ctx.layouts.items()):
-        keep_out = _frame_blocked(ctx, factory, lay.size)
-        standing = _standing(ctx, factory)
+        keep_out = _frame_blocked(ctx, factory, lay.size) | _empty_slots(ctx, factory, lay)
         doms = domains.active(ctx.flats.get(factory))
         if doms is not None:
             # 2.1: two power lines or more are domains, each its own network (fkcore.domains)
             prev = ctx.previous.get(factory)
             new, dlines, dchecks = domains.cover_domains(
                 ctx.flats[factory], lay, ctx.cat, doms, pole, keep_out=keep_out,
-                pinned_of=lambda owner: [] if o.get("fresh") is True else _own(prev, owner, "p"),
-                standing=standing)
+                pinned_of=lambda owner: [] if o.get("fresh") is True else _own(prev, owner, "p"))
             ctx.layouts[factory] = new
             lines += [f"{factory}: {ln}" for ln in dlines]
             checks += [Check(c.code, f"{factory} {c.where}", c.msg) for c in dchecks]
             checks += _invariant_checks(factory, fkp.invariants(new, ctx.cat))
             continue
         pinned = [] if o.get("fresh") is True else _own(ctx.previous.get(factory), "power", "p")
-        poles, rep = cover.cover_power(lay, ctx.cat, pole=pole, keep_out=keep_out,
-                                       pinned=pinned, standing=standing)
+        units = [] if o.get("flat") is True else _power_units(ctx, factory, lay)
+        if units:
+            # 2.1.35 (Rory 11-07): poles in the hierarchy, as the routes are: each sealed module
+            # its own, alike modules alike, then one pass joins them. Laid fresh each build (a
+            # unit's poles depend only on what stands in it); ``--flat`` for the one-pass cover
+            pinned = []
+            poles, rep = cover.cover_power_units(lay, ctx.cat, units, pole=pole,
+                                                 keep_out=keep_out)
+        else:
+            poles, rep = cover.cover_power(lay, ctx.cat, pole=pole, keep_out=keep_out,
+                                           pinned=pinned)
         # 2.1.26: the poles just laid, not a second cover_power (the live world's took ~30 s each)
         new = cover.apply_cover(lay, ctx.cat, pole=pole, keep_out=keep_out, pinned=pinned,
-                                standing=standing, poles=poles)
+                                poles=poles)
         ctx.layouts[factory] = new
+        if units:
+            lines.append(f"{factory}: by unit: {rep.units[0]} sealed modules laid, "
+                         f"{rep.units[1]} took a twin's poles")
         lines.append(f"{factory}: {rep.summary()}"
                      + (f"; {len(keep_out)} terrain tiles kept out" if ctx.ground is not None
                         else ""))
@@ -1444,16 +1559,17 @@ def s_cover_robots(ctx, args):
     already reaches (the kit's roboport and every roboport joined to it) needs none (1.2). 1.7 (pin
     and patch): the committed roboports stay where they still fit and reach a chest; ``--fresh``
     places them all anew, as before. 3.0 (U5, Rory): no storage chest beside a roboport any more;
-    ``--storage`` is ignored with one line."""
+    ``--storage`` is ignored with one line. 3.1 (Rory 11-08): the roboports that stand in the
+    world never decide where new ones go (2.1.3's chain from the last diff's read is gone); the
+    design says, and ``fk robots`` reports what stands against it."""
     from . import robots
     o = _opts(args, roboport="roboport", storage=None)
-    if ctx.surface is not None and ctx.surface.mode == "lab":
-        return ["cover robots: lab mode revives the ghosts, no robots build here; nothing placed"], []
+    if ctx.surface is not None and ctx.surface.free:
+        return ["cover robots: a free surface revives its ghosts, no robots build here; nothing "
+                "placed"], []
     storage = None
     infra = _infra(ctx)
     places = ctx.surface.places if ctx.surface is not None else {}
-    # 2.1.3: new roboports only where one that stands builds them (the last diff's read)
-    standing = _standing_roboports(ctx)
     lines, checks = [], []
     if o["storage"] not in (None, "none", "off"):
         lines.append("cover robots: --storage is gone in 3.0 (no chest beside a roboport); ignored")
@@ -1463,16 +1579,12 @@ def s_cover_robots(ctx, args):
         prev = ctx.previous.get(factory)
         pinned = [] if o.get("fresh") is True else \
             _own(prev, "robots", "r")
-        reach = robots.in_frame(places, ctx.layouts, factory, standing)
         new, rep = robots.apply_robots(lay, ctx.cat, keep_out=keep_out, roboport=o["roboport"],
-                                       served=near, storage=storage, pinned=pinned, reach=reach)
+                                       served=near, storage=storage, pinned=pinned)
         ctx.layouts[factory] = new
         lines.append(f"{factory}: {rep.summary()}")
         checks += [Check(c.code, f"{factory} {c.where}", c.msg) for c in rep.checks]
         checks += _invariant_checks(factory, fkp.invariants(new, ctx.cat))
-    if standing is not None:
-        lines.append(f"  {len(standing)} roboports stand with power (the last diff): a new one "
-                     "goes only where they, or one laid in reach of them, build it")
     return lines, checks
 
 
@@ -1887,10 +1999,23 @@ def _bom_live(ctx):
                    and ctx.cat.kind(e.name) == "assembling-machine"})
     # the availability families too: this is the read the next (linkless) build's inserter=any,
     # --hand any and --pole any choose from (out/avail.json, beside out/force.json)
-    sup = supply.read(r, _force(ctx), ctx.surface.name, list(need) + list(availmod.CANDIDATES),
+    # 3.0: and every entity laid, and every one read before (it stays read): a compiled inside is
+    # only reused when none of its entities needs research (compiled.reuse, avail.locked)
+    laid = sorted({e.name for e in ctx.composed.entities.values()}) if ctx.composed else []
+    before = list(availmod.snapshot().sup.entities) if availmod.snapshot().sup else []
+    sup = supply.read(r, _force(ctx), ctx.surface.name,
+                      list(dict.fromkeys(list(need) + list(availmod.CANDIDATES) + laid + before)),
                       used)
     availmod.save(ctx.root, sup, "report_bom --stock live")
     lines, checks = supply.bom(need, sup, used)
+    # 3.0 (fair play): an inserter set to vectors the force has not researched (Bob's adjustable
+    # inserters: the GUI's own limits) waits on that research like an unresearched entity
+    for tech, keys in sorted(armsmod.locked(ctx.composed.entities.values() if ctx.composed
+                                            else (), armsmod.of(sup)).items()):
+        checks.append(Check("needs-research", f"inserter vectors ({tech})",
+                            f"{len(keys)} inserter{'s' if len(keys) != 1 else ''} "
+                            f"({', '.join(keys[:4])}{' ...' if len(keys) > 4 else ''}) reach "
+                            f"further or wider than the force may set: research {tech}"))
     lines = ([lines[0], f"  to build: {what}; {sum(need.values())} entities",
               f"  {supply.research_line(sup.research)}"] + lines[1:])
     # the first lead run (2026-10-21): a paste took up the burner row before the 137 belts its
@@ -1933,7 +2058,7 @@ def _reach(ctx):
     runs: a cover-robots roboport out of every area stood a ghost with the 47 entities it was to
     cover, and 26 ghosts of a big paste waited out of reach until the player found them."""
     from . import robots
-    if ctx.last_diff is None or ctx.roboports is None or ctx.surface.mode == "lab":
+    if ctx.last_diff is None or ctx.roboports is None or ctx.surface.free:
         return None
     rows = [(v.key, v.name, v.x, v.y) for v in ctx.last_diff.verdicts
             if v.verdict.split()[0] in _TO_LAY]
@@ -2144,17 +2269,14 @@ def s_diff(ctx, args):
     if area is None:
         return ["diff: nothing is designed on this surface"], []
     rep = applymod.diff(r, ctx.composed, ctx.cat, area, ctx.surface, _net_items(ctx), own=own,
-                        force=_force(ctx), confirm=bool(o["confirm"]))
+                        force=_force(ctx), confirm=bool(o["confirm"]),
+                        placements=_placements(ctx))
     try:
         _save_hands(ctx, r)            # for the next build's rates and tiers, on the laptop
     except Exception:                  # noqa: BLE001 - they fall back to hand 1, and say so
         pass
-    if ctx.surface.mode != "lab":
-        ctx.roboports = _read_roboports(ctx, r)
-    try:
-        _save_standing(ctx, rep, ctx.roboports)   # for the next build's cover steps, on the laptop
-    except (OSError, ValueError):
-        pass
+    if not ctx.surface.free:
+        ctx.roboports = _read_roboports(ctx, r)      # REACH and UNREACHED, this build only
     ghosts = sorted({v.name for v in rep.verdicts if v.verdict == "ghost"})
     if ghosts:
         from . import supply
@@ -2163,8 +2285,15 @@ def s_diff(ctx, args):
     checks = [Check("diff", ctx.surface.name, f"{k} {n}") for k, n in sorted(rep.counts().items())
               if k != "ok"]
     lines = rep.lines()
-    # 2.0 (Rory, 2026-10-21): a hand change the build would replace is said before the paste
     from . import sense
+    # 3.1 (Rory 11-08): a design tile something else stands on is a MISMATCH the apply refuses
+    bad = sense.conflicts(rep)
+    if bad:
+        lines.append(f"mismatch: {len(bad)} design tiles have something standing on them the "
+                     "toolkit did not paste; the apply refuses them and pastes the rest:")
+        lines += [f"  {c.line()}" for c in bad]
+        checks += [Check("mismatch", ctx.surface.name, c.line()) for c in bad]
+    # 2.0 (Rory, 2026-10-21): a hand change the build would replace is said before the paste
     hand = sense.hand_edits(rep)
     if hand:
         lines.append(f"hand: {len(hand)} hand edits that the apply would replace, remove or set "
@@ -2182,13 +2311,13 @@ def s_diff(ctx, args):
     if turned:
         lines.append(f"  {turned.msg}")
         checks.append(turned)
-    if ctx.surface.mode != "lab":
+    if not ctx.surface.free:
         far = _unreached(ctx, r, rep)
         if far:
             lines.append(f"  {far.msg}")
             checks.append(far)
     pts = applymod.rip_points(rep)
-    if pts and ctx.surface.mode != "lab":
+    if pts and not ctx.surface.free:
         # 1.1: what the apply will take up, and how long the robots need for it (before it starts)
         from . import link
         try:
@@ -2278,8 +2407,12 @@ def _unreached(ctx, r, rep, batch=80):
 
 
 def _force(ctx):
-    from .apply import force_for
-    return getattr(ctx.surface, "force", None) or force_for(ctx.surface.mode)
+    return ctx.surface.force_name
+
+
+def _placements(ctx):
+    """3.1: the registry's records that explain what stands and is not this design's own."""
+    return placementsmod.explaining(placementsmod.load(ctx.root, ctx.surface.name), ctx.composed)
 
 
 def s_apply(ctx, args):
@@ -2294,15 +2427,21 @@ def s_apply(ctx, args):
         return [f"apply: skipped, no game link ({ctx.link_error})"], []
     from . import apply as applymod
     area, keys = _scope(ctx, o)
-    rep = applymod.apply(r, ctx.composed, ctx.cat, area, mode=ctx.surface.mode,
-                         force=getattr(ctx.surface, "force", None), policy=ctx.surface,
+    rep = applymod.apply(r, ctx.composed, ctx.cat, area, free=ctx.surface.free,
+                         force=ctx.surface.force_name, policy=ctx.surface,
                          keys=keys, net_items=_net_items(ctx),
                          label=f"fk build {os.path.basename(ctx.script)}",
                          seed=ctx.ground is None, own=ownmod.load(ctx.root, ctx.surface.name),
-                         confirm=bool(o["confirm"]))
+                         confirm=bool(o["confirm"]), placements=_placements(ctx))
     if rep.own is not None:
         ownmod.save(ctx.root, ctx.surface.name, rep.own)
-    checks = []
+    if rep.rows:
+        # 3.1: one placement per factory in the paste (fkcore.placements), replaced on a rebuild
+        modules = {p.factory: p.module for p in ctx.surface.places.values()}
+        placementsmod.put_all(ctx.root, ctx.surface.name, placementsmod.from_apply(
+            ctx.composed, rep.rows, ctx.cat, modules, ctx.out, rep.tick,
+            f"fk build {os.path.basename(ctx.script)}"))
+    checks = [Check("mismatch", ctx.surface.name, c.line()) for c in rep.refused]
     if rep.hand:
         # 2.0: what this build replaced or removed that was placed by hand, for the player (the
         # Claude loop hands out/hand.txt's new lines to the lead the way it hands it chat)
@@ -2442,17 +2581,19 @@ def with_options(lines, extra):
                  ln.later) if ln.cmd in add else ln for ln in lines]
 
 
-def run(script, frm=None, to=None, cat=None, echo=print, link=None, extra=None) -> tuple:
+def run(script, frm=None, to=None, cat=None, echo=print, link=None, extra=None,
+        compiled=None) -> tuple:
     """Run ``script`` (a .fkb path). -> (exit code, Ctx). 0 = ran to the end (or to ``to``), 1 =
     stopped by a stop_on check, 2 = malformed script or source. ``link``: an open game link the
     steps use instead of opening their own (``fkcore.lab``, 2.0.3), and the caller closes.
-    ``extra``: options for this build only (``with_options``).
+    ``extra``: options for this build only (``with_options``). ``compiled``: the compiled-module
+    store the route step uses when its line names none (``fkcore.lab``: the game folder's).
 
     2.1.19: the whole build reads the source as it began (``fkcore.snapshot``). A file edited
     while it runs is left for the next build, and the build says which ones were."""
     with snapshot.held() as snap:
         try:
-            return _run(script, frm, to, cat, echo, link, extra)
+            return _run(script, frm, to, cat, echo, link, extra, compiled)
         finally:
             moved = snapshot.changed(snap)
             if moved:
@@ -2462,11 +2603,12 @@ def run(script, frm=None, to=None, cat=None, echo=print, link=None, extra=None) 
                      "build began; build again to lay the new source")
 
 
-def _run(script, frm, to, cat, echo, link, extra):
+def _run(script, frm, to, cat, echo, link, extra, compiled=None):
     root = os.path.dirname(os.path.abspath(script))
     with open(script, encoding="utf-8") as fh:
         lines = with_options(parse(fh.read(), script), extra)
     ctx = Ctx(root, script, cat or Catalog.load(), os.path.join(root, "out"))
+    ctx.compiled = compiled
     ctx.echo = echo
     availmod.use(root)          # what the game can build, as the host last read it (out/avail.json)
     if link is not None:

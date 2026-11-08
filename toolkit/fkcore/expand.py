@@ -37,6 +37,7 @@ import math
 import re
 from dataclasses import dataclass
 
+from . import arms as armsmod
 from . import avail as availmod
 from . import fkp as fkpmod
 from . import placer
@@ -80,8 +81,17 @@ def belts(flat, key, side):
     lane_of = getattr(flat, "lane_of", {}) if side == "in" else {}
     # 2.0.58: one item may come from several nets (a circuit assembler handed cable by two cable
     # assemblers, each its own net): a role per net, not only the first
-    pairs = [(item, lane_of.get(net, net)) for (k, item), nets in hold.items()
-             if k == key and item not in CONTACT for net in nets]
+    # 2.1.32: the hold indexed by machine once (a scan of it all for every machine was most of a
+    # megabase grid's route setup); rebuilt if the hold has changed size since
+    memo = flat.__dict__.setdefault("_hold_by_key", {})
+    got = memo.get(side)
+    if got is None or got[0] is not hold or got[1] != len(hold):
+        idx = {}
+        for (k, item), nets in hold.items():
+            idx.setdefault(k, []).append((item, nets))
+        got = memo[side] = (hold, len(hold), idx)
+    pairs = [(item, lane_of.get(net, net)) for item, nets in got[2].get(key, ())
+             if item not in CONTACT for net in nets]
     pairs.sort(key=lambda p: order.index(p[0]) if p[0] in order else len(order))
     out = []
     for item, net in pairs:
@@ -166,8 +176,17 @@ def _port_out(port, belt):
 
 def ports_of(flat, path):
     """The port keys an instance ``path`` has, sorted (its own ports, not a child's)."""
-    return sorted(k for k in flat.ports
-                  if k.startswith(path + "/") and "/" not in k[len(path) + 1:])
+    # 2.1.32: the keys indexed by their instance once (a scan of every port for every module was
+    # most of a megabase grid's fragments); rebuilt when the ports change
+    memo = flat.__dict__.get("_ports_by_inst")
+    if memo is None or memo[0] != len(flat.ports) or memo[1] is not flat.ports:
+        idx = {}
+        for k in flat.ports:
+            if "/" in k:
+                idx.setdefault(k.rsplit("/", 1)[0], []).append(k)
+        memo = flat.__dict__["_ports_by_inst"] = (len(flat.ports), flat.ports,
+                                                   {p: sorted(ks) for p, ks in idx.items()})
+    return list(memo[2].get(path, ()))
 
 
 def _port_choice(flat, key):
@@ -422,11 +441,20 @@ def _module_fragment(flat, path, cat):
         belt = _port_belt(port, out)          # the way the items cross the edge
         ox, oy = x + _STEP[out][0], y + _STEP[out][1]
         inside_role, outside_role = port.name, port.name + "!"
+        # 2.1.31: a paired port's nets are looked up by each of its items, so a net on its right
+        # lane alone binds it too (a line's far end whose left lane runs out there: the PU bay's
+        # red | processing-unit belt, whose units leave and whose red circuits end)
+        def held(hold):
+            for it in list(port.items or [None]) + list(port.right or []):
+                got = hold.get((key, it), [])
+                if got:
+                    return got
+            return []
         if port.dir == "in":
-            inner, outer = flat._out_hold.get((key, item), []), flat._in_hold.get((key, item), [])
+            inner, outer = held(flat._out_hold), held(flat._in_hold)
             inside_side, outside_side = "out", "in"
         else:
-            inner, outer = flat._in_hold.get((key, item), []), flat._out_hold.get((key, item), [])
+            inner, outer = held(flat._in_hold), held(flat._out_hold)
             inside_side, outside_side = "in", "out"
         roles[inside_role] = Role(inside_role, inside_side, [item] if item else [], [key],
                                   [(ox + 0.5, oy + 0.5, belt)])
@@ -479,6 +507,8 @@ def fragment_of(flat, path, cat):
         if kind == "SmelterArray":
             params["_per"] = _array_column(cat, m0)
         frag = fragment(kind, params, [b[1] for b in ins], [b[1] for b in outs])
+        if kind == "MinerRow" and _row_belt_leaves(flat, path, frag):
+            frag = _drills_only(frag)
         _row_modules(frag, flat, path, cat)
     binding = {}
     names_in = [r for r in frag.roles if frag.roles[r].side == "in"]
@@ -488,6 +518,54 @@ def fragment_of(flat, path, cat):
     for name, (net, _items) in zip(names_out, outs):
         binding[name] = net
     return frag, binding
+
+
+def _port_carriers(flat, path, ents):
+    """3.0, Literal ports: {carrier group net: the net its port is on}. A port's whole group of
+    touching pipes (or belts) carries the net that names the port, so the router keeps every
+    other net off it, as off any net's pipe."""
+    ports = getattr(flat, "_lit_ports", {}).get(path)
+    if not ports:
+        return {}
+    group = {e.key: e.attrs.get("net") for e in ents}
+    out = {}
+    for key, _side in ports.values():
+        nets = {n for hold in (getattr(flat, "_out_hold", {}), getattr(flat, "_in_hold", {}))
+                for (k, _i), ns in hold.items() if k == key for n in ns}
+        if len(nets) == 1 and group.get(key):
+            out[group[key]] = nets.pop()
+    return out
+
+
+def _row_belt_leaves(flat, path, frag):
+    """3.0 (drills in cells): True when a MinerRow's own out belt would run out of the frame its
+    module declares (``size WxH``): a drill in a cell, where the cell's through-belt is the
+    drills' belt. A row anywhere else keeps its belt."""
+    if "/" not in path:
+        return False
+    parent = flat.insts.get(path.rsplit("/", 1)[0])
+    hint = flat.insts[path].hints.get("at")
+    if parent is None or parent.size is None or hint is None:
+        return False
+    w, h = parent.size
+    for ax, ay, ad in frag.roles["out"].attach:
+        x, y, d = turn(float(ax), float(ay), ad, int(hint[2]) % 4, frag.size)
+        hd = int(d) // 4
+        tx = math.floor(x + hint[0]) + (0, 1, 0, -1)[hd]
+        ty = math.floor(y + hint[1]) + (-1, 0, 1, 0)[hd]
+        if not (0 <= tx < w and 0 <= ty < h):
+            return True
+    return False
+
+
+def _drills_only(frag):
+    """A MinerRow without its belt: its drills drive the out net by dropping on their drop tiles,
+    and the router lays the belt over them (``route.DropSink``)."""
+    ents = [e for e in frag.entities if e.role != "out"]
+    out = frag.roles["out"]
+    roles = dict(frag.roles, out=Role("out", "out", out.items, out.machines,
+                                       [(frag.size[0] / 2, frag.size[1] / 2, None)]))
+    return _finish(Fragment(frag.kind, dict(frag.params), ents, roles, frag.size))
 
 
 #: the module inventory of each machine kind, as the paste's ``items`` names it (2.0)
@@ -680,6 +758,114 @@ def _param_text(v):
     return str(v)
 
 
+#: 3.0.1 (Rory, 2026-11-08: "everything should be done by origins"): ``@(x, y, rot r)`` puts the
+#: instance's own origin, its (0, 0), at (x, y) and turns its contents r quarter turns clockwise
+#: about that point. A turned module that grows keeps every piece where it was; before 3.0.1 the
+#: turned frame's top-left corner landed on (x, y), so a turned module that grew moved all its
+#: contents. A single machine (a Pump, a Chest) can't grow: its (x, y) stays its top-left tile,
+#: turned or not, as in the game. False: the 3.0.0 reading (``fk migrate-origins`` reads the old
+#: hints with it).
+ORIGIN_HINTS = True
+
+
+def _turn_offset(rot, w, h):
+    """What ``compose.turn`` adds to a turn about the origin, for a frame of w x h."""
+    return ((0, 0), (h, 0), (w, h), (0, w))[rot % 4]
+
+
+def _about_origin(x, y, rot):
+    """(x, y) turned ``rot`` quarter turns clockwise about (0, 0)."""
+    for _ in range(rot % 4):
+        x, y = -y, x
+    return x, y
+
+
+def corner_hint(hint, frame):
+    """An origin hint (x, y, rot) of an instance whose own frame is ``frame`` (x0, y0, x1, y1, in
+    its unturned coordinates) -> the corner hint the layout code places by: the one that puts
+    every point p of the instance where turning p about its origin and moving it by (x, y) does."""
+    x, y, rot = hint
+    rot = int(rot) % 4
+    if not rot:
+        return hint
+    fx, fy = frame[0], frame[1]
+    rx, ry = _about_origin(fx, fy, rot)
+    sx, sy = _turn_offset(rot, frame[2] - fx, frame[3] - fy)
+    return _clean(x + rx - fx - sx), _clean(y + ry - fy - sy), hint[2]
+
+
+def origin_hint(hint, frame):
+    """The inverse of ``corner_hint``: a corner hint -> the origin hint that places the same."""
+    x, y, rot = hint
+    rot = int(rot) % 4
+    if not rot:
+        return hint
+    fx, fy = frame[0], frame[1]
+    rx, ry = _about_origin(fx, fy, rot)
+    sx, sy = _turn_offset(rot, frame[2] - fx, frame[3] - fy)
+    return _clean(x - rx + fx + sx), _clean(y - ry + fy + sy), hint[2]
+
+
+def literal_frame(inst):
+    """A Literal's frame (x0, y0, x1, y1) in its file's coordinates."""
+    _ents, (w, h), (fx, fy) = inst.literal[:3]
+    return fx, fy, fx + w, fy + h
+
+
+def turns_in_place(inst):
+    """A single machine: its hint is its top-left tile at every rot (it has no frame to grow)."""
+    return inst.module is None and inst.kind != "Literal" and _core(inst) in _SINGLE
+
+
+def origin_hints(flat, cat, final=True):
+    """3.0.1: every turned instance's ``@(x, y, rot r)`` read as its origin (``ORIGIN_HINTS``),
+    turned into the corner hint the layout code places by, innermost first (an instance's frame
+    is its children's, placed). The hint as written stays in ``hints["origin"]``; an instance
+    that has one is done. A turned instance waits while a turned instance inside it waits.
+    ``final`` False (elaboration's early pass, before the nets are resolved): an instance whose
+    frame isn't known yet waits for the final pass. -> notes, one per turned instance the final
+    pass can't place by its origin (its hint is left as written)."""
+    notes = []
+    if not ORIGIN_HINTS:
+        return notes
+    frames, waiting = {}, []
+    for path in sorted(flat.insts, key=lambda p: (-p.count("/"), p)):
+        inst = flat.insts[path]
+        hint = (inst.hints or {}).get("at")
+        if hint is None or "origin" in inst.hints:
+            continue
+        if inst.kind == "Literal" and inst.literal is not None:
+            # a Literal's origin is its file's (0, 0) (a box cut's too), not its top-left tile:
+            # a blueprint that grows west or north keeps every entity where it was
+            frame = literal_frame(inst)
+            x, y, rot = corner_hint(hint, frame)
+            inst.hints = dict(inst.hints, at=(_clean(x + frame[0]), _clean(y + frame[1]), rot),
+                              origin=hint)
+            continue
+        if not int(hint[2]) % 4 or turns_in_place(inst):
+            continue
+        if any(w.startswith(path + "/") for w in waiting):
+            waiting.append(path)
+            if final:
+                notes.append(f"{path}: @({hint[0]}, {hint[1]}, rot {hint[2]}) is placed by its "
+                             "corner, not its origin: a turned piece inside it is")
+            continue
+        try:
+            frame = _own_frame(flat, path, cat, frames)
+        except Exception as exc:             # noqa: BLE001 - a frame the layout can't know yet
+            frame, why = None, str(exc)
+        else:
+            why = "its frame isn't known"
+        if frame is None:
+            waiting.append(path)
+            if final:
+                notes.append(f"{path}: @({hint[0]}, {hint[1]}, rot {hint[2]}) is placed by its "
+                             f"corner, not its origin: {why}")
+            continue
+        inst.hints = dict(inst.hints, at=corner_hint(hint, frame), origin=hint)
+    return notes
+
+
 def _origin(flat, path, cat=None, size=(0, 0), frames=None):
     """Absolute (x, y, rot) of an instance, None when it has no ``@(x, y)`` hint. ``size`` is
     its own frame (w, h), unturned.
@@ -796,10 +982,13 @@ def expand_factory(flat, cat, previous=None, ground=None, log=None):
             x0, y0, rot = hint
             params = {k: _param_text(v) for k, v in inst.params.items()}
             lay.insts[path] = fkpmod.Inst(path, "Literal", params, x0, y0, rot, sig)
+            carry = _port_carriers(flat, path, ents)
             for e in ents:
                 x, y, d = turn(float(e.x), float(e.y), e.dir, rot, size)
-                placed = fkpmod.Entity(e.key, e.name, _clean(x + x0), _clean(y + y0), d,
-                                       dict(e.attrs))
+                attrs = dict(armsmod.turned(e.attrs, rot))
+                if attrs.get("net") in carry:
+                    attrs["net"] = carry[attrs["net"]]
+                placed = fkpmod.Entity(e.key, e.name, _clean(x + x0), _clean(y + y0), d, attrs)
                 lay.add(placed)
                 xmax, ymax = _grow(cat, placed, xmax, ymax)
             continue
@@ -862,7 +1051,7 @@ def _put(lay, path, inst, frag, binding, at, notes, cat=None):
     added = []
     for fe in frag.entities:
         x, y, d = turn(float(fe.x), float(fe.y), fe.dir, rot, frag.size)
-        attrs = dict(fe.attrs)
+        attrs = dict(armsmod.turned(fe.attrs, rot))
         if fe.role is not None:
             net = role_net(binding, fe.role)
             if net is None:
