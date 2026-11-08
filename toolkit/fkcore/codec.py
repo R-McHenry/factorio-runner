@@ -86,6 +86,7 @@ import json
 import re
 import zlib
 
+from . import arms as armsmod
 from . import fkp as fkpmod
 
 __all__ = ["CodecError", "BLUEPRINT_VERSION", "rows_of", "blueprint", "read_blueprint",
@@ -121,7 +122,8 @@ RAW_ATTRS = ("cb", "bp")
 #: blueprint fields a ``bp.`` setting may not write: the codec writes them from the row, and a
 #: control behaviour is ``cb.``
 BP_REFUSED = frozenset({"entity_number", "name", "position", "direction", "tags", "wires",
-                        "recipe", "type", "control_behavior"})
+                        "recipe", "type", "control_behavior", "pickup_position",
+                        "drop_position"})
 #: the entity fields the typed settings make (dropped on reading when ``tags.fkp`` has them)
 _CIRCUIT_FIELDS = ("control_behavior", "use_filters", "filters")
 #: the source's comparators -> the game's
@@ -402,6 +404,14 @@ def _entity_json(row, number):
             raise CodecError(f"{row.get('src')}: ug must be in or out, got {ug!r}")
         entity["type"] = _UG[ug]
     attrs.pop("wire", None)                    # blueprint() writes it into the wires
+    # 3.0: an inserter's own vectors (Bob's adjustable inserters) are game fields, not tags: they
+    # come back from what the game exports (``fkcore.arms``)
+    entity.update(armsmod.blueprint_fields(attrs))
+    if row["name"] == "infinity-pipe" and attrs.get("fluid"):
+        # 3.0: an InfinityPipe<fluid=...> pastes with its fluid set (full, at least), as the
+        # lab sets the pipes it feeds ports with; fluid= stays in tags.fkp to come back
+        entity["infinity_settings"] = {"name": attrs["fluid"], "percentage": 1,
+                                       "mode": "at-least"}
     # the typed circuit settings make game fields, and stay in tags.fkp to come back as written;
     # the raw ones (2.1) too
     entity.update(made_fields(attrs, row.get("src")))
@@ -647,6 +657,8 @@ def parse_blueprint(s):
             attrs["net"] = tags["net"]
         if extra.get("type") in _UG_BACK:
             attrs["ug"] = _UG_BACK[extra.pop("type")]
+        attrs.update(armsmod.from_blueprint(entity.get("name"), entity.get("direction") or 0,
+                                            extra))
         fkp_attrs = dict(tags.get("fkp") or {})
         if is_reset(extra.get("control_behavior")):
             del extra["control_behavior"]

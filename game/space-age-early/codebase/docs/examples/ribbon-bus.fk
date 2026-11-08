@@ -1,0 +1,32 @@
+# ribbon-bus.fk: four smelter columns, a belt of plates each, laid side by side. Plot 200x200
+# (any). Each SmeltColumn is a Stack of three FurnaceCells with the ore along its foot; stacked
+# east, the columns share the ore. Shows: cells within cells, `cols[*].pl`, `net each`, a ribbon.
+# Run:  fk build --to report_checks    fk look --design --zoom 4
+# Expect: out\route.txt ends `ribbon plates: 4 belts side by side (plates_0, plates_1, plates_2,
+# plates_3) ... 2 bus turns, 0 crossings, 179 belts ...`; 450 plates/min, 112.5 to each belt;
+# `ribbon-bus: 60 nets: 60 connected, 0 open, 0 unrouted`.
+import SmeltColumn from "cells.fk"
+
+ore  = Chest<requester, item=iron-ore, rate=7.5/s> @(0, 4)
+cols = Stack<cell=SmeltColumn, n=4, plate=iron-plate, ore=iron-ore> @(4, 0)
+box  = Boxes @(60, 30)
+
+net feed: ore -> cols.ore_in
+net each plates: cols[*].pl -> box
+
+# Four provider chests in a row, each with its belt in at the top; the row under the chests is for
+# the poles of their inserters.
+module Boxes size 4x5 {
+  port i0 : in iron-plate @n0
+  port i1 : in iron-plate @n1
+  port i2 : in iron-plate @n2
+  port i3 : in iron-plate @n3
+  c0 = Chest<provider, limit=8> @(0, 3)
+  c1 = Chest<provider, limit=8> @(1, 3)
+  c2 = Chest<provider, limit=8> @(2, 3)
+  c3 = Chest<provider, limit=8> @(3, 3)
+  net n0: i0 -> c0
+  net n1: i1 -> c1
+  net n2: i2 -> c2
+  net n3: i3 -> c3
+}

@@ -1,6 +1,12 @@
-# smelter-array.fk: Rory's smelter stack, 24 stone furnaces fed by side-loading
-ore   = MinerRow<n=16, resource=iron-ore>     @(2, 0, rot 2)
-coal  = MinerRow<n=2, resource=coal>          @(30, 0, rot 2)
+# smelter-array.fk: Rory's smelter stack, 24 stone furnaces fed by side-loading (the older
+# SmelterArray row; the library's SmelterPair replaces it). Plot 33x50. Three chests because one
+# chest's inserter takes 2.5/s.
+# Run:  fk rates smelter-array.fk    fk build --to report_checks
+# Expect: `iron-plate 450.00` a minute at full speed; at this plot the power cover has no spot for
+# five drills (`NO_POWER smelter-array ore/m10: all 81 spots a medium-electric-pole could power it
+# from are taken ...`): a wider plot, or fewer drills.
+ore   = MinerRow<n=16, resource=iron-ore>     @(26, 7, rot 2)
+coal  = MinerRow<n=2, resource=coal>          @(33, 7, rot 2)
 smelt = SmelterArray<n=24, recipe=iron-plate> @(6, 12)
 box1  = Chest<provider, limit=8>              @(4, 48)
 box2  = Chest<provider, limit=8>              @(8, 48)

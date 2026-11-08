@@ -1,7 +1,10 @@
-# blue6.fk: blue science as a stack of 6-row cells (2.0.49). A cell is two 3-row units, each an
-# engine assembler and an advanced circuit assembler handing straight into a blue science one,
-# and one pinned pole between them on the sulfur|packs belt, which tunnels under it: the one pole
-# powers the inserters beside both blue science assemblers, where no other tile is free.
+# blue6.fk: blue science as a stack of 6-row cells, an older sealed cell (2.0.49). Plot 60x40. A
+# cell is two 3-row units, each an engine assembler and an advanced circuit assembler handing
+# straight into a blue science one, and one pinned Pole between them on the sulfur|packs belt,
+# which tunnels under it. Shows: a pinned Pole, `lanes` inside a cell, `set packs.in: filter=`.
+# Run:  fk check blue6.fk    fk build --to report_checks
+# Expect: 26 check lines (`two-nets`, `SUSHI_SINK`, `CLOG`, `could-pair`: why new cells are written
+# as the library's are); `blue6: 33 nets: 33 connected, 0 open, 0 unrouted`; blue/1 laid as blue/0.
 module BlueCell6 size 18x6 {
   port a_in  : in  steel-plate | iron-gear-wheel @s0
   port a_out : out steel-plate | iron-gear-wheel @n0

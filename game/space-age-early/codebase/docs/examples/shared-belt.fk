@@ -1,6 +1,12 @@
-# shared-belt.fk: ore and coal on the two lanes of one belt into a smelter row
-ore   = MinerRow<n=4, resource=iron-ore>   @(10, 2, rot 2)
-coal  = MinerRow<n=2, resource=coal>       @(18, 2, rot 2)
+# shared-belt.fk: ore and coal on the two lanes of one belt into a smelter row. Plot 26x23.
+# Shows: `lanes ore_ | fuel`, two nets on one belt, the ore on the left lane and the coal on the
+# right; they stay two nets, so a full lane never stops the other.
+# Run:  fk check shared-belt.fk    fk build --to report_checks    fk rates shared-belt.fk
+# Expect: `check shared-belt: 15 machines, 3 nets, 0 check lines`; out\route.txt `routed ore_|fuel:
+# 2 -> 1, trunk 8,8 E (ore_ on the left lane, fuel on the right) ...`; after the build the routed
+# rates serve the furnaces in belt order: `2 of 8 starved of iron-ore`.
+ore   = MinerRow<n=4, resource=iron-ore>   @(16, 9, rot 2)
+coal  = MinerRow<n=2, resource=coal>       @(21, 9, rot 2)
 smelt = SmelterRow<n=8, recipe=iron-plate> @(10, 12)
 box   = Chest<provider, limit=4>           @(4, 22)
 

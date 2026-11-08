@@ -5,7 +5,8 @@ A **connector** is one lane of one belt, underground or splitter, ``(key, "L")``
 ``(key, "")``. A machine (anything an inserter reaches, a drill) is an endpoint node ``(key, "")``.
 An edge is one way items move from one node into another, built over ``fkcore.connect``'s
 carrier graph (V1's geometry: tiles, underground pairing, inserter reach) with the rules of
-docs/LAB-LANES-20261020.md (2.0.77):
+docs/LAB-LANES-20261020.md (2.0.77). The rules themselves live in ``fkcore.lanephys`` (one table
+the router reads too, PLAN-LANES); this module finds where they apply:
 
 - ``straight``: a belt, an underground exit or a splitter onto the next belt, underground
   entrance or splitter from behind; a ``turn`` (V1's ``curve``: fed from one side, nothing
@@ -22,8 +23,9 @@ docs/LAB-LANES-20261020.md (2.0.77):
   lane) and the outside lane from its inner sides, over the belts that meet there (long-handed;
   2.1.25, all measured on 2.0.77). Onto a splitter half and both underground ends alike: an exit takes drops from
   every side, though V1's connect gives it no drop edge (v4 B-120), so this module adds them.
-- ``mine``: a drill drops onto the near lane (in line: the right lane, by the inserter rule;
-  not measured).
+- ``mine``: a drill drops onto the near lane of a belt across; in line, heading away from it or
+  towards it, onto the right lane (measured: 2.0.77, ``tools/laptop_server.py drops``: 11, 13, 12
+  and 3 ores, every one on that lane). A recycler drops by the same rule (not measured).
 - a splitter's **priorities** (its game settings, ``config``; Rory's bus staircases): with an
   input priority, the edges into its preferred half rank before the other half's (it takes
   what comes there first); with an output priority, the edges out of its preferred half are
@@ -45,10 +47,12 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from . import arms as armsmod
 from . import connect as connectmod
+from . import lanephys as phys
 
 __all__ = ["Node", "Edge", "LaneGraph", "build", "lane_rate", "inserter_rate", "ROTATION",
-           "HOLDERS", "INF"]
+           "HOLDERS", "INF", "reach"]
 
 INF = float("inf")
 _BELTS = frozenset({"transport-belt", "underground-belt", "splitter"})
@@ -83,16 +87,19 @@ def _proto(cat, name):
     return rot, bool(bulk), int(row.get("stack_size_bonus", _OWN_HAND.get(name, 0)) or 0)
 
 
-def inserter_rate(name, hand=1, bulk_hand=1, onto_belt=False, cat=None):
+def inserter_rate(name, hand=1, bulk_hand=1, onto_belt=False, cat=None, turn=0.5):
     """Items/s an inserter moves: one hand per swing. ``hand`` is the non-bulk hand size (1 + the
     force's inserter bonus), ``bulk_hand`` the bulk one (1 + the bulk bonus); a stack inserter
-    adds its own 4. The prototype from ``cat`` (the catalog), else ``ROTATION``. None for an
-    inserter whose rotation speed is unknown."""
+    adds its own 4. ``turn``: the share of a full turn from pickup to drop (3.0, Bob's vectors,
+    ``fkcore.arms.turn``): a corner's 0.25 swings in about half the ticks (measured on a Sea Block
+    laptop server: a plain inserter 1.198/s straight, 2.5/s round a corner). The prototype from
+    ``cat`` (the catalog), else ``ROTATION``. None for an inserter whose rotation speed is
+    unknown."""
     rot, bulk, own = _proto(cat, name)
     if rot is None:
         return None
     n = (bulk_hand if bulk else hand) + own
-    swing = 2 * math.floor(0.5 / rot + 1e-9)            # ticks per pick-and-drop
+    swing = max(2, 2 * math.floor(turn / rot + 1e-9))   # ticks per pick-and-drop
     rate = 60.0 / swing * n
     if onto_belt:
         rate *= _ONTO_BELT.get(n, 0.6)
@@ -154,23 +161,8 @@ class LaneGraph:
         self.inn.setdefault(dst, []).append(e)
 
 
-def _left(d):
-    """The direction on the left of heading ``d`` (0 N, 4 E, 8 S, 12 W)."""
-    return (d + 12) % 16
-
-
-def _right(d):
-    return (d + 4) % 16
-
-
-def _near(src_dir, dst_dir):
-    """The lane of a belt heading ``dst_dir`` nearest to a carrier moving ``src_dir`` into its
-    side: from its left side (moving towards its right) the left lane."""
-    if src_dir == _right(dst_dir):
-        return "L"
-    if src_dir == _left(dst_dir):
-        return "R"
-    return None
+# the rules' helpers, from the table (PLAN-LANES phase 1)
+_left, _right, _near, _drop_lane = phys.left, phys.right, phys.near, phys.drop_lane
 
 
 def _halves(n):
@@ -208,14 +200,6 @@ def _priorities(g, a, b):
     return rank, first
 
 
-def _drop_lane(drop_dir, belt_dir):
-    """The lane an inserter dropping in direction ``drop_dir`` fills on a belt heading
-    ``belt_dir``: the far lane across it, the right lane in line."""
-    if drop_dir % 8 == belt_dir % 8:
-        return "R"
-    return "R" if drop_dir == _right(belt_dir) else "L"
-
-
 def build(ents, cat, hand=1, bulk_hand=1) -> LaneGraph:
     """The lane graph of a Layout, a Surface, a list of entities or a ``connect.Graph``."""
     g = ents if isinstance(ents, connectmod.Graph) else connectmod.graph(ents, cat)
@@ -234,7 +218,8 @@ def build(ents, cat, hand=1, bulk_hand=1) -> LaneGraph:
             belts[key] = n
         elif n.kind == "inserter":
             onto = any(g.nodes[b].kind in _BELTS for b, via in g.succ.get(key, ()) if via == "drop")
-            rate = inserter_rate(n.name, hand, bulk_hand, onto_belt=onto, cat=cat)
+            rate = inserter_rate(n.name, hand, bulk_hand, onto_belt=onto, cat=cat,
+                                 turn=_turn_of(n))
             if rate is None:
                 lg.problems.append(f"{key}: {n.name} has no known rotation speed")
                 rate = INF
@@ -247,28 +232,19 @@ def build(ents, cat, hand=1, bulk_hand=1) -> LaneGraph:
         if via in ("belt", "curve"):
             if a in belts and b in belts:
                 rank, first = _priorities(g, a, b)
-                for lane in ("L", "R"):
-                    lg.add((a, lane), (b, lane), "straight" if via == "belt" else "turn", rank,
-                           first)
+                kind = "straight" if via == "belt" else "turn"
+                for la, lb, _r in phys.moves(kind)[0]:
+                    lg.add((a, la), (b, lb), kind, rank, first)
         elif via == "ug":
-            for lane in ("L", "R"):
-                lg.add((a, lane), (b, lane), "tunnel", 0)
-        elif via == "sideload":
-            near = _near(na.dir, nb.dir)
-            if near is None:
-                continue
-            first = "L" if _left(na.dir) == (nb.dir + 8) % 16 else "R"   # enters further upstream
-            lg.add((a, first), (b, near), "side", 1)
-            lg.add((a, "R" if first == "L" else "L"), (b, near), "side", 2)
-        elif via == "ug_sideload":
-            near = _near(na.dir, nb.dir)
-            if near is None:
-                continue
-            open_dir = (nb.dir + 8) % 16 if nb.ug == "in" else nb.dir
-            lane = "L" if _left(na.dir) == open_dir else "R"
-            lg.add((a, lane), (b, near), "ug_side", 1)
-            if (a, "R" if lane == "L" else "L") in lg.nodes:
-                lg.closed.append(((a, "R" if lane == "L" else "L"), b))
+            for la, lb, rank in phys.moves("tunnel")[0]:
+                lg.add((a, la), (b, lb), "tunnel", rank)
+        elif via in ("sideload", "ug_sideload"):
+            kind = "side" if via == "sideload" else "ug_side"
+            edges, blocked = phys.moves(kind, na.dir, nb.dir, nb.ug)
+            for la, lb, rank in edges:
+                lg.add((a, la), (b, lb), kind, rank)
+            if edges and blocked is not None and (a, blocked) in lg.nodes:
+                lg.closed.append(((a, blocked), b))
         elif via == "pickup":
             if a in belts:
                 for lane in ("L", "R"):
@@ -280,12 +256,11 @@ def build(ents, cat, hand=1, bulk_hand=1) -> LaneGraph:
             _drop(lg, g, belts, a, b)
         elif via == "mine":
             if b in belts:
-                side = (na.dir + 8) % 16                 # the half of the tile towards the drill
-                lane = "L" if side == _left(nb.dir) else "R"
-                lg.add((a, ""), (b, lane), "mine", 3)
+                lg.add((a, ""), (b, phys.mine_lane(na.dir, nb.dir)), "mine", phys.DROP_RANK)
             else:
                 lg.add((a, ""), (b, ""), "mine", 0)
-    # an underground exit takes drops too (measured; connect gives it no drop edge)
+    # an underground exit takes drops too (measured); connect has the edge since 3.0, so this
+    # only adds what an older graph lacks
     for key, n in g.nodes.items():
         if n.kind != "inserter":
             continue
@@ -299,27 +274,58 @@ def build(ents, cat, hand=1, bulk_hand=1) -> LaneGraph:
     return lg
 
 
+def reach(lg, seeds):
+    """{node: labels} the labelled items reach (PLAN-LANES phase 3): ``seeds`` [(node, label)]
+    (an inserter that drops a net's items, a lane a net's belt end carries) flow along every edge
+    of the lane graph, each lane as the physics says (a side-load onto the near lane, a closed
+    underground lane nowhere, a turn keeping its lanes); a machine takes items in and passes none
+    on. What a router's own belts carry, by the same rules the judge reads."""
+    out, todo = {}, []
+    for node, label in seeds:
+        if node in lg.nodes and label not in out.setdefault(node, set()):
+            out[node].add(label)
+            todo.append((node, label))
+    while todo:
+        node, label = todo.pop()
+        for e in lg.out.get(node, ()):
+            if lg.nodes[e.dst].kind == "machine":
+                out.setdefault(e.dst, set()).add(label)
+                continue
+            got = out.setdefault(e.dst, set())
+            if label not in got:
+                got.add(label)
+                todo.append((e.dst, label))
+    return out
+
+
 def _turn(g, b, side):
     """The lane a drop from ``side`` of belt ``b`` fills when ``b`` turns, or None when it runs
     straight: from an outer side the inside lane (a left turn's left lane), from an inner side,
     where the belt comes in or goes out, the outside lane."""
     for a, via in g.pred.get(b, ()):
         if via == "curve":
-            come, go = g.nodes[a].dir, g.nodes[b].dir
-            inside = "L" if go == _left(come) else "R"
-            if side in ((come + 8) % 16, go):
-                return "R" if inside == "L" else "L"
-            return inside
+            return phys.turn_drop_lane(g.nodes[a].dir, g.nodes[b].dir, side)
     return None
+
+
+def _turn_of(n):
+    """The share of a full turn inserter node ``n`` swings: 0.5 but for its own vectors."""
+    if not n.arms:
+        return 0.5
+    v = armsmod.vectors(n.name, n.dir, n.arms)
+    return armsmod.turn(*v) if v else 0.5
 
 
 def _drop(lg, g, belts, a, b):
     na, nb = g.nodes[a], g.nodes[b]
     if b in belts:
         # onto a turn by its sides (2.1.25, measured: 2.0.77); an inserter faces its pickup, on
-        # its side of the belt
-        lane = _turn(g, b, na.dir) if nb.kind == "transport-belt" else None
-        lane = lane or _drop_lane((na.dir + 8) % 16, nb.dir)    # an inserter faces its pickup
-        lg.add((a, ""), (b, lane), "drop", 3)
+        # its side of the belt: with its own vectors (3.0), the way its drop vector points
+        v = armsmod.vectors(na.name, na.dir, na.arms) if na.arms else None
+        drop_dir = (armsmod.heading(v[1]) if v else None)
+        drop_dir = (na.dir + 8) % 16 if drop_dir is None else drop_dir
+        lane = _turn(g, b, (drop_dir + 8) % 16) if nb.kind == "transport-belt" else None
+        lane = lane or phys.drop_lane(drop_dir, nb.dir)
+        lg.add((a, ""), (b, lane), "drop", phys.DROP_RANK)
     else:
         lg.add((a, ""), (b, ""), "drop", 0)

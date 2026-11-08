@@ -23,7 +23,6 @@ import json
 
 from . import link, look
 from . import surface as surfacemod
-from .apply import force_for
 
 __all__ = ["run"]
 
@@ -40,7 +39,7 @@ def _n(k, word):
 def run(r, game, cat, area):
     """Order the stale belts and stuck inserters in ``area`` up; -> the report lines."""
     sf = surfacemod.load_game(game)
-    force = getattr(sf, "force", None) or force_for(sf.mode)
+    force = sf.force_name
     lk = look.run(r, game, cat, area=area, notify="off", tag="fresh")
     stale = [v for v in lk.rep.verdicts if v.wrong_items]
     try:

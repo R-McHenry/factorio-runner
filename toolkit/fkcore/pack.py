@@ -4,9 +4,12 @@ the working directory fk runs in) and the facts about it that are not prototypes
 A pack lives in ``fkcore/data/packs/<pack>/``: ``catalog.json`` and ``fluidboxes.json`` (dumped
 from its game, ``tools/dump_catalog.lua``) and ``pack.json``, written by hand:
 
-    {"landfill": "sand-3", "landfill_item": "landfill-sand"}
+    {"landfill": "sand-3", "landfill_item": "landfill-sand", "mods_dir": "C:\\fk-mods\\sb-mods"}
         the tile that makes water ground (the one a game paste lays by itself) and the item that
-        places it (default: the tile's name, as in the base game's landfill)
+        places it (default: the tile's name, as in the base game's landfill); ``mods_dir``, the
+        folder on this machine holding the pack's mods, which ``fk sim`` loads (3.0);
+        ``inserter_vectors``: every inserter takes its own pickup and drop vectors (Bob's
+        adjustable inserters, ``fkcore.arms``; 3.0)
 
 Sea Block's world is water: with ``landfill`` set, water is ground that costs landfill (the
 terrain stops blocking it, SHORT counts it, and a single ghost on water gets landfill under it,

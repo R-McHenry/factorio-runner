@@ -1,0 +1,56 @@
+# beacon-cells.fk: beaconed lines, from the lab's processing-unit bay (pucells.fk, 11-07).
+# Shows: modules in every machine (prod2) and a beacon in every cell (speed2), both counted by
+# the rate model (2.1.33): a beacon reaches every machine whose box comes within 3 tiles of its own.
+# Run:  fk check beacon-cells.fk    fk rates beacon-cells.fk    fk build --to report_checks
+# Expect: 0 check lines; a FurnB furnace makes 56.1 plates/min and a GreenB cell 134.8 circuits/min
+# (an unbeaconed assembling-machine-3 on prod2 would make 51.8); 29 nets connected.
+
+kind Asm3   = Machine<entity=assembling-machine-3, modules=productivity-module-2>
+kind EFurn  = Machine<entity=electric-furnace, modules=productivity-module-2>
+kind Beacon = Entity<name=beacon, modules=speed-module-2>
+
+# one furnace: ore north up the west belt (both lanes), plates back south on the east belt; the
+# beacon stands two tiles west of the furnace, so it reaches it and the next cell's furnace too
+module FurnB<plate, ore> size 10x3 {
+  port ore_in  : in  $ore | $ore @s3
+  port ore_out : out $ore | $ore @n3
+  port pl_in   : in  $plate @n9
+  port pl_out  : out $plate @s9
+  stack ore_in -> ore_out, pl_out -> pl_in
+  b = Beacon @(0, 0)
+  f = EFurn<recipe=$plate> @(5, 0)
+  net o: ore_in -> f, ore_out
+  net p: pl_in, f -> pl_out
+}
+
+# green circuits: a cable assembler hands straight to the circuit assembler below it; copper and
+# iron up the west belt, a lane each, circuits back down the east one
+module GreenB size 10x7 {
+  port in_in  : in  copper-plate | iron-plate @s3
+  port in_out : out copper-plate | iron-plate @n3
+  port g_in   : in  electronic-circuit @n9
+  port g_out  : out electronic-circuit @s9
+  stack in_in -> in_out, g_out -> g_in
+  b1 = Beacon @(0, 0)
+  b2 = Beacon @(0, 3)
+  c = Asm3<recipe=copper-cable> @(5, 0)
+  g = Asm3<recipe=electronic-circuit> @(5, 4)
+  net cu items copper-plate: in_in -> c, in_out
+  net fe items iron-plate:   in_in -> g, in_out
+  lanes cu | fe
+  net k: c -> g
+  net o: g_in, g -> g_out
+}
+
+cu_ore = Chest<requester, item=copper-ore, rate=8/s> @(2, 36)
+fe_ore = Chest<requester, item=iron-ore, rate=8/s>   @(14, 36)
+cu     = Stack<cell=FurnB, n=4, plate=copper-plate, ore=copper-ore> @(0, 14)
+fe     = Stack<cell=FurnB, n=3, plate=iron-plate, ore=iron-ore>     @(12, 14)
+green  = Stack<cell=GreenB, n=2>                                    @(26, 10)
+box    = Chest<provider, limit=8>                                   @(36, 36)
+
+net cuo: cu_ore -> cu.ore_in
+net feo: fe_ore -> fe.ore_in
+net cup: cu.pl_out -> green.in_in
+net fep: fe.pl_out -> green.in_in
+net g:   green.g_out -> box

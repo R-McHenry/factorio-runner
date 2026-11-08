@@ -1,0 +1,334 @@
+# cells.fk: starter cells, yours to change. A cell is one slice of a line of machines: its belts
+# run straight across it, edge to edge, so cells stacked in a line make one long line.
+#
+#   import FurnaceCell from "cells.fk"
+#   col = Stack<cell=FurnaceCell, n=12, plate=copper-plate, ore=copper-ore> @(10, 12)
+#   net ore_:   drills -> col.ore_in
+#   net plates: col.pl_out -> bus
+#
+# Most cells take parameters (<plate, ore>): a Stack passes them to every cell, and a kind names a
+# set of them (kind CopperCell = FurnaceCell<plate=copper-plate, ore=copper-ore>). Without them
+# the smelting cells make iron, as they always did. Copy a cell and change it: another machine,
+# modules (`modules=productivity-module`), a machine more, a belt more. Rename the copy. Each port
+# is where a belt crosses the cell's edge; `stack NEAR -> FAR` pairs the two ends of one belt, so
+# the next cell's NEAR meets this one's FAR. docs\LANGUAGE.md, "Stacks", has the rules.
+#
+# Smelting: plate=iron-plate, ore=iron-ore; copper-plate, copper-ore; stone-brick, stone; and
+# steel-plate, iron-plate (steel is smelted from plates).
+
+# -- smelting -------------------------------------------------------------------------------------
+
+# One electric furnace beside two belts: the ore runs up through every cell on the west belt, the
+# plates come back down the east one. No coal. One side, so the plates ride one lane: about 12 of
+# these fill it (7.5/s on yellow).
+module FurnaceCell<plate=iron-plate, ore=iron-ore> size 7x3 {
+  port ore_in  : in  $ore   @s0
+  port ore_out : out $ore   @n0
+  port pl_in   : in  $plate @n6
+  port pl_out  : out $plate @s6
+  stack ore_in -> ore_out, pl_out -> pl_in
+  f = Furnace<recipe=$plate, machine=electric-furnace> @(2, 0)
+  net o: ore_in -> f, ore_out
+  net p: pl_in, f -> pl_out
+}
+
+# Two electric furnaces facing each other across the plate belt, an ore belt outside each: the
+# plates ride both lanes, so 24 of these furnaces (12 cells) fill one yellow belt at 15/s.
+module FurnacePair<plate=iron-plate, ore=iron-ore> size 13x3 {
+  port oa_in  : in  $ore   @s0
+  port oa_out : out $ore   @n0
+  port pl_in  : in  $plate @n6
+  port pl_out : out $plate @s6
+  port ob_in  : in  $ore   @s12
+  port ob_out : out $ore   @n12
+  stack oa_in -> oa_out, pl_out -> pl_in, ob_in -> ob_out
+  w = Furnace<recipe=$plate, machine=electric-furnace> @(2, 0)
+  e = Furnace<recipe=$plate, machine=electric-furnace> @(8, 0)
+  net a: oa_in -> w, oa_out
+  net b: ob_in -> e, ob_out
+  net p: pl_in, w, e -> pl_out
+}
+
+# One stone furnace: ore and fuel on the two lanes of one belt (ore left, fuel right), one inserter
+# takes both. The plates go back on the other belt. Feed it `net ore_ ... -> col.f_in` and
+# `net fuel ... -> col.f_in` with `lanes ore_ | fuel`.
+module StoneFurnaceCell<plate=iron-plate, ore=iron-ore, fuel=coal> size 6x2 {
+  port f_in   : in  $ore | $fuel @s0
+  port f_out  : out $ore | $fuel @n0
+  port pl_in  : in  $plate @n5
+  port pl_out : out $plate @s5
+  stack f_in -> f_out, pl_out -> pl_in
+  f = Furnace<recipe=$plate, fuel=$fuel> @(2, 0)
+  net o items $ore:  f_in -> f, f_out
+  net c items $fuel: f_in -> f, f_out
+  lanes o | c
+  net p: pl_in, f -> pl_out
+}
+
+# Two stone furnaces back to back, both taking ore and fuel from the middle belt (ore left, fuel
+# right); the plates go out on the two outer belts, one each side. 12 of these (24 furnaces) eat
+# one yellow lane of ore. Join the two plate belts in your factory (`net plates: col.pw_out,
+# col.pe_out -> ...`); several lines on one `lanes ore_ | fuel` pair make a bigger smelter, and
+# the router puts their plates on both lanes when they need it. It replaces the SmelterArray row:
+# on the lab, 12 cells made 450 plates/min to the stack's 445.
+module SmelterPair<plate=iron-plate, ore=iron-ore, fuel=coal> size 11x2 {
+  port pw_in  : in  $plate       @n0
+  port pw_out : out $plate       @s0
+  port f_in   : in  $ore | $fuel @s5
+  port f_out  : out $ore | $fuel @n5
+  port pe_in  : in  $plate       @n10
+  port pe_out : out $plate       @s10
+  stack f_in -> f_out, pw_out -> pw_in, pe_out -> pe_in
+  w = Furnace<recipe=$plate, fuel=$fuel> @(2, 0)
+  e = Furnace<recipe=$plate, fuel=$fuel> @(7, 0)
+  net o items $ore:  f_in -> w, e, f_out
+  net c items $fuel: f_in -> w, e, f_out
+  lanes o | c
+  net pw: pw_in, w -> pw_out
+  net pe: pe_in, e -> pe_out
+}
+
+# A column of three FurnaceCells, the ore chained along its foot from west to east: stacked east,
+# the columns stand side by side and the ore runs along all their feet. Each column's plates leave
+# by its own port at the bottom, so `net each plates: cols[*].pl -> ...` makes a bus of plate
+# belts, one a column. Where the foot splits into a column the column gets half of what reaches it.
+module SmeltColumn<plate, ore> size 11x15 {
+  port ore_in  : in  $ore | $ore @w12
+  port ore_out : out $ore | $ore @e12
+  port pl      : out $plate      @s9
+  stack ore_in -> ore_out
+  s = Stack<cell=FurnaceCell, n=3, plate=$plate, ore=$ore> @(3, 0)
+  net o: ore_in -> s.ore_in, ore_out
+  net p: s.pl_out -> pl
+}
+
+# -- assembling -----------------------------------------------------------------------------------
+
+# One assembler, two ingredients on the two lanes of one belt (ins=A|B: A left, B right), its
+# product back down the other belt. AsmCell<recipe=transport-belt, ins=iron-plate|iron-gear-wheel,
+# out=transport-belt>.
+module AsmCell<recipe, ins, out> size 7x3 {
+  port in_in   : in  $ins[0] | $ins[1] @s0
+  port in_out  : out $ins[0] | $ins[1] @n0
+  port out_in  : in  $out @n6
+  port out_out : out $out @s6
+  stack in_in -> in_out, out_out -> out_in
+  a = Assembler<recipe=$recipe> @(2, 0)
+  net i items $ins[0]: in_in -> a, in_out
+  net j items $ins[1]: in_in -> a, in_out
+  lanes i | j
+  net o: out_in, a -> out_out
+}
+
+# One assembler, one ingredient up the west belt, its product back down the east one.
+module AsmCell1<recipe, ins, out> size 7x3 {
+  port in_in   : in  $ins @s0
+  port in_out  : out $ins @n0
+  port out_in  : in  $out @n6
+  port out_out : out $out @s6
+  stack in_in -> in_out, out_out -> out_in
+  a = Assembler<recipe=$recipe> @(2, 0)
+  net i: in_in -> a, in_out
+  net g: out_in, a -> out_out
+}
+
+# Gears: plates up the west belt, gears back down the east one (the starter cell, now an AsmCell1).
+kind GearCell = AsmCell1<recipe=iron-gear-wheel, ins=iron-plate, out=iron-gear-wheel>
+
+# Green circuits: a column of cable assemblers beside a column of circuit assemblers, offset by a
+# row, so the inserters between them zigzag. Three cable assemblers to two circuit assemblers
+# (the middle cable assembler hands to both), 3 cable/s for each circuit assembler: all it uses.
+# Copper comes up the middle belt, both lanes, to the cable columns on either side; iron comes up
+# each outer belt, reached by a long-handed inserter over the circuits belt beside it, which takes
+# the circuits back down. Two cells are eight circuit assemblers: 480 circuits/min on the lab, to
+# the CircuitStack row's 450.
+module CircuitCell size 23x9 {
+  port wi_in  : in  iron-plate         @s0
+  port wi_out : out iron-plate         @n0
+  port wo_in  : in  electronic-circuit @n1
+  port wo_out : out electronic-circuit @s1
+  port cu_in  : in  copper-plate | copper-plate @s11
+  port cu_out : out copper-plate | copper-plate @n11
+  port eo_in  : in  electronic-circuit @n21
+  port eo_out : out electronic-circuit @s21
+  port ei_in  : in  iron-plate         @s22
+  port ei_out : out iron-plate         @n22
+  stack wi_in -> wi_out, wo_out -> wo_in, cu_in -> cu_out, eo_out -> eo_in, ei_in -> ei_out
+  wa = Assembler<recipe=electronic-circuit> @(3, 1)
+  wb = Assembler<recipe=electronic-circuit> @(3, 5)
+  w0 = Assembler<recipe=copper-cable>       @(7, 0)
+  w1 = Assembler<recipe=copper-cable>       @(7, 3)
+  w2 = Assembler<recipe=copper-cable>       @(7, 6)
+  e0 = Assembler<recipe=copper-cable>       @(13, 0)
+  e1 = Assembler<recipe=copper-cable>       @(13, 3)
+  e2 = Assembler<recipe=copper-cable>       @(13, 6)
+  ea = Assembler<recipe=electronic-circuit> @(17, 1)
+  eb = Assembler<recipe=electronic-circuit> @(17, 5)
+  net wi: wi_in -> wa, wb, wi_out
+  net ei: ei_in -> ea, eb, ei_out
+  net cu: cu_in -> w0, w1, w2, e0, e1, e2, cu_out
+  net kw0: w0 -> wa
+  net kw1: w1 -> wa, wb
+  net kw2: w2 -> wb
+  net ke0: e0 -> ea
+  net ke1: e1 -> ea, eb
+  net ke2: e2 -> eb
+  net wo: wo_in, wa, wb -> wo_out
+  net eo: eo_in, ea, eb -> eo_out
+}
+
+# -- science --------------------------------------------------------------------------------------
+
+# One lab: two packs on the two lanes of one belt (packs=A|B: A left, B right), which runs on to
+# the next lab. Red and green unless you say.
+module LabCell<packs=automation-science-pack|logistic-science-pack> size 5x3 {
+  port p_in  : in  $packs[0] | $packs[1] @s0
+  port p_out : out $packs[0] | $packs[1] @n0
+  stack p_in -> p_out
+  lab = Lab @(2, 0)
+  net r items $packs[0]: p_in -> lab, p_out
+  net g items $packs[1]: p_in -> lab, p_out
+  lanes r | g
+}
+
+# A column of six LabCells with a pack header across its bottom, chained east: a belt for each
+# pack, each splitting off into the column, where they meet on the column's belt a lane each (the
+# router can't split a belt of two paired lanes, so the header carries them apart). Stacked east,
+# the columns make a field and the packs run along all their headers: feed each pack from a chest
+# of its own (a two-item requester loads both belts with both packs).
+module LabColumn<packs=automation-science-pack|logistic-science-pack> size 9x24 {
+  port r_in  : in  $packs[0] @w20
+  port r_out : out $packs[0] @e20
+  port g_in  : in  $packs[1] @w22
+  port g_out : out $packs[1] @e22
+  stack r_in -> r_out, g_in -> g_out
+  labs = Stack<cell=LabCell, n=6, packs=$packs> @(3, 0)
+  net r: r_in -> labs.p_in, r_out
+  net g: g_in -> labs.p_in, g_out
+}
+
+# -- mining ---------------------------------------------------------------------------------------
+
+# One electric drill on its ore, which it drops onto the belt that runs through the cell (no
+# inserter). Stacked east, the cells share one ore belt, the ore on its north lane; feed nothing,
+# take the ore off the last cell (`net ore: line.ore_out -> smelt`). 3x4: one drill wide.
+module DrillCell<resource=iron-ore> size 3x4 {
+  port ore_in  : in  $resource @w3
+  port ore_out : out $resource @e3
+  stack ore_in -> ore_out
+  d = MinerRow<n=1, resource=$resource> @(0, 0)
+  net o: ore_in, d -> ore_out
+}
+
+# Two drills facing each other across the ore belt: both lanes, 15 drills a side to a yellow belt
+# of iron ore. 3x7.
+module DrillPair<resource=iron-ore> size 3x7 {
+  port ore_in  : in  $resource @w3
+  port ore_out : out $resource @e3
+  stack ore_in -> ore_out
+  d = MinerRow<n=2, resource=$resource> @(0, 0)
+  net o: ore_in, d -> ore_out
+}
+
+# A DrillCell built from a wrapped machine: drill.json is one drill facing north, named d, and the
+# belt the router lays through the cell passes its drop tile. The same way, wrap any machine you
+# captured (its inserters too) and build cells of it. 3x4.
+module WrappedDrillCell<resource=iron-ore> size 3x4 {
+  port ore_in  : in  $resource @w0
+  port ore_out : out $resource @e0
+  stack ore_in -> ore_out
+  m = Literal<file="drill.json", resource=$resource> @(0, 1)
+  net o: ore_in, m.d -> ore_out
+}
+
+# One electric drill on uranium, its sulfuric acid through the cell on a pipe (a fluid port pair)
+# and its ore out along the foot. Stacked east, the cells share one pipe and one ore belt; feed
+# the acid at the head (`net acid: pump -> cells.acid_in`). 7x7.
+module AcidDrillCell size 7x7 {
+  port acid_in  : in  sulfuric-acid @w0
+  port acid_out : out sulfuric-acid @e0
+  port ore_in   : in  uranium-ore   @w6
+  port ore_out  : out uranium-ore   @e6
+  stack acid_in -> acid_out, ore_in -> ore_out
+  d = MinerRow<n=1, resource=uranium-ore> @(0, 1)
+  net a: acid_in -> d, acid_out
+  net o: ore_in, d -> ore_out
+}
+
+# -- a sushi mall: one belt of several items in a loop past the machines ---------------------------
+#
+# A loop: GateCells load the belt, MallCells take from it, and an end buffer at the loop's end
+# feeds what passed every machine back onto its head. Each GateCell loads its item only while the
+# whole belt holds less than its amount (`amount=auto`: 40 s of what the loop's machines take of
+# it at full speed, and at least two crafts of each; or a number). Cells meet port to port, so the
+# nets between them lay nothing. docs\EXAMPLES.md, "mall-loop.fk", is one built from these.
+
+# A source: a requester chest of one item and an inserter that loads it onto the loop while the
+# belt (read whole, `hold-all`) holds less than `amount` of it. `items` is every item on the loop.
+module GateCell<item, items, amount=auto> size 3x3 {
+  port s_in  : in  $items @s0
+  port s_out : out $items @n0
+  stack s_in -> s_out
+  src = Chest<requester, item=$item> @(2, 1)
+  wire lw red: s
+  set s: read=hold-all
+  net s items $items limited "loads only while the loop holds less than its amount": s_in, src -> s_out when lw.$item < $amount
+}
+
+# The same source on the loop's other lane: its chest stands west of the belt, so its inserter
+# loads the right lane (looking downstream). The belt runs up its east column: place it two tiles
+# left of the cells beside it. Give the bulk item a lane of its own: the first source along the
+# belt takes every gap it sees, so the sources after it on its lane starve.
+module GateCellR<item, items, amount=auto> size 3x3 {
+  port s_in  : in  $items @s2
+  port s_out : out $items @n2
+  stack s_in -> s_out
+  src = Chest<requester, item=$item> @(0, 1)
+  wire lw red: s
+  set s: read=hold-all
+  net s items $items limited "loads only while the loop holds less than its amount": s_in, src -> s_out when lw.$item < $amount
+}
+
+# A maker on the loop: one assembler takes what its recipe needs from the passing belt, and puts
+# its product into a provider chest for the robots.
+module MallCell<recipe, items> size 7x3 {
+  port s_in  : in  $items @s0
+  port s_out : out $items @n0
+  stack s_in -> s_out
+  a   = Assembler<recipe=$recipe> @(2, 0)
+  box = Chest<provider> @(6, 1)
+  net s items $items limited "the loop's gates hold what goes round": s_in -> a, s_out
+  net o: a -> box
+}
+
+# End buffers: the loop's end comes in at `i` and goes back to its head from `o`. A BeltEndBuffer
+# is a belt through, so the whole loop is belt and the gates read all of it. A ChestEndBuffer
+# takes the end into a steel chest and feeds the head from it: what the chest holds is out of
+# the gates' sight, so it suits a short loop whose end inserter keeps up.
+module BeltEndBuffer<items> buffer size 1x3 {
+  port i : in  $items @s0
+  port o : out $items @n0
+  net t items $items limited "a belt through: the loop's gates hold it": i -> o
+}
+
+module ChestEndBuffer<items> buffer size 3x5 {
+  port i : in  $items @s0
+  port o : out $items @n2
+  c = Buffer @(2, 3)
+  net a items $items limited "the loop's end, into the chest": i -> c
+  net b items $items limited "the chest, back onto the loop's head": c -> o
+}
+
+# -- circuits -------------------------------------------------------------------------------------
+
+# A latch with a gap (hysteresis): `out` turns on (=1) when `in` falls below `lo` and stays on
+# until `in` climbs back to `hi`. Read `in` on green into `latch.in` from outside, and gate on
+# `hold.OUT` (the latch's own output, on red):
+#   shed = Hysteresis<in=A, out=S, lo=20, hi=80> @(30, 4)
+#   wire level green: acc -> shed.latch.in
+#   sw = PowerSwitch @(36, 4) when shed.hold.S = 0
+# It has no ports, so its wire and combinator are named from outside.
+module Hysteresis<in, out, lo, hi> {
+  latch = Decider<if="green.$in < $lo or (red.$out > 0 and green.$in < $hi)", out="$out=1"> @(0, 0)
+  wire hold red: latch.out -> latch.in
+}

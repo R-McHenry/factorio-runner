@@ -1,7 +1,7 @@
 """fkcore.link: the game link (CORE-V1.md §9): RCON calls that read the game or make a named paste.
 
 Every call is one short RCON command with a 5 s socket timeout (Rory: game calls take seconds).
-The Lua sent here only reads, or builds through a blueprint paste, or (lab only) revives ghosts.
+The Lua sent here only reads, or builds through a blueprint paste, or (a free surface only) revives ghosts.
 **Nothing here registers an event handler or a command** (an RCON-registered handler made every
 save unjoinable on 2026-10-18); ``assert_safe`` refuses any Lua that would.
 
@@ -15,10 +15,10 @@ save unjoinable on 2026-10-18); ``assert_safe`` refuses any Lua that would.
   ``helpers.write_file`` into script-output and are read back from disk, so a big area never
   overflows an RCON reply; ``fkcore.scene.from_capture`` makes the scene.
 - ``paste(surface, force, bp, at)``: a superforced ``build_blueprint`` of a blueprint string from a
-  script inventory (the only world write). ``revive(surface, area)``: lab only, builds the area's
-  ghosts at once (lab rules: free materials).
+  script inventory (the only world write). ``revive(surface, area)``: a free surface only (the
+  lab), builds the area's ghosts at once (free materials).
 - ``decon(surface, force, area)``: marks the area for deconstruction; ``decon_list`` marks given
-  entities (name + position); ``destroy`` (lab only) removes.
+  entities (name + position); ``destroy`` (a free surface only) removes.
 - ``produced(force, surface, items)``: the force's production counts (two samples are a measure).
 - ``say(text)``: a line in game chat.
 - ``alerts(force)``: the game's alert panel of every player of the force, connected or not (the
@@ -52,12 +52,28 @@ __all__ = ["LinkError", "Rcon", "lua_snapshot", "lua_paste", "lua_revive", "lua_
            "snapshot", "paste", "alerts", "stats", "chart", "read_output", "enabled",
            "open_from_env", "OUT_DIR", "WINDOWS"]
 
+def _game_link():
+    """``link.json`` in the game codebase (the working directory): where a run's server is when it
+    is not factorio.service, e.g. ``{"port": 27016, "pw_file": ..., "script_output": ...}`` for
+    the Sea Block test server (kickoff-v1.sh --instance sb writes it). The env vars win."""
+    try:
+        with open("link.json", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+_GAME = _game_link()
 HOST = os.environ.get("FK_RCON_HOST", "127.0.0.1")
-PORT = int(os.environ.get("FK_RCON_PORT", "27015"))
-PW_FILE = os.environ.get("FK_RCON_PW_FILE", "/home/computah/factorio/instance/rcon.pw")
+PORT = int(os.environ.get("FK_RCON_PORT") or _GAME.get("port") or 27015)
+PW_FILE = os.environ.get("FK_RCON_PW_FILE") or _GAME.get("pw_file") \
+    or "/home/computah/factorio/instance/rcon.pw"
 #: script-output of the server (write-data/script-output); snapshot files land in OUT_DIR/fk5/.
-OUT_DIR = os.environ.get("FK_SCRIPT_OUTPUT", "/home/computah/factorio/server/factorio/script-output")
-TIMEOUT = 5.0
+OUT_DIR = os.environ.get("FK_SCRIPT_OUTPUT") or _GAME.get("script_output") \
+    or "/home/computah/factorio/server/factorio/script-output"
+#: seconds a reply may take; FK_RCON_TIMEOUT raises it for a big lab build (11-07: megahub's
+#: 45k-entity snapshot took longer than 5 s)
+TIMEOUT = float(os.environ.get("FK_RCON_TIMEOUT", "5.0"))
 
 _FORBIDDEN = re.compile(r"\b(script\s*\.\s*on_\w+|commands\s*\.\s*add_command|remote\s*\.\s*add_interface"
                         r"|script\s*\.\s*register_\w+)")
@@ -237,9 +253,15 @@ for _, e in pairs(s.find_entities_filtered{{area = {_area(area)}, type = {_SKIP}
   end
   if not g and (t == 'pipe' or t == 'pipe-to-ground' or t == 'pump') then
     local it = {{}}
-    for i = 1, #e.fluidbox do
-      local f = e.fluidbox[i]
-      if f then it[f.name] = (it[f.name] or 0) + f.amount end
+    local okb, fbx = pcall(function() return e.fluidbox end)
+    if okb and fbx then
+      for i = 1, #fbx do
+        local f = fbx[i]
+        if f then it[f.name] = (it[f.name] or 0) + f.amount end
+      end
+    else
+      local okc, fc = pcall(function() return e.get_fluid_contents() end)
+      if okc and fc then for n, a in pairs(fc) do it[n] = (it[n] or 0) + a end end
     end
     if next(it) then row.it = it end
   end
@@ -281,8 +303,8 @@ local function cls_of(t, n, d)
   return c or '?'
 end
 local function fluidrow(e)
-  local fb = e.fluidbox
-  if not fb or #fb < 1 then return nil end
+  local okb, fb = pcall(function() return e.fluidbox end)
+  if not okb or not fb or #fb < 1 then return nil end
   local fl = fb[1]
   local okc, cap = pcall(fb.get_capacity, 1)
   local oks, seg = pcall(fb.get_fluid_segment_id, 1)
@@ -290,8 +312,8 @@ local function fluidrow(e)
     fl and fl.name or '', fl and fl.amount or 0, okc and cap or 0}}
 end
 local function opens(e)
-  local fb = e.fluidbox
-  if not fb or #fb < 1 then return 0 end
+  local okb, fb = pcall(function() return e.fluidbox end)
+  if not okb or not fb or #fb < 1 then return 0 end
   local n = 0
   for i = 1, #fb do
     local okf, filt = pcall(fb.get_filter, i)
@@ -523,8 +545,10 @@ def lua_revive(surface, area):
 local s = game.get_surface({_q(surface)})
 local n, failed = 0, 0
 for _, g in pairs(s.find_entities_filtered{{area = {_area(area)}, type = 'entity-ghost'}}) do
-  local _, e = g.revive()
-  if e then n = n + 1 else failed = failed + 1 end
+  if g.valid then
+    local _, e = g.revive()
+    if e then n = n + 1 else failed = failed + 1 end
+  end
 end
 rcon.print(n .. ' ' .. failed)
 """
@@ -880,6 +904,7 @@ local CB_OF = {
 }
 local FIELD = {input_priority = 'splitter_input_priority', output_priority = 'splitter_output_priority',
   filter = 'splitter_filter'}
+local VEC = {pickup_position = 1, drop_position = 1}
 local DONE = {entity_number = 1, name = 1, position = 1, direction = 1, tags = 1, recipe = 1, type = 1,
   quality = 1, control_behavior = 1, use_filters = 1, filters = 1, request_filters = 1, items = 1}
 local function slot(f, min, max)
@@ -954,7 +979,8 @@ for _, e in ipairs(d.e) do
     if e.request_filters then requests(g, e.request_filters) end
     if e.items then try('items', function() g.insert_plan = e.items end) end
     for k, v in pairs(e) do
-      if not DONE[k] then try(k, function() g[FIELD[k] or k] = v end) end
+      if VEC[k] then try(k, function() g[k] = {g.position.x + v[1], g.position.y + v[2]} end)
+      elseif not DONE[k] then try(k, function() g[FIELD[k] or k] = v end) end
     end
   else
     miss('ghost not placed: ' .. e.name)

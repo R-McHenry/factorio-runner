@@ -164,7 +164,7 @@ def _watts(w):
     return f"{w / 1e6:.2f} MW" if w >= 1e6 else f"{w / 1e3:.0f} kW"
 
 
-def cover_domains(flat, lay, cat, doms, pole, keep_out=(), pinned_of=None, standing=None):
+def cover_domains(flat, lay, cat, doms, pole, keep_out=(), pinned_of=None):
     """Cover each domain apart, then lay the copper lines. -> (new layout, report lines, checks).
     ``pinned_of(owner)``: the committed poles of a cover owner."""
     checks = assign(flat, lay, cat, doms)
@@ -178,7 +178,7 @@ def cover_domains(flat, lay, cat, doms, pole, keep_out=(), pinned_of=None, stand
         pinned = pinned_of(d.owner) if pinned_of else ()
         keys = set(d.keys)
         poles, rep = covermod.cover_power(out, cat, pole=dpole, owner=d.owner, keep_out=keep_out,
-                                          pinned=pinned, standing=standing, only=keys,
+                                          pinned=pinned, only=keys,
                                           deny=others, attrs=d.attrs)
         out = covermod.apply_cover(out, cat, pole=dpole, owner=d.owner, poles=poles)
         d.keys |= {p.key for p in poles}

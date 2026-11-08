@@ -1,0 +1,37 @@
+# power-shed.fk: a lab field that sheds its load when the accumulators run low. Plot 200x200
+# (any). Shows: two power domains (`power main: cover all`, `power labs: cover field`), the
+# library's Hysteresis latch, a PowerSwitch gated on it, `copper` lines joining domains.
+# Run:  fk check power-shed.fk    fk build --to report_checks    (then read out\cover_power.txt)
+# Expect: `check power-shed: 54 machines, 42 nets, 0 check lines`; `domain labs: cover power-labs
+# ... 4 poles`, `copper load: power-labs/p4 to sw/m0.right, 1 bridge pole added`; with the
+# template's roboport in main, `power-short ... want 220 kW ... 4 generators make 168 kW`. In
+# the lab the switch opened at 19.2% charge and closed at 79.6%, once each way.
+import LabColumn, Hysteresis from "cells.fk"
+
+power main: cover all                 # everything the labs domain doesn't name
+power labs: cover field               # the lab field, its own network
+
+# -- main: solar panels and accumulators ----------------------------------------------------------
+s1 = Entity<name=solar-panel> @(0, 0)
+s2 = Entity<name=solar-panel> @(4, 0)
+s3 = Entity<name=solar-panel> @(8, 0)
+s4 = Entity<name=solar-panel> @(12, 0)
+acc  = Accumulator<read=A> @(0, 5)    # its charge, 0 to 100, as signal A
+acc2 = Accumulator         @(3, 5)    # the game charges a network's accumulators together
+
+# -- the latch and the switch ---------------------------------------------------------------------
+signal A = signal-A
+signal S = signal-S
+shed = Hysteresis<in=A, out=S, lo=20, hi=80> @(8, 6)
+wire level green: acc -> shed.latch.in        # the charge, into the latch
+sw = PowerSwitch @(12, 5) when shed.hold.S = 0  # closed while nothing is shed
+
+copper feed: main -> sw.left
+copper load: sw.right -> labs
+
+# -- labs: two columns of six labs, red and green from a chest each ------------------------------
+red   = Chest<requester, item=automation-science-pack, rate=1/s> @(18, 26)
+green = Chest<requester, item=logistic-science-pack, rate=1/s>   @(18, 28)
+field = Stack<cell=LabColumn, n=2> @(24, 6)
+net r: red -> field.r_in
+net g: green -> field.g_in

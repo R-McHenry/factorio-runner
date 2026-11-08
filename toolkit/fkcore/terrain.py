@@ -15,7 +15,18 @@ codebase as ``<name>.terrain.json``, and loaded by the flow's ``read_terrain`` s
      "enemies":   {name: n},
      "tiles":     {tile name: n},                       the blocking tiles, by name
      "ungenerated": [[cx, cy], ...],                    chunks of the area not generated
-     "blocked":   [[x, y], ...]}                        water + other + cliff tiles
+     "entities":  {"tick": n, "area": [...], "count": n, "names": {name: n},
+                   "tiles": [[x, y], ...]},             3.1: standing entities read as obstacles
+     "blocked":   [[x, y], ...]}                        water + other + cliff (+ entity) tiles
+
+**Entities as obstacles** (3.1, Rory 2026-11-08: the world never feeds a step unless the agent
+asks): ``read-terrain --entities`` reads what stands in the area (``link.snapshot``) and puts the
+tiles of every built entity the design does not own into ``entities`` (:func:`obstacles`), so
+routes, poles and roboports go round them. Owned is: on a tile of the composed design (the diff
+judges those), or in the toolkit's own record (``fkcore.own``: what it pasted and will take up).
+Ghosts, trees, rocks, cliffs, units and the rest the snapshot skips are not entities here.
+``entities.tick`` and ``entities.area`` say when and where they were read; a file without the
+key has none. A read without ``--entities`` leaves what the file holds.
 
 **What blocks** is the game's own rule, read from the collision masks: a tile blocks when its
 prototype's mask shares a layer with what layouts build (the union of the masks of
@@ -56,7 +67,20 @@ from . import pack as _pack
 __all__ = ["BLOCK", "REFERENCE", "Cliff", "Patch", "Terrain", "FrameGround", "lua_block", "read",
            "merge", "cliff_tiles", "patches", "from_dict", "load", "save", "to_frame",
            "from_frame", "frame_size", "frame_blocked", "frame_ground", "summary",
-           "fmt_amount"]
+           "fmt_amount", "NOT_OBSTACLES", "obstacles", "owned_tiles", "read_entities",
+           "with_entities"]
+
+#: entity types a ``--entities`` read never takes as obstacles: the terrain has cliffs, a paste
+#: steamrolls trees and rocks, and the rest stands nowhere for long
+NOT_OBSTACLES = frozenset({"tree", "simple-entity", "cliff", "unit", "entity-ghost", "tile-ghost",
+                           "resource", "fish", "character", "corpse", "character-corpse",
+                           "item-entity", "item-request-proxy", "construction-robot",
+                           "logistic-robot", "combat-robot", "highlight-box", "speech-bubble",
+                           "explosion", "smoke-with-trigger", "particle-source", "projectile",
+                           "beam", "stream", "sticker", "fire", "deconstructible-tile-proxy",
+                           "spider-leg", "rocket-silo-rocket", "rocket-silo-rocket-shadow",
+                           "car", "spider-vehicle", "locomotive", "cargo-wagon", "fluid-wagon",
+                           "artillery-wagon"})
 
 #: Tiles per side of one read block (one RCON command each).
 BLOCK = 128
@@ -112,6 +136,8 @@ class Terrain:
     enemies: dict = field(default_factory=dict)       # name -> count
     tiles: dict = field(default_factory=dict)         # blocking tile name -> count
     ungenerated: list = field(default_factory=list)   # [(cx, cy)]
+    entities: frozenset = frozenset()                 # 3.1: tiles of standing entities not owned
+    entities_read: dict | None = None                 # {"tick", "area", "count", "names"}, or None
 
     @cached_property
     def cliff_tiles(self):
@@ -125,7 +151,7 @@ class Terrain:
     def blocked(self):
         # a pack with landfill (Sea Block): water is ground that costs landfill (fkcore.pack)
         water = frozenset() if _pack.landfill() else self.water
-        return frozenset(water | self.other | self.cliff_tiles)
+        return frozenset(water | self.other | self.cliff_tiles | self.entities)
 
     @cached_property
     def patches(self):
@@ -155,6 +181,8 @@ class Terrain:
             "enemies": dict(sorted(self.enemies.items())),
             "tiles": dict(sorted(self.tiles.items())),
             "ungenerated": [list(c) for c in sorted(self.ungenerated)],
+            "entities": None if self.entities_read is None else dict(
+                self.entities_read, tiles=_rows(self.entities)),
             "blocked": _rows(self.blocked),
         }
 
@@ -332,10 +360,76 @@ def combine(old: "Terrain", new: "Terrain") -> "Terrain":
 
     ungen = {c for c in old.ungenerated if outside(c[0] * 32, c[1] * 32)} | set(new.ungenerated)
     area = (min(ox0, nx0), min(oy0, ny0), max(ox1, nx1), max(oy1, ny1))
+    # 3.1: a read with --entities replaces the old entity tiles inside its area; one without
+    # says nothing about them and leaves the old ones (stale is said by the tick)
+    ents, ents_read = old.entities, old.entities_read
+    if new.entities_read is not None:
+        kept = {t for t in old.entities if outside(*t)}
+        ents = frozenset(kept | set(new.entities))
+        ents_read = dict(new.entities_read)
+        if kept and old.entities_read is not None:
+            # the record is the new read's; its area grows to what the kept tiles came from, and
+            # the count adds the old read's (an estimate: some of the old stood in the new area)
+            ents_read["area"] = list(area)
+            ents_read["count"] = (new.entities_read.get("count", 0)
+                                  + old.entities_read.get("count", 0))
     return Terrain(new.surface, area, new.tick if new.tick is not None else old.tick, resources,
                    water, other, [cliffs[k] for k in sorted(cliffs)], removable,
                    counts(old.enemies, new.enemies), counts(old.tiles, new.tiles),
-                   sorted(tuple(c) for c in ungen))
+                   sorted(tuple(c) for c in ungen), ents, ents_read)
+
+
+# -- entities as obstacles (3.1) ------------------------------------------------------------------
+def owned_tiles(composed, own_rows=(), cat=None):
+    """The tiles the design accounts for: every tile of the composed surface's entities
+    (``compose.Surface``, its ``tiles`` index) plus those of the toolkit's own record rows
+    (``own.Row``: what it pasted, which the next apply takes up where the design dropped it)."""
+    out = set(composed.tiles) if composed is not None else set()
+    for row in own_rows:
+        if cat is not None and cat.has_entity(row.name):
+            out |= set(cat.tiles(row.name, float(row.x), float(row.y), row.dir or 0))
+        else:
+            out.add((math.floor(float(row.x)), math.floor(float(row.y))))
+    return out
+
+
+def obstacles(things, owned, area=None):
+    """(tiles, names) of the built entities among ``things`` (snapshot rows: ``n``, ``t``, ``g``,
+    ``box``) that are not :data:`NOT_OBSTACLES` and stand on no ``owned`` tile: their box tiles
+    inside ``area``, and {name: count}."""
+    from .scene import box_tiles
+    tiles, names = set(), {}
+    for row in things or ():
+        if row.get("g") or row.get("t") in NOT_OBSTACLES or not row.get("box"):
+            continue
+        mine = {tuple(t) for t in box_tiles(row["box"])}
+        if not mine or mine & owned:
+            continue
+        if area is not None:
+            x0, y0, x1, y1 = area
+            mine = {t for t in mine if x0 <= t[0] < x1 and y0 <= t[1] < y1}
+            if not mine:
+                continue
+        tiles |= mine
+        names[row["n"]] = names.get(row["n"], 0) + 1
+    return frozenset(tiles), names
+
+
+def read_entities(rcon, surface, area, owned, tag="terrain-entities"):
+    """One snapshot of ``area`` (``link.snapshot``) -> (tiles, {"tick", "area", "count",
+    "names"}): the obstacles there. Only reads."""
+    from . import link
+    cap = link.snapshot(rcon, surface, area, tag, keep=False)
+    tiles, names = obstacles(cap.get("things"), owned, area)
+    return tiles, {"tick": cap.get("tick"), "area": [int(v) for v in area],
+                   "count": sum(names.values()), "names": dict(sorted(names.items()))}
+
+
+def with_entities(t, tiles, read):
+    """``t`` with the entity tiles and their read record set (a new Terrain)."""
+    return Terrain(t.surface, t.area, t.tick, t.resources, t.water, t.other, list(t.cliffs),
+                   t.removable, t.enemies, t.tiles, list(t.ungenerated), frozenset(tiles),
+                   dict(read))
 
 
 # -- geometry -------------------------------------------------------------------------------------
@@ -414,11 +508,16 @@ def from_dict(d) -> Terrain:
     cliffs = [Cliff(c["name"], float(c["x"]), float(c["y"]), c["orientation"],
                     tuple(float(v) for v in c["box"]), float(c.get("box_orientation") or 0.0))
               for c in d.get("cliffs") or ()]
+    ents = d.get("entities")
+    ents_tiles, ents_read = frozenset(), None
+    if isinstance(ents, dict):
+        ents_tiles = frozenset((int(x), int(y)) for x, y in ents.get("tiles") or ())
+        ents_read = {k: v for k, v in ents.items() if k != "tiles"}
     return Terrain(d["surface"], tuple(int(v) for v in d["area"]), d.get("tick"), resources,
                    frozenset((int(x), int(y)) for x, y in d.get("water") or ()),
                    frozenset((int(x), int(y)) for x, y in d.get("other") or ()), cliffs,
                    removable, dict(_table(d.get("enemies"))), dict(_table(d.get("tiles"))),
-                   [tuple(c) for c in d.get("ungenerated") or ()])
+                   [tuple(c) for c in d.get("ungenerated") or ()], ents_tiles, ents_read)
 
 
 def load(path) -> Terrain:
@@ -486,6 +585,7 @@ class FrameGround:
     water: int = 0                      # blocked tiles inside the plot, by kind (for reports)
     cliff: int = 0
     other: int = 0
+    entities: int = 0                   # 3.1: standing entities' tiles (read-terrain --entities)
 
 
 def frame_blocked(t: Terrain, plot, size=None, margin=8) -> frozenset:
@@ -522,7 +622,8 @@ def frame_ground(t: Terrain, plot, size=None, margin=8, patch=None) -> FrameGrou
     return FrameGround(blocked, ore, (0, 0) + tuple(frame_size(plot)), patch,
                        sum(1 for b in t.water if inside(b)),
                        sum(1 for b in t.cliff_tiles if inside(b)),
-                       sum(1 for b in t.other if inside(b)))
+                       sum(1 for b in t.other if inside(b)),
+                       sum(1 for b in t.entities if inside(b)))
 
 
 # -- report ---------------------------------------------------------------------------------------
@@ -560,6 +661,14 @@ def summary(t: Terrain, name="map", show=3) -> list:
                      + (f"; ... {len(ps) - show} more" if len(ps) > show else ""))
     lines.append(f"  removable, not obstacles (a paste marks them for deconstruction): "
                  f"{t.removable_count('tree')} trees, {t.removable_count('rock')} rocks")
+    if t.entities_read is not None:
+        er = t.entities_read
+        names = ", ".join(f"{n} {k}" for k, n in sorted(er.get("names", {}).items(),
+                                                       key=lambda kv: (-kv[1], kv[0]))[:show])
+        lines.append(f"  entities as obstacles (read-terrain --entities at tick {er.get('tick')}, "
+                     f"area {','.join(str(v) for v in er.get('area', t.area))}): "
+                     f"{er.get('count', 0)} standing entities the design does not own, "
+                     f"{len(t.entities)} tiles" + (f" ({names})" if names else ""))
     if t.enemies:
         lines.append("  enemies: " + ", ".join(f"{n} {k}" for k, n in sorted(t.enemies.items())))
     return lines

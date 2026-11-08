@@ -14,7 +14,7 @@ marks into the surface ``.fkp``, as the offline ``sense`` command does, so the n
 Notify (the surface file's ``notify``, or ``--notify``):
 
 - ``nearby`` (play default): the lines are only this look's report;
-- ``all`` (lab default): they are also pushed, one game chat line per change, and appended to
+- ``all`` (the default on a free surface): they are also pushed, one game chat line per change, and appended to
   ``<game>/out/inbox.txt`` (``fkcore.notify``);
 - ``off``: report only, nothing pushed.
 
@@ -22,11 +22,11 @@ Vision (2.1, ``fkcore.vision``): ``view`` (``vision.View``) zooms out (N tiles a
 layers (robots, power, defense, pollution, pipes, recipes, tags; the design render gets those it
 knows) and writes a PNG instead of the text. At zoom 1 with no layer and no image the look is
 2.0.78's, byte for byte. A map look (zoom 8 and up, or a big area) reads counts per cell
-(``link.vision_read``), not every entity, and gives no verdicts; in play mode a zoomed-out look
-reads only charted chunks, what the game's map view shows.
+(``link.vision_read``), not every entity, and gives no verdicts; on a surface that is not free a
+zoomed-out look reads only charted chunks, what the game's map view shows.
 
-Fair play: a look reads only its area. In play mode the area must be given; a lab look without
-one covers everything designed (the lab's global diff). ``--watch`` overrides the watch policy for
+Fair play: a look reads only its area. On a surface that is not free the area must be given; on
+a free surface (the lab) a look without one covers everything designed (a global diff). ``--watch`` overrides the watch policy for
 one look (``strict``, or ``plots=keep,sanctioned=strict``). ``report`` is pure (the tests feed it
 fixture captures); ``run`` uses the game link, which is on only with ``FK_LINK=on``.
 """
@@ -231,13 +231,15 @@ def unpaired(live):
 
 
 def report(s, live, cat, area, pol, net_items=None, own=None, view=None, facts=None,
-           tags=None) -> Look:
+           tags=None, placements=None) -> Look:
     """The look at ``area`` of the composed ``s`` against the ``live`` scene. Pure. ``own``: the
     toolkit's own entities (``fkcore.own``): those the design dropped read unowned. ``view``
     (``vision.View``): zoom, layers and image; ``facts``: the game's vision read
-    (``vision.facts_from_read``); ``tags``: ``vision.design_tags``."""
+    (``vision.facts_from_read``); ``tags``: ``vision.design_tags``; ``placements`` (3.1): the
+    registry's records that are not this design's (``placements.explaining``)."""
     area = tuple(int(v) for v in area)
-    rep = sense.sense(s, live, cat, list(area), pol, net_items=net_items, own=own)
+    rep = sense.sense(s, live, cat, list(area), pol, net_items=net_items, own=own,
+                      placements=placements)
     dsc = scene.design_scene(s, cat, list(area))
     design = compose.render_scene(dsc, cat, area)
     lk = Look(s.name, area, dict(pol), rep, design, compose.render_scene(live, cat, area),
@@ -284,12 +286,11 @@ def image_path(game, area, zoom):
 
 
 def _vision_facts(r, sf, s, area, view, plots, cells, timings):
-    from .apply import force_for
-    play = sf.mode != "lab"
+    play = not sf.free
     want = [n for n in view.layers if n != "tags"]
     if not want and not cells and not (play and view.zoom > 1):
         return None
-    force = getattr(sf, "force", None) or force_for(sf.mode)
+    force = sf.force_name
     cfg = vision.read_config(sf.name, force, vision.Frame(area, view.zoom), want, play,
                              plots if cells else (), cells, link.SKIP_TYPES)
     return link.vision_read(r, cfg, timings=timings)
@@ -319,15 +320,20 @@ def side_by_side(design, live, area, max_width=MAX_WIDTH):
 
 
 def run(r, game, cat, area=None, notify=None, watch=None, write_marks=False, tag="look",
-        view=None):
+        view=None, surface=None, force=None):
     """Look at ``area`` of the game codebase ``game`` in the game: snapshot, sense, render; write
     the marks (``write_marks``) and push (notify all). ``view`` (``vision.View``): zoom, layers,
-    image; a map look returns a :class:`MapLook`."""
+    image; a map look returns a :class:`MapLook`. ``surface`` (3.1.1): another surface than the
+    game's own (a placement's, the lab's): read there, against an empty design, with ``force``."""
     sf, surface_lay, lay_path, s = composed(game, cat)
+    if surface and surface != sf.name:
+        import dataclasses
+        sf = dataclasses.replace(sf, name=surface, force=force or sf.force)
+        s = compose.Surface(name=surface)
     if area is None:
-        if sf.mode != "lab":
-            raise LookError("fair play: a look in play mode needs --area X0,Y0,X1,Y1 (the agent "
-                            "looks at an area)")
+        if not sf.free:
+            raise LookError("fair play: a look needs --area X0,Y0,X1,Y1 on a surface that is not "
+                            "free (the agent looks at an area)")
         area = default_area(s, cat)
         if area is None:
             raise LookError("nothing is designed on this surface")
@@ -356,15 +362,17 @@ def run(r, game, cat, area=None, notify=None, watch=None, write_marks=False, tag
         facts = vision.facts_from_read(raw, live, tags[0]) if raw is not None else None
         if facts is None and view.layers:
             facts = vision.facts_from_read({}, live, tags[0])
-    lk = report(s, live, cat, area, pol, items, ownmod.load(game, sf.name), view, facts, tags)
+    from . import placements as placementsmod
+    recs = placementsmod.explaining(placementsmod.load(game, sf.name), s)
+    lk = report(s, live, cat, area, pol, items, ownmod.load(game, sf.name), view, facts, tags,
+                placements=recs)
     ghosts = sorted({v.name for v in lk.rep.verdicts if v.verdict == "ghost"})
     if ghosts:
         # a ghost that stays is a blocked build: say why (SHORT: the network holds none of the
         # item; LOCKED: its recipe is not researched), from the free supply read
         from . import supply
-        from .apply import force_for
         try:
-            sup = supply.read(r, getattr(sf, "force", None) or force_for(sf.mode), sf.name, ghosts)
+            sup = supply.read(r, sf.force_name, sf.name, ghosts)
             supply.mark_ghosts(lk.rep.verdicts, sup)
         except (OSError, link.LinkError) as exc:
             lk.notes.append(f"ghosts not judged against the network ({type(exc).__name__}: {exc})")

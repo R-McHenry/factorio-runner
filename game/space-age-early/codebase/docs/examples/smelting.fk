@@ -1,7 +1,11 @@
-# smelting.fk: iron ore and coal into plates, the plates into a provider chest for the robots.
-# Plot: 26x26 (place smelting = smelting plot X,Y 26x26 in nauvis.surface), on an iron patch.
-ore   = MinerRow<n=4, resource=iron-ore>   @(10, 2, rot 2)
-coal  = MinerRow<n=2, resource=coal>       @(18, 2, rot 2)
+# smelting.fk: iron ore and coal into plates, the plates into a provider chest. Plot 26x26, on an
+# iron patch (the drills need ore under them). Shows: MinerRow, rot 2, a row (SmelterRow) and the
+# `row-cell` advice that writes the Stack of library cells replacing it.
+# Run:  fk check smelting.fk    fk rates smelting.fk
+# Expect: `could-pair net fuel and ore_` (shared-belt.fk pairs them); `advice row-cell smelt: ...
+# Stack<cell=StoneFurnaceCell, n=8, ...>`; 120 plates/min, the furnaces at 80% (ore short).
+ore   = MinerRow<n=4, resource=iron-ore>   @(16, 9, rot 2)
+coal  = MinerRow<n=2, resource=coal>       @(21, 9, rot 2)
 smelt = SmelterRow<n=8, recipe=iron-plate> @(10, 12)
 box   = Chest<provider, limit=4>           @(4, 22)
 

@@ -14,7 +14,7 @@
     place   := 'size' WxH | 'gap' num | 'retired' | 'temporary' [until ...] | hint   # its own line
     hint    := '@' '(' num ',' num (',' 'rot' num)? ')' | '@' 'patch' '(' word | STRING ')'
     net     := 'net' 'each'? name ('items' item (',' item)*)? ('width' num)? ('lane' ('L' | 'R'))?
-               'split'? ('limited' STRING?)? ':' refs ('->' refs)+ ('when' cond)? branch*
+               'any'? 'split'? ('limited' STRING?)? ':' refs ('->' refs)+ ('when' cond)? branch*
     branch  := name '.' name ('->' refs)+    # on a line of its own: one way out of a piece (3.0)
     lanes   := 'lanes' name '|' name    # two nets share every belt: left lane | right lane
     bundle  := 'bundle' name ':' name (',' name)*    # nets routed as one ribbon, in order (2.1)
@@ -289,6 +289,8 @@ class Net:
     split: bool = False    # 2.0.76: one net per item, two to a belt (a lane each)
     why: str | None = None     # 2.1: `limited "..."`, what limits the net (shown, not checked)
     each: bool = False     # 2.1: `net each`: one net per Stack cell, cell k with cell k
+    any: bool = False      # 3.0: `net NAME any:` each driver reaches some consumer, each
+    #                        consumer some driver (a pass-through, a split output)
     # 3.0 chained nets: `net gear: gears -> wp -> red`, every stage's refs in order (the middle
     # ones are pieces, instances with inout ports), and the branch lines `sp.a -> wp2 -> cable`,
     # each a list of stages starting with [piece.port]. None for a plain net.
@@ -1048,6 +1050,7 @@ class _P:
             if tok.text not in ("L", "R"):
                 self.err(f"lane {tok.text}: a lane is L or R (looking downstream)", tok)
             lane = tok.text
+        any_ = self.accept("any") is not None
         split = self.accept("split") is not None
         limited = self.accept("limited") is not None
         why = None
@@ -1065,7 +1068,7 @@ class _P:
             stages.append(self.refs())
         when = self.cond() if self.accept("when") else None
         net = Net(name, items, stages[0], stages[-1], line, limited, when, width, lane, split, why,
-                  each=each)
+                  each=each, any=any_)
         if len(stages) > 2:
             # 3.0 chained nets: the middle stages are pieces, one instance each
             if each:

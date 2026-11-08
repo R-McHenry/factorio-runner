@@ -138,7 +138,18 @@ def maker(path, cat, name=None, layout=None):
     """A factory's elaboration at given counts, its file read once: ``make(sizes) -> Flat``."""
     f, modules = load(path)
     name = name or os.path.splitext(os.path.basename(path))[0]
-    return lambda sizes: elaborate(f, modules, cat, name, layout, sizes)
+    # 2.1.32: the base (no sizes) once: size, _size_counts and _size_rows each asked for it, three
+    # elaborations of a megabase grid with nothing to size (its base is shared read-only already,
+    # _Run.flat)
+    base = []
+
+    def make(sizes):
+        if sizes:
+            return elaborate(f, modules, cat, name, layout, sizes)
+        if not base:
+            base.append(elaborate(f, modules, cat, name, layout, sizes))
+        return base[0]
+    return make
 
 
 # -- the model at given counts --------------------------------------------------------------------
@@ -1202,13 +1213,22 @@ def fit(sz, places, cat):
         p = places.get(f) if places else None
         room = terrainmod.frame_size(p) if p is not None else None
         order = {r.path: i for i, r in enumerate(mine)}      # a pair once, under the first row
+
+        def at(path, box):
+            """3.0.1: the instance's ``@(x, y)`` as written (its origin), else its frame's corner."""
+            inst = flat.insts.get(path)
+            h = (inst.hints or {}) if inst is not None else {}
+            h = h.get("origin") or h.get("at")
+            if h is None:
+                return f"@({_n(box[0])}, {_n(box[1])})"
+            return f"@({_n(h[0])}, {_n(h[1])}" + (f", rot {int(h[2])}" if int(h[2]) % 4 else "") + ")"
         for r in mine:
             box = frames.get(r.path)
             if box is None:
                 continue
             x0, y0, x1, y1 = box
             what = (f"n={r.n} ({_auto(r)}) makes it {_n(x1 - x0)}x{_n(y1 - y0)} at "
-                    f"@({_n(x0)}, {_n(y0)})")
+                    f"{at(r.path, box)}")
             if room is not None and (x0 < 0 or y0 < 0 or x1 > room[0] or y1 > room[1]):
                 past = [f"x to {_n(x1)}" if x1 > room[0] else "",
                         f"y to {_n(y1)}" if y1 > room[1] else "",
@@ -1225,7 +1245,7 @@ def fit(sz, places, cat):
                     checks.append(Check("does-not-fit", f"{f} {r.path}",
                                         f"{what}: its frame overlaps {other}'s "
                                         f"({_n(ob[2] - ob[0])}x{_n(ob[3] - ob[1])} at "
-                                        f"@({_n(ob[0])}, {_n(ob[1])})) on {_n(w)}x{_n(h)} tiles"))
+                                        f"{at(other, ob)}) on {_n(w)}x{_n(h)} tiles"))
     return checks
 
 

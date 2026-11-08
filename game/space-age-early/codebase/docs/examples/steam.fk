@@ -1,6 +1,11 @@
-# steam.fk: a steam power plant, 3.6 MW. Water from the lake, two boilers burning coal, four
-# steam engines. Place its plot so the pump stands on the shore with water west of it (rot 3 faces
-# west). The coal comes from a requester chest here; a belt from coal drills works the same way.
+# steam.fk: a steam power plant, 3.6 MW. Plot 16x26. Water from the lake, two boilers burning
+# coal, four steam engines; the router lays the water and steam as pipes and the coal as a belt
+# with an inserter into each boiler. Place the plot so the pump stands on the shore with water
+# west of it (rot 3 faces west). Coal by belt from drills works the same way.
+# Run:  fk check steam.fk    fk rates steam.fk    fk build --to report_checks
+# Expect: `check steam: 8 machines, 3 nets, 0 check lines`; the boilers at full speed (`steam
+# 3600.00` a minute each), the pump at 10%; no check line at all: `steam: 3 poles, on a grid with
+# generation` (out\floorplan.txt).
 pump = OffshorePump<rate=1200/s>               @(0, 17, rot 3)
 b1   = Boiler<fuel=coal>                       @(2, 13)
 b2   = Boiler<fuel=coal>                       @(10, 13)

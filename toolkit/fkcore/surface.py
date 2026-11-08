@@ -1,8 +1,9 @@
 """fkcore.surface: the surface file (`<surface>.surface`), CORE-V1.md §6.2 and §11.
 
     surface  <name>
-    mode     play | lab
-    force    <name>                           # whose the paste is (default: player in play, lab in lab)
+    free                                      # things are free here: a paste's ghosts are revived by
+                                              # Lua, nothing is built by robots (3.1; the lab)
+    force    <name>                           # whose the paste is (default player)
     terrain  <name> | none                    # the bare world the layout is made against
     catalog  <name>
     design   <file>                           # the root .fk: every plot is a sealed instance there
@@ -18,8 +19,18 @@
 A ``#`` starts a comment at the start of a line or after a space. ``<module>`` is a factory file of the game codebase (``<module>.fk`` beside the surface file); its
 layout record is ``<module>.fkp``. :func:`floorplan` turns the place and claim lines into the
 surface's own .fkp (plots and claims); composing it with the factories' layouts is
-``fkcore.compose``. The defaults follow CORE-V1.md §6.4/6.5: ``play`` mode, watch ``plots: keep``
-and ``sanctioned: mark``, notify ``nearby`` in play and ``all`` in lab.
+``fkcore.compose``. The defaults follow CORE-V1.md §6.4/6.5: watch ``plots: keep`` and
+``sanctioned: mark``, notify ``nearby``, or ``all`` on a free surface.
+
+**Properties, not modes (3.1, PLAN-3.1 31-surface; Rory 11-08: "the lab is a surface").** A
+surface file used to say ``mode play | lab``, and the lab mode implied everything at once: the
+``lab`` force, revived ghosts, notify all, a look without an area, no roboports. Now each of those
+is a property of its own or a general behaviour: ``free`` (the paste's ghosts are revived by Lua,
+nothing is built by robots, a direct destroy is allowed, a look may take the whole design as its
+area) and ``force``. The lab is a surface file like any other (``surface lab``, ``free``, ``force
+lab``) and so will other planets be. An old ``mode`` line is still read, for one release: ``mode
+lab`` reads as ``free`` with the force ``lab`` and is noted in ``notes``; ``mode play`` reads as
+nothing; ``fk migrate-surface`` rewrites either as the properties (:func:`migrate_mode`).
 
 **``design`` (2.0.43, PLAN-GLOBAL phase B).** With a ``design`` line the plot list no longer comes
 from the ``place`` lines: it is derived from the root ``.fk``'s top-level sealed instances (name,
@@ -43,11 +54,19 @@ from . import snapshot
 from .sense import duration_ticks
 
 __all__ = ["SurfaceError", "Place", "SurfaceFile", "loads", "load", "load_game", "floorplan",
-           "derive_places", "migrate_text", "DESIGN_NOTE"]
+           "derive_places", "migrate_text", "migrate_mode", "DESIGN_NOTE", "MODE_NOTE",
+           "DEFAULT_FORCE", "properties", "PROPERTY_LINES"]
 
 _UNITS = {"s": 1.0, "min": 60.0, "h": 3600.0}
 #: The alert reminder cadence when the surface file has no ``remind`` line. Still open with Rory.
 DEFAULT_REMIND = "10min"
+#: whose a paste is when the surface file names no ``force``
+DEFAULT_FORCE = "player"
+#: the lines that say what is true of the surface itself (what a module built alone on it
+#: copies into its own surface file, ``fkcore.alone``); the rest place things on it
+PROPERTY_LINES = ("surface", "free", "force", "terrain", "catalog", "notify", "remind", "watch")
+_FLAGS = {"": True, "yes": True, "on": True, "true": True, "no": False, "off": False,
+          "false": False}
 
 
 class SurfaceError(ValueError):
@@ -73,7 +92,7 @@ class Place:
 class SurfaceFile:
     path: str
     name: str = ""
-    mode: str = "play"
+    free: bool = False                                # ghosts revived by Lua, nothing by robots
     terrain: str = "none"
     catalog: str = "base"
     places: dict = field(default_factory=dict)        # factory -> Place
@@ -81,8 +100,9 @@ class SurfaceFile:
     claims: dict = field(default_factory=dict)        # name -> fkp.Claim
     watch: dict = field(default_factory=lambda: {"plots": "keep", "sanctioned": "mark"})
     notify: str | None = None
-    force: str | None = None                          # the paste's force; None = by mode
+    force: str | None = None                          # the paste's force; None = DEFAULT_FORCE
     targets: dict = field(default_factory=dict)       # item -> items/s
+    notes: list = field(default_factory=list)         # old lines read for one more release
     remind: str = DEFAULT_REMIND                      # alert reminder cadence (open with Rory)
     design: str | None = None                         # the root .fk (2.0.43): the plot list
     design_notes: list = field(default_factory=list)  # what the derivation could not make a plot
@@ -90,7 +110,12 @@ class SurfaceFile:
 
     @property
     def notify_mode(self):
-        return self.notify or ("all" if self.mode == "lab" else "nearby")
+        return self.notify or ("all" if self.free else "nearby")
+
+    @property
+    def force_name(self):
+        """Whose the paste is: the ``force`` line, else ``player``."""
+        return self.force or DEFAULT_FORCE
 
     @property
     def remind_ticks(self):
@@ -128,10 +153,23 @@ def loads(text, path="<surface>") -> SurfaceFile:
         t = shlex.split(line)
         head = t[0]
         try:
-            if head in ("surface", "mode", "terrain", "catalog", "notify", "force", "design") \
+            if head == "free" and len(t) <= 2:
+                flag = _FLAGS.get(t[1].lower() if len(t) == 2 else "")
+                if flag is None:
+                    raise SurfaceError(f"{where}: free, or free yes|no")
+                sf.free = flag
+            elif head == "mode" and len(t) == 2:
+                # 3.1: read for one more release; fk migrate-surface writes the properties
+                if t[1] not in ("play", "lab"):
+                    raise SurfaceError(f"{where}: mode is gone (3.1): a surface is `free`, or not")
+                if t[1] == "lab":
+                    sf.free = True
+                    sf.force = sf.force or "lab"
+                sf.notes.append(f"{where}: `mode {t[1]}` is an old line; `fk migrate-surface` "
+                                "writes it as the properties"
+                                + (" `free` and `force lab`" if t[1] == "lab" else " (none)"))
+            elif head in ("surface", "terrain", "catalog", "notify", "force", "design") \
                     and len(t) == 2:
-                if head == "mode" and t[1] not in ("play", "lab"):
-                    raise SurfaceError(f"{where}: mode is play or lab")
                 if head == "notify" and t[1] not in ("nearby", "all", "off"):
                     raise SurfaceError(f"{where}: notify is nearby, all or off")
                 setattr(sf, "name" if head == "surface" else head, t[1])
@@ -205,10 +243,10 @@ def load(path, derive=True) -> SurfaceFile:
 
 
 def load_game(game_dir, derive=True) -> SurfaceFile:
-    """The surface file of a game codebase: its play-mode ``*.surface``, else its first (one
-    surface per codebase; 2.0.3: a lab.surface copied in beside nauvis.surface came first
-    alphabetically and every command read the lab's). With ``derive``, its ``design`` names the
-    plots (2.0.43)."""
+    """The surface file of a game codebase: its first ``*.surface`` that is not ``free``, else its
+    first (one surface per codebase; 2.0.3: a lab.surface copied in beside nauvis.surface came
+    first alphabetically and every command read the lab's). With ``derive``, its ``design``
+    names the plots (2.0.43)."""
     names = sorted(f for f in os.listdir(game_dir) if f.endswith(".surface"))
     if not names:
         raise SurfaceError(f"no .surface file in {game_dir}")
@@ -216,8 +254,28 @@ def load_game(game_dir, derive=True) -> SurfaceFile:
     for n in names:
         path = os.path.join(game_dir, n)
         files.append(loads(snapshot.read(path), path))
-    sf = next((sf for sf in files if sf.mode == "play"), files[0])
+    sf = next((sf for sf in files if not sf.free), files[0])
     return derive_places(sf, game_dir) if derive else sf
+
+
+def properties(sf: SurfaceFile) -> str:
+    """The surface's property lines as text (``PROPERTY_LINES``: what is true of the surface
+    itself, not what is placed on it), for a surface file written from this one (``fkcore.alone``:
+    a module built alone on the same surface)."""
+    out = [f"surface  {sf.name}"]
+    if sf.free:
+        out.append("free")
+    if sf.force:
+        out.append(f"force    {sf.force}")
+    out += [f"terrain  {sf.terrain}", f"catalog  {sf.catalog}"]
+    if sf.notify:
+        out.append(f"notify   {sf.notify}")
+    if sf.remind != DEFAULT_REMIND:
+        out.append(f"remind   {sf.remind}")
+    for region, action in sf.watch.items():
+        if action != {"plots": "keep", "sanctioned": "mark"}[region]:
+            out.append(f"watch {region}: {action}")
+    return "\n".join(out) + "\n"
 
 
 def derive_places(sf: SurfaceFile, folder) -> SurfaceFile:
@@ -264,6 +322,38 @@ DESIGN_NOTE = "# (2.0.43) the plots are the sealed instances of {design}: these 
               "their record"
 
 
+#: what a migration writes over an old ``mode`` line (3.1)
+MODE_NOTE = "# (3.1) `mode {mode}` was here: a surface has properties now{what}"
+
+
+def migrate_mode(text):
+    """``text`` (a surface file) with its ``mode`` line (gone in 3.1) written as the properties it
+    implied: ``mode lab`` becomes ``free`` and ``force lab`` (unless a ``force`` line is there
+    already), ``mode play`` becomes nothing; either is left as a comment saying so. -> (new text,
+    the mode it had or None)."""
+    lines = text.splitlines()
+    has_force = any(_word(raw) == "force" for raw in lines)
+    out, mode = [], None
+    for raw in lines:
+        if _word(raw) != "mode" or mode is not None:
+            out.append(raw)
+            continue
+        mode = shlex.split(_strip(raw))[1]
+        if mode == "lab":
+            out.append(MODE_NOTE.format(mode=mode, what=": free, and the paste's force"))
+            out.append("free")
+            if not has_force:
+                out.append("force    lab")
+        else:
+            out.append(MODE_NOTE.format(mode=mode, what=", and this one implied none"))
+    return "\n".join(out) + ("\n" if text.endswith("\n") or out else ""), mode
+
+
+def _word(raw):
+    head = raw.split("#", 1)[0].strip()
+    return head.split(" ", 1)[0] if head else ""
+
+
 def migrate_text(text, design):
     """``text`` (a surface file) with ``design`` added and every ``place`` line commented out
     (2.0.43, PLAN-GLOBAL phase B: ``fk migrate-surface``): the root .fk is now what places the
@@ -273,7 +363,7 @@ def migrate_text(text, design):
     for raw in text.splitlines():
         head = raw.split("#", 1)[0].strip()
         word = head.split(" ", 1)[0] if head else ""
-        if not done and word not in ("", "surface", "mode", "force", "terrain", "catalog"):
+        if not done and word not in ("", "surface", "free", "force", "terrain", "catalog"):
             out.append(f"design   {design}")
             out.append(DESIGN_NOTE.format(design=design))
             done = True

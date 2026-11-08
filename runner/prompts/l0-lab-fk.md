@@ -9,11 +9,14 @@ ghosts for the robots.
 
 Your codebase is `game/` in your work dir. It's the source of truth for your base.
 
-1. **Write factories as `.fk` files** in `game/`: machines in rows, and the nets that say what
-   feeds what (`net plates: smelter -> gears, box`). Copy and adapt a working example from
-   `game/docs/examples/` (`gears.fk`, `beltless.fk`, `smelting.fk`, `steam.fk`, `smelter-array.fk`,
-   `busbase.fk`); `game/docs/LANGUAGE.md` has the language, `game/docs/EXAMPLES.md` what each
-   example shows. **Start from a whole example, not hand-written cells:** `red.fk` is a working
+1. **Write factories as `.fk` files** in `game/`: lines of cells, and the nets that say what
+   feeds what (`net plates: smelter -> gears, box`). Read `game/docs/START.md` first: one
+   example (`gears.fk`) from copy to look, every line the toolkit prints explained. Then
+   `game/docs/EXAMPLES.md` chapter by chapter: each is a complete file in `game/docs/examples/`
+   that builds, the command, the exact lines it prints, one new idea, and what goes wrong at that
+   stage. `game/docs/TOOLKIT.md` (the commands) and `game/docs/LANGUAGE.md` (the language) are
+   references; each row points at the chapter that shows it. Do not learn the syntax by trial:
+   copy a chapter's file and change one thing. **Start from a whole example, not hand-written cells:** `red.fk` is a working
    red-science plot and `busbase.fk` a 116-machine bus base; put one in `world.fk`, `fk check` it,
    `build`, `evaluate`, then extend it. `blue6.fk` is a working blue-science stack: each cell
    makes its own engines and advanced circuits from steel, gears, pipes, circuits, cable, plastic
@@ -42,7 +45,7 @@ Your codebase is `game/` in your work dir. It's the source of truth for your bas
    build would undo it, and the design would stop describing the base.
 
 `fk` runs in `game/`, so a command's GAME_DIR is `.` (paths may be written with or without `game/`). `fk help` lists every command of this toolkit
-(2.1.30) and wins where the docs (written for 2.0.43, on Windows: read `\` as `/`) disagree. Free
+(3.1.2, the same release as the docs; on Windows paths in the docs read `\` as `/`). Free
 reads: `fk stats .`, `fk stock .`, `fk research .`, `fk tech . NAME`, `fk recipes .`. Queue research
 with `fk research . TECH`.
 

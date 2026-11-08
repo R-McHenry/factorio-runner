@@ -72,12 +72,14 @@ def _keys(keys, show=4):
 
 
 def choose(lg, required, cat, entities, mode="minimize", allow=TIERS, budgets=None, fixed=(),
-           required_edge=None, downgrade=False):
+           required_edge=None, downgrade=False, every=False):
     """The tier of every belt-type entity of ``entities`` ({key: entity}) on a net:
     -> ({key: tier index}, notes). ``required``: the solver's required flows per node
     ({(key, lane): {item: items/s}}); ``required_edge`` per edge, which gives a splitter what one
     of its halves carries (else half its lane's); ``fixed``: keys that keep their tier;
-    ``downgrade``: minimize and maximize may go below the tier an entity has."""
+    ``downgrade``: minimize and maximize may go below the tier an entity has; ``every`` (2.1.31,
+    ``tier maximize --all``): maximize takes the top tier on belts the model sees nothing on too
+    (a design whose feeds have no rate on paper: Literal belts, a lab's fed ports, beacons)."""
     if mode not in ("minimize", "maximize", "yellow"):
         raise ValueError(f"tier mode is minimize, maximize or yellow, got {mode!r}")
     allowed = sorted({TIERS.index(t) for t in allow} | {0})
@@ -115,7 +117,7 @@ def choose(lg, required, cat, entities, mode="minimize", allow=TIERS, budgets=No
         if mode == "yellow":
             t = 0
         elif mode == "maximize":
-            t = allowed[-1] if n > _EPS else 0
+            t = allowed[-1] if n > _EPS or every else 0
         else:
             fits = [x for x in allowed if rates[x] >= n - _EPS]
             t = fits[0] if fits else allowed[-1]
@@ -213,7 +215,7 @@ def _line(e):
 
 
 def assign(flat, lay, cat, mode="minimize", allow=TIERS, budgets=None, hand=1, bulk_hand=1,
-           downgrade=False, model=None):
+           downgrade=False, model=None, every=False):
     """-> (new layout, report lines, {key: (old name, new name)}). A Literal's entities are
     ``fixed``. ``model``: ``flat``'s rates.solve, if the caller has it."""
     from . import routed
@@ -221,7 +223,7 @@ def assign(flat, lay, cat, mode="minimize", allow=TIERS, budgets=None, hand=1, b
     fixed = {k for k, e in lay.entities.items()
              if e.owner in flat.insts and flat.insts[e.owner].kind == "Literal"}
     tiers, notes = choose(lg, res.required, cat, lay.entities, mode, allow, budgets, fixed,
-                          res.required_edge, downgrade)
+                          res.required_edge, downgrade, every)
     new = lay.copy()
     changed, count = {}, {}
     for key, t in sorted(tiers.items()):

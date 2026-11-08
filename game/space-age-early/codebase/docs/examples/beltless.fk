@@ -1,8 +1,9 @@
-# beltless.fk: a first cell with no belts at all (13x7)
-# Every transfer is one inserter and the router lays it between the machines: a fast one across a
-# one-tile gap, a long-handed one across two or three. This is the shape of a first factory: chests
-# in, chest-to-machine by inserter, machine-to-machine by inserter, no belt in or out.
-
+# beltless.fk: a first cell with no belts at all. Plot 13x7. Shows: a machine one to three tiles
+# from the next gets one inserter and no belt (a fast one across a one-tile gap, a long-handed one
+# across two or three); request= on a chest.
+# Run:  fk check beltless.fk    fk build --to report_checks
+# Expect: two `no-rate` lines (the chests have no rate=); every net `1 inserter (direct
+# insertion)` in out\route.txt; 6 packs/min on paper, measured 6.00/min in the lab.
 fe   = Chest<requester, item=iron-plate, request=400>   @(0, 0)
 gear = Assembler<recipe=iron-gear-wheel>                 @(2, 0)
 red  = Assembler<recipe=automation-science-pack>         @(6, 0)

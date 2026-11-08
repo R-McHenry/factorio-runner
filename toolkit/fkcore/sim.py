@@ -19,6 +19,7 @@ the machine allows, not in real time.
 
     start [NAME]        the server from save state NAME (default start), paused
     stop | status
+    kickoff [NAME]      the run's kickoff setup on a bare map, saved as NAME (default start)
     save NAME | load NAME | saves
     speed X             ticks run X times as fast (game.speed)
     run N | until T     move the game on N ticks, or to tick T
@@ -58,8 +59,28 @@ SURFACE, FORCE = "nauvis", "player"
 SPECTATE_PORT = 34199
 
 
+#: the mods every Factorio has (the game's own, on or off in a mod list, never in a mods folder)
+BUILT_IN = ("base", "elevated-rails", "quality", "space-age")
+
+
 class SimError(RuntimeError):
     pass
+
+
+def _link(src, dst):
+    """A mod into the planner's mods folder: a folder as a junction (Windows) or a symlink, a
+    zip as a hard link or, failing that, a copy."""
+    if os.path.isdir(src):
+        if os.name == "nt":
+            import _winapi
+            _winapi.CreateJunction(src, dst)
+        else:
+            os.symlink(src, dst)
+        return
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copyfile(src, dst)
 
 
 def _free_port(kind=socket.SOCK_STREAM):
@@ -107,6 +128,62 @@ class Sim:
         if not os.path.exists(self.pw_file):
             with open(self.pw_file, "w", encoding="utf-8") as fh:
                 fh.write(os.urandom(12).hex())
+        return self._mods()
+
+    def _mods(self):
+        """3.0: the run's pack's mods (``fkcore.pack``: FK_PACK or the game folder's ``pack``
+        file), as its catalog lists them: the built-in ones it names on and the rest off, and
+        each of its own mods linked from the pack's mod folder (env ``FK_SIM_MODS``, else
+        ``mods_dir`` in its ``pack.json``). The base game (no pack) keeps this Factorio's own.
+        -> notes for the start line."""
+        from . import pack as _pack
+        name = _pack.name()
+        mods_dir = os.path.join(self.write, "mods")
+        shutil.rmtree(mods_dir, ignore_errors=True)        # links only: rmtree leaves their mods
+        if not name:
+            return []
+        with open(_pack.path("catalog.json"), encoding="utf-8") as fh:
+            want = [m.rsplit(" ", 1) for m in json.load(fh).get("mods") or ()]
+        src = os.environ.get("FK_SIM_MODS") or _pack.facts().get("mods_dir")
+        os.makedirs(mods_dir)
+        have = sorted(os.listdir(src)) if src and os.path.isdir(src) else []
+        # 3.0 (11-02): the live game's own versions (``fk sim fetch`` lists them), else the
+        # catalog's, else the newest there
+        live = {}
+        try:
+            with open(os.path.join(self.root, "live-mods.json"), encoding="utf-8") as fh:
+                for f in json.load(fh).get("mods") or ():
+                    live[f.rsplit("_", 1)[0]] = f
+        except (OSError, ValueError):
+            pass
+        listed, missing, notes = [], [], []
+        for n, ver in want:
+            listed.append(n)
+            if n in BUILT_IN:
+                continue
+            got = (live.get(n) if live.get(n) in have else None) or \
+                next((f for f in have if f in (f"{n}_{ver}", f"{n}_{ver}.zip")), None) or \
+                next((f for f in sorted(have, key=_mod_version, reverse=True)
+                      if f.startswith(f"{n}_")), None)
+            if n in live and got != live[n]:
+                notes.append(f"{n}: the live game runs {live[n]}, this machine has {got or 'none'}")
+            if got is None:
+                missing.append(f"{n} {ver}")
+                continue
+            if not got.startswith(f"{n}_{ver}") and n not in live:
+                notes.append(f"{n} is {got}, the pack's catalog says {ver}")
+            _link(os.path.join(src, got), os.path.join(mods_dir, got))
+        if missing:
+            raise SimError(f"pack {name}: no {', '.join(missing)} in "
+                           f"{src or 'its mod folder'} (FK_SIM_MODS, or mods_dir in its pack.json)")
+        with open(os.path.join(mods_dir, "mod-list.json"), "w", encoding="utf-8") as fh:
+            json.dump({"mods": [{"name": n, "enabled": n in listed} for n in BUILT_IN]
+                      + [{"name": n, "enabled": True} for n in listed if n not in BUILT_IN]}, fh)
+        settings = os.path.join(self.root, "mod-settings.dat")
+        if os.path.exists(settings):
+            shutil.copyfile(settings, os.path.join(mods_dir, "mod-settings.dat"))
+            notes.append("the live game's mod settings")
+        return [f"pack {name}, {len(listed)} mods"] + notes
 
     def state(self):
         try:
@@ -136,7 +213,7 @@ class Sim:
                            + (" (fk sim fetch copies the run's start)" if name == "start" else ""))
         if not os.path.exists(self.exe):
             raise SimError(f"no Factorio at {self.exe} (FK_LAPTOP_FACTORIO names another)")
-        self._files(spectate)
+        notes = self._files(spectate)
         port = SPECTATE_PORT if spectate else _free_port(socket.SOCK_DGRAM)
         rcon_port = _free_port()
         with open(self.pw_file, encoding="utf-8") as fh:
@@ -168,6 +245,7 @@ class Sim:
                 if got and got[0].isdigit():
                     tick = got[0]
                     line = (f"sim: running from save state {name}, paused at tick {tick}"
+                            + (f" ({'; '.join(notes)})" if notes else "")
                             + (f"; join to watch at {self.address()}" if spectate else ""))
                     if got[1:] == ["false"]:
                         # 2.0.64: a save written by a running server (the fetched start, a
@@ -242,9 +320,21 @@ class Sim:
         for _ in range(60):
             if os.path.exists(path) and os.path.getmtime(path) > before:
                 time.sleep(0.5)
-                return f"sim: saved state {name} at tick {tick}"
+                return f"sim: saved state {name} at tick {tick}" + self._lineage(name)
             time.sleep(0.5)
         raise SimError(f"the game did not write {path}")
+
+    def _lineage(self, name):
+        """3.0 (``fkcore.simview``): NAME's parent (the state the running game came from), its
+        stats and map into ``sim\\lineage.json``; then NAME is the head the next save comes from."""
+        from . import simview
+        st = self.state() or {}
+        note = simview.record(self, name, st.get("head") or st.get("save"))
+        if st:
+            st["head"] = name
+            with open(self.state_file, "w", encoding="utf-8") as fh:
+                json.dump(st, fh)
+        return note
 
     def load(self, name):
         if self.archive().on:
@@ -253,8 +343,39 @@ class Sim:
         if not os.path.exists(self.save_path(name)):
             raise SimError(f"no save state {name} (fk sim saves)")
         st = self.state()
+        # 3.0 (11-02, the seablock player: "fk sim load resets speed to 1"): a server save
+        # doesn't keep game.speed, so the speed it ran at is set again after the load
+        speed = None
+        if st is not None and not st.get("spectate"):
+            try:
+                speed = float(self.lua("rcon.print(game.speed)").strip())
+            except (OSError, link.LinkError, ValueError):
+                speed = None
         self.stop()
-        return self.start(name, spectate=bool(st and st.get("spectate")))
+        line = self.start(name, spectate=bool(st and st.get("spectate")))
+        if speed and speed != 1:
+            self.lua(f"game.speed = {speed} rcon.print('ok')")
+            line += f", speed {speed:g} as before"
+        return line
+
+    def kickoff(self, name="start"):
+        """3.0 (11-02): the run's kickoff setup (``fkcore.kickoff_setup``: landfill, bootstrap,
+        robots, kit chests, starter research, the pack's own) on the bare map the planner runs,
+        then saved as ``name``. For a run whose fetched start is the map from before its kickoff
+        (``kickoff-v1.sh`` copied the start before its second save landed, up to 3.0). The map
+        refuses a second setup. -> report lines."""
+        from . import kickoff_setup
+        from . import pack as _pack
+        if self.state() is None:
+            raise SimError("the planner is not running (fk sim start)")
+        got = kickoff_setup.run(self, pack=_pack.name() or None)
+        out = [f"sim: kickoff {k}: {v}" for k, v in got.items()]
+        if any("REFUSED" in str(v) for v in got.values()):
+            return out + ["sim: this map was set up already; nothing saved"]
+        if os.path.exists(self.save_path(name)) and not os.path.exists(self.save_path("bare")):
+            shutil.copyfile(self.save_path(name), self.save_path("bare"))
+            out.append(f"sim: the map before it kept as save state bare")
+        return out + [self.save(name)]
 
     def add_save(self, src, name):
         """Copy a save file in as save state ``name`` (the run's start, fetched from the host)."""
@@ -407,8 +528,10 @@ rcon.print('sim: removed ' .. n .. ' entities')
         path = os.path.join(arch.root, "techtree.json")
         if os.path.exists(path):
             tree = techcost.Tree.load(path)
-            # a 2.0.66 read has no recipe amounts, and worth (2.0.67) needs them: read it again
-            if any(isinstance(r.get("ina"), dict) and r["ina"] for r in tree.recipes.values()):
+            # a 2.0.66 read has no recipe amounts, and worth (2.0.67) needs them; one from before
+            # 3.0 has no recipe energy, which worth's power cost needs: read it again
+            if any(isinstance(r.get("ina"), dict) and r["ina"] and "energy" in r
+                   for r in tree.recipes.values()):
                 return tree
             os.remove(path)
         if not os.path.exists(path):
@@ -587,6 +710,15 @@ rcon.print('sim: removed ' .. n .. ' entities')
             arch.write()
             return True
         return False
+
+
+def _mod_version(f):
+    """``name_1.2.3[.zip]`` -> (1, 2, 3), for the newest of a mod's versions."""
+    v = f[:-4] if f.endswith(".zip") else f
+    try:
+        return tuple(int(p) for p in v.rsplit("_", 1)[1].split("."))
+    except (IndexError, ValueError):
+        return ()
 
 
 def _lua_clear_marked(area):

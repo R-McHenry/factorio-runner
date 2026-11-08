@@ -1,0 +1,27 @@
+# mall-loop.fk: a sushi mall from the library's cells. Plot 200x200 (any). One belt of iron,
+# copper and gears runs in a loop past four makers; three gates load it, each only while the whole
+# loop (read on a wire) holds less than its amount, worked out by `amount=auto`; the end buffer
+# feeds what passed every maker back onto the head. Iron has the right lane to itself (GateCellR).
+# Run:  fk check mall-loop.fk    fk rates mall-loop.fk
+# Expect: `advice gate-auto net g1/s: auto holds iron-plate below 160: 40 s of the 4/s ...`;
+# `BUFFER e: +0.0/min iron-plate (steady, ...)`; `mall-loop: 20 nets: 20 connected, 0 open, 0
+# unrouted`. In the lab it ran 30 game minutes with the belt never stopped.
+import GateCell, GateCellR, MallCell, BeltEndBuffer from "cells.fk"
+
+g1 = GateCellR<item=iron-plate,     items=iron-plate|copper-plate|iron-gear-wheel> @(4, 23)
+g2 = GateCell<item=copper-plate,    items=iron-plate|copper-plate|iron-gear-wheel> @(6, 20)
+g3 = GateCell<item=iron-gear-wheel, items=iron-plate|copper-plate|iron-gear-wheel> @(6, 17)
+m1 = MallCell<recipe=iron-gear-wheel, items=iron-plate|copper-plate|iron-gear-wheel> @(6, 14)
+m2 = MallCell<recipe=copper-cable,    items=iron-plate|copper-plate|iron-gear-wheel> @(6, 11)
+m3 = MallCell<recipe=transport-belt,  items=iron-plate|copper-plate|iron-gear-wheel> @(6, 8)
+m4 = MallCell<recipe=pipe,            items=iron-plate|copper-plate|iron-gear-wheel> @(6, 5)
+e  = BeltEndBuffer<items=iron-plate|copper-plate|iron-gear-wheel> @(6, 2)
+
+net l1 limited "the gates hold the loop": g1.s_out -> g2.s_in
+net l2 limited "the gates hold the loop": g2.s_out -> g3.s_in
+net l3 limited "the gates hold the loop": g3.s_out -> m1.s_in
+net l4 limited "the gates hold the loop": m1.s_out -> m2.s_in
+net l5 limited "the gates hold the loop": m2.s_out -> m3.s_in
+net l6 limited "the gates hold the loop": m3.s_out -> m4.s_in
+net l7 limited "the gates hold the loop": m4.s_out -> e.i
+net back limited "the end buffer feeds the head": e.o -> g1.s_in

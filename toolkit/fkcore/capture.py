@@ -29,7 +29,7 @@ from . import fkp as fkpmod
 
 #: what the lab adds for itself, never part of a design
 LAB_OWN = ("electric-energy-interface", "infinity-chest", "infinity-pipe", "loader",
-           "loader-1x1")
+           "loader-1x1", "fast-loader", "express-loader", "turbo-loader")
 
 
 class CaptureError(ValueError):
@@ -60,10 +60,12 @@ local function inside(e)
   local p = e.position
   return p.x >= {x0} and p.x < {x1} and p.y >= {y0} and p.y < {y1}
 end
-local drop, names, kept = {{{drop}}}, {{}}, {{}}
+local drop, names, kept, at = {{{drop}}}, {{}}, {{}}, {{}}
 for _, b in pairs(st.is_blueprint_setup() and st.get_blueprint_entities() or {{}}) do
   if not drop[b.name] and inside(src[b.entity_number]) then
     kept[#kept + 1] = b
+    local w = src[b.entity_number]
+    at[#kept] = w and w.valid and {{w.position.x, w.position.y, b.name}} or false
     names[b.name] = (names[b.name] or 0) + 1
   end
 end
@@ -73,9 +75,54 @@ if #kept > 0 then
   bp = st.export_stack()
 end
 inv.destroy()
-helpers.write_file('fk5/{tag}.json', helpers.table_to_json({{bp = bp, n = #kept, names = names}}), false)
+helpers.write_file('fk5/{tag}.json', helpers.table_to_json({{bp = bp, n = #kept, names = names, at = at}}), false)
 rcon.print(#kept)
 """
+
+
+def world_list(bp, at):
+    """2.1.31: the captured entities in world positions, ``[{name, wx, wy, bx, by}]`` in the
+    blueprint's order, ``at`` the game's world position of each (Lua's ``at``). With it in the
+    file, a Literal's ``box`` is in world tiles and its corner is where the build stood, so a
+    Literal placed at that corner (or several Literals cut from one capture) sits as it did.
+    None when the two do not line up (then the file keeps the blueprint alone)."""
+    from . import codec
+    if not bp or not isinstance(at, list):
+        return None
+    try:
+        rows, _desc, _wires = codec.parse_blueprint(bp)
+    except codec.CodecError:
+        return None
+    if len(rows) != len(at) or not all(isinstance(p, list) and len(p) == 3 and p[2] == r["name"]
+                                       for r, p in zip(rows, at)):
+        return None
+    return [{"name": r["name"], "wx": _num(p[0]), "wy": _num(p[1]), "bx": _num(r["x"]),
+             "by": _num(r["y"])} for r, p in zip(rows, at)]
+
+
+def anchored(got, anchor, cat):
+    """3.1 (``fk capture --from``): a game read ``got`` ({bp, n, names, at}) as a Literal file
+    anchored at ``anchor`` (a whole tile, the placement's origin or the area's corner): the
+    entities in the blueprint's order with their positions relative to the anchor (``wx``,
+    ``wy``) and their blueprint positions (``bx``, ``by``: how each is set), the ``bp``, the
+    machine ``names``, the ``ports`` and the ``anchor``. ``Literal<file="..."> @(ax, ay)`` then
+    puts every entity back exactly where it stands, so a module written against the file mates
+    with the standing objects (ok) and adds its own as ghosts."""
+    listed = world_list(got.get("bp"), got.get("at"))
+    if listed is None:
+        raise CaptureError("the capture's entities and its blueprint do not line up (an older game "
+                           "link?); fk capture world AREA writes the blueprint alone")
+    ax, ay = anchor
+    data = {"bp": got["bp"], "anchor": [int(ax), int(ay)],
+            "entities": [{"name": e["name"], "wx": _num(e["wx"] - ax), "wy": _num(e["wy"] - ay),
+                          "bx": e["bx"], "by": e["by"]} for e in listed]}
+    named = names_of_bp(got["bp"], cat)
+    if named:
+        data["names"] = named
+    edge = ports_of_bp(got["bp"], cat)
+    if edge:
+        data["ports"] = edge
+    return data
 
 
 def from_game(r, surface, force, area, tag="capture"):
@@ -91,8 +138,11 @@ def from_game(r, surface, force, area, tag="capture"):
 def from_design(lay, cat, path):
     """-> [entity dicts]: instance ``path`` of layout ``lay``, its own entities (machines, a
     template's belts) and every carrier standing inside its frame (its own nets' routes), at
-    positions relative to the frame's corner. Cover poles and roboports stay out: the build
-    covers the Literal where it lands."""
+    positions relative to the instance's origin (3.0.1: its ``@(x, y)``, so the Literal placed
+    where the instance was lays the same tiles, and its file keeps its origin when what it
+    holds grows; a turned instance's, whose layout record is its turned corner, relative to its
+    entities' top-left tile). Cover poles and roboports stay out: the build covers the Literal
+    where it lands."""
     rec = lay.insts.get(path)
     if rec is None:
         near = sorted(p for p in lay.insts if path in p)[:6]
@@ -105,7 +155,10 @@ def from_design(lay, cat, path):
     tiles = set()
     for e in mine:
         tiles |= fkpmod.tiles_of(cat, e)
-    x0, y0 = min(t[0] for t in tiles), min(t[1] for t in tiles)
+    if rec.rot % 4 == 0 and rec.kind != "Literal":
+        x0, y0 = float(rec.x), float(rec.y)
+    else:
+        x0, y0 = min(t[0] for t in tiles), min(t[1] for t in tiles)
     out = []
     for e in sorted(mine, key=lambda e: fkpmod.natural_key(e.key)):
         row = {"name": e.name, "x": _num(float(e.x) - x0), "y": _num(float(e.y) - y0)}
@@ -149,6 +202,73 @@ def names_of_bp(bp, cat):
     except codec.CodecError:
         return {}
     return names([r["name"] for r in rows], cat)
+
+
+_OPEN = {"n": (0, -1), "e": (1, 0), "s": (0, 1), "w": (-1, 0)}
+
+
+def ports(rows, cat):
+    """3.0, Literal ports: ``{name: {"carrier": index, "side": s}}`` for the carriers on the edge of
+    the captured frame (the box of every entity's tiles) that cross it: a belt heading out over the
+    edge or in from it, a pipe that ends on the edge (one fluid neighbour inside: a pipe beside a
+    machine is no end), a pipe-to-ground whose open side faces it. Named by side and place along
+    it, ``n1`` the westmost on the north edge, ``e1`` the northmost on the east: a name says where
+    the port is on the frame, whatever the file's order or the recipes inside. ``rows``:
+    (name, x, y, direction) in file order."""
+    from .literal import SIDES
+    tiles, wet = [], set()
+    for name, x, y, d in rows:
+        if cat.has_entity(name):
+            tiles.append(cat.tiles(name, x, y, d or 0))
+            if cat.has_fluid_boxes(name):
+                wet |= set(tiles[-1])
+    if not tiles:
+        return {}
+    every = [t for ts in tiles for t in ts]
+    x0, y0 = min(t[0] for t in every), min(t[1] for t in every)
+    x1, y1 = max(t[0] for t in every), max(t[1] for t in every)
+    found = []
+    for k, (name, x, y, d) in enumerate(rows):
+        if not cat.has_entity(name):
+            continue
+        kind = cat.kind(name)
+        belt = kind in ("transport-belt", "underground-belt")
+        pipe = kind in ("pipe", "pipe-to-ground")
+        if not (belt or pipe):
+            continue
+        tx, ty = int(x // 1), int(y // 1)
+        h = (int(d or 0) // 4) % 4
+        for side, edge in (("n", ty == y0), ("e", tx == x1), ("s", ty == y1), ("w", tx == x0)):
+            if not edge:
+                continue
+            s = SIDES[side]
+            if belt and h not in (s, (s + 2) % 4):
+                continue          # a belt along the edge crosses nothing
+            inner = [(dx, dy) for dx, dy in ((0, 1), (0, -1), (1, 0), (-1, 0))
+                     if (tx + dx, ty + dy) in wet]
+            if kind == "pipe" and len(inner) > 1:
+                continue          # a pipe that runs on inside: no end
+            if kind == "pipe" and inner and _OPEN[side] != (-inner[0][0], -inner[0][1]):
+                continue          # a corner pipe opens on the other edge
+            if kind == "pipe-to-ground" and h != s:
+                continue          # its open side faces inside
+            found.append((side, tx if side in "ns" else ty, k))
+            break
+    out, count = {}, {}
+    for side, _along, k in sorted(found):
+        count[side] = count.get(side, 0) + 1
+        out[f"{side}{count[side]}"] = {"carrier": k, "side": side}
+    return out
+
+
+def ports_of_bp(bp, cat):
+    """``ports`` for blueprint string ``bp``'s entities, in the order ``fkcore.literal`` reads them."""
+    from . import codec
+    try:
+        got, _desc, _wires = codec.parse_blueprint(bp)
+    except codec.CodecError:
+        return {}
+    return ports([(r["name"], float(r["x"]), float(r["y"]), r["direction"]) for r in got], cat)
 
 
 def name_span(named):

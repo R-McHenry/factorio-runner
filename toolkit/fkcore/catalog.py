@@ -36,6 +36,7 @@ import os
 from collections import namedtuple
 
 from . import facts as _facts
+from . import learned as _learned
 from . import pack as _pack
 
 __all__ = ["Catalog", "DEFAULT_PATH", "FLUID_PATH", "FUEL_USE_W", "FUEL_VALUE_J", "MINING_TIME",
@@ -108,15 +109,20 @@ class Catalog:
 
     # -- construction ---------------------------------------------------------------------
     @classmethod
-    def load(cls, path=DEFAULT_PATH) -> "Catalog":
-        """The fixture at ``path``, with the fluid boxes beside it (``fluidboxes.json``) if any."""
+    def load(cls, path=None) -> "Catalog":
+        """The fixture at ``path``, with the fluid boxes beside it (``fluidboxes.json``) if any.
+        3.0: the default path (the base game's, or the pack's) also takes the run's learned
+        overlay (``learned.json``, :mod:`fkcore.learned`): the machines its player read from the
+        game with ``fk catalog learn``."""
+        ov = _learned.load() if path is None else None
+        path = path or DEFAULT_PATH
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
         fluid = os.path.join(os.path.dirname(os.path.abspath(path)), "fluidboxes.json")
         if os.path.exists(fluid):
             with open(fluid, encoding="utf-8") as fh:
                 data = dict(data, fluidboxes=json.load(fh))
-        return cls.from_dict(data)
+        return cls.from_dict(_learned.merge_catalog(data, ov))
 
     @classmethod
     def from_dict(cls, data: dict) -> "Catalog":
@@ -185,7 +191,8 @@ class Catalog:
         A crafting machine with a recipe the file measured takes that recipe's live boxes (one
         fluid on a side with several boxes holds them all: one box, every connection). A recipe
         it did not measure gets the same rule from the recipe itself (fluids in order, one per
-        box, an explicit ``fluidbox_index`` first). No recipe: every prototype box, except where
+        box, an explicit ``fluidbox_index`` first; fewer fluids than boxes, the first fluid takes
+        the extra boxes). No recipe: every prototype box, except where
         the boxes need a fluid recipe (assembling machines 2 and 3)."""
         row = (self._fluid.get("entities") or {}).get(name)
         if not row:
@@ -276,6 +283,16 @@ class Catalog:
                 out.append((fluids[0]["name"], [[b["index"], j + 1] for b in boxes
                                                  for j in range(len(b["connections"]))]))
                 continue
+            if len(fluids) < len(boxes) and not any(r.get("fluidbox_index") for r in fluids):
+                # 3.0 (measured: tools/laptop_server.py recipeboxes): fewer fluids than boxes,
+                # the first fluid takes the extra boxes, the others one each from the end (a
+                # cryogenic plant's or an Angel's plant's 3 boxes, 2 fluids: boxes 1-2 and 3, the
+                # only such shape in Space Age or Sea Block)
+                k = len(boxes) - len(fluids) + 1
+                for r, group in zip(fluids, [boxes[:k]] + [[b] for b in boxes[k:]]):
+                    out.append((r["name"], [[b["index"], j + 1] for b in group
+                                            for j in range(len(b["connections"]))]))
+                continue
             free = list(boxes)
             for r in fluids:
                 at = r.get("fluidbox_index")
@@ -326,6 +343,19 @@ class Catalog:
         row = self.entity(name)
         return (row["tile_width"], row["tile_height"])
 
+    def drop_tile(self, name, x, y, direction=None):
+        """3.0: the tile an entity of ``name`` centred at (x, y) facing ``direction`` (0..15, a
+        cardinal) puts its output down on itself (``facts.drop_vector``: a drill, a recycler), or
+        None (it has none, or faces no cardinal)."""
+        v = _facts.drop_vector(name)
+        d = int(direction or 0) % 16
+        if v is None or d % 4:
+            return None
+        vx, vy = v
+        for _ in range(d // 4):
+            vx, vy = -vy, vx                                       # a quarter turn clockwise
+        return math.floor(float(x) + vx), math.floor(float(y) + vy)
+
     def tiles(self, name, x, y, direction=None) -> set[tuple[int, int]]:
         """Tiles occupied by an entity of `name` centred at (x, y).
 
@@ -345,6 +375,11 @@ class Catalog:
         return set(got)
 
     def _tiles(self, name, x, y, direction):
+        # 2.1.32: a rail piece takes the tiles measured for its direction, not its bounding box
+        from . import railtiles
+        got = railtiles.tiles(name, x, y, direction)
+        if got is not None:
+            return got
         w, h = self.size(name)
         if direction is not None and int(direction) % 8 == 4:
             w, h = h, w

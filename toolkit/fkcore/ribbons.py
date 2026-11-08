@@ -478,7 +478,7 @@ def _lay(cat, rib, mode, off, jobs, got, ents, frames, js, box, limit, terrain, 
         if mode == "forward":
             if not (len(j.starts) == 1 and not j.sources and tuple(j.starts[0][0]) == first[0]):
                 back = (first[0][0] - DX[first[2]], first[0][1] - DY[first[2]])
-                parts.append((b, "in", NetJob(j.net, starts=list(j.starts), sources=list(j.sources),
+                parts.append((b, "in", NetJob(j.net, starts=list(j.starts), sources=list(j.sources), drops=dict(j.drops),
                                               goals=[(back, first[2])], owners=list(j.owners))))
                 new.add(back)
             if end[0] == "loose":
@@ -490,7 +490,7 @@ def _lay(cat, rib, mode, off, jobs, got, ents, frames, js, box, limit, terrain, 
             if end[0] == "loose":
                 new.add(end[1])
                 into = (got["heads"][o] + 2) % 4
-                parts.append((b, "in", NetJob(j.net, starts=list(j.starts), sources=list(j.sources),
+                parts.append((b, "in", NetJob(j.net, starts=list(j.starts), sources=list(j.sources), drops=dict(j.drops),
                                               goals=[(end[1], into)], owners=list(j.owners))))
     hit = sorted(new & tiles)
     if hit:

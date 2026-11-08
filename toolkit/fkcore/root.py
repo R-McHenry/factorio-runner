@@ -37,6 +37,7 @@ import re
 
 from . import elaborate as elab
 from . import lang
+from . import expand
 from . import surface as surfacemod
 
 __all__ = ["places", "migrate", "module_name"]
@@ -85,6 +86,8 @@ def places(path):
         if at is None:
             notes.append(f"{inst.name}: no @(x, y) hint: a plot is placed at map coordinates")
             continue
+        if expand.ORIGIN_HINTS:     # 3.0.1: a turned plot turns about its origin
+            at = expand.corner_hint(at, (0, 0, size[0], size[1]))
         x, y, rot = at
         out[inst.name] = surfacemod.Place(factory=inst.name, module=stem, x=int(x), y=int(y),
                                           w=int(size[0]), h=int(size[1]), rot=int(rot) % 4,
@@ -119,7 +122,9 @@ def migrate(places, surface="nauvis"):
             names[p.module] = module_name(p.factory, p.module, used)
             imports.append(f'import {names[p.module]} from "{p.module}.fk"')
         modname = names[p.module]
-        at = f"@({p.x}, {p.y}" + (f", rot {p.rot}" if p.rot else "") + ")"
+        ox, oy, _r = expand.origin_hint((p.x, p.y, p.rot), (0, 0, p.w, p.h)) \
+            if expand.ORIGIN_HINTS else (p.x, p.y, p.rot)
+        at = f"@({ox}, {oy}" + (f", rot {p.rot}" if p.rot else "") + ")"
         line = f"{p.factory} = {modname} {at} size {p.w}x{p.h}"
         if p.gap:
             line += f" gap {p.gap}"

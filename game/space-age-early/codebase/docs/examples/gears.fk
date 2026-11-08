@@ -1,5 +1,8 @@
 # gears.fk: plates from a requester chest into two gear assemblers, the gears into a provider
-# chest. Plot: 16x16. The robots bring the plates; the chests are this factory's link to the rest.
+# chest. Plot 16x16. Shows: an instance, a net, rate= on a requester, limit= on a provider.
+# Run:  fk check gears.fk    fk rates gears.fk    fk build --to report_checks
+# Expect: `check gears: 4 machines, 2 nets, 0 check lines`; 37.5 gears/min at 31% (the chest's
+# 1.25 plates/s binds); `gears: 2 nets: 2 connected, 0 open, 0 unrouted`. START.md walks it.
 inbox = Chest<requester, item=iron-plate, rate=1.25/s> @(2, 2)
 gears = AsmRow<n=2, recipe=iron-gear-wheel>           @(6, 2)
 box   = Chest<provider, limit=4>                      @(2, 12)

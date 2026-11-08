@@ -67,6 +67,7 @@ from __future__ import annotations
 import heapq
 import json
 import math
+import os
 import re
 from dataclasses import dataclass, field
 
@@ -107,6 +108,8 @@ _CHEST_ROLES = ("provider", "storage", "buffer", "plain")
 PROP_ATTRS = ("if", "logistic", "filter", "read", "signal", "signals")
 #: the combinators with an input and an output side (2.1: ``Decider``, ``Arithmetic``)
 COMBINATORS = frozenset({"decider-combinator", "arithmetic-combinator"})
+#: what has an input and an output side (2.1.31: a captured selector combinator is a wire end)
+SIDED = COMBINATORS | {"selector-combinator"}
 #: the wildcards as a combinator string may write them
 _EACH = {"each": "signal-each", "anything": "signal-anything", "everything": "signal-everything"}
 #: an arithmetic combinator's operations, as the game names them
@@ -289,6 +292,7 @@ class _Resolver:
         self.flat, self.cat, self.Check = flat, cat, Check
         self.c = Circuit()
         self.declared = {}                 # scoped name -> lang.Signal
+        self.lit_proto = {}                # a Literal's wire end -> its entity (2.1.31)
 
     def check(self, code, where, msg, line=0):
         self.flat.checks.append(self.Check(code, where, msg, line))
@@ -347,15 +351,35 @@ class _Resolver:
     # wires
     def combinator(self, key):
         m = self.flat.machines.get(key)
-        return m is not None and m.prototype in COMBINATORS
+        if m is None:
+            return self.lit_proto.get(key) in SIDED
+        return m.prototype in COMBINATORS
+
+    def literal_end(self, parts, scope):
+        """2.1.31: ``E2.pcomb``, a named entity of Literal E2 that is no machine of the netlist (a
+        combinator, a chest, a pole): a wire end, its entity key. None when ``parts`` names none."""
+        if len(parts) != 2:
+            return None
+        ends = getattr(self.flat, "_lit_ends", {})
+        for s in _chain(scope):
+            got = ends.get(_join(s, parts[0]), {}).get(parts[1])
+            if got is not None:
+                self.lit_proto[got[0]] = got[1]
+                return got[0]
+        return None
 
     def member(self, ref, scope, where, line, role="driver"):
         """A wire end as written -> [("machine", key), ...] or [("net", name)]; [] and a no-wire
         line when it names nothing. 2.1: a combinator's side, ``X.in`` or ``X.out``: a driver
         puts its signals on the wire from its output side, a consumer reads at its input side, so
         the side written must be the one its role uses."""
+        lit = None if ref.star else self.literal_end(list(ref.parts), scope)
+        if lit is not None:
+            return [("machine", lit)]
         if len(ref.parts) >= 2 and ref.parts[-1] in ("in", "out") and not ref.star:
-            node, keys = self.flat.resolve_ref(lang.Ref(ref.parts[:-1], False, line), scope)
+            lit = self.literal_end(list(ref.parts[:-1]), scope)
+            keys = [lit] if lit is not None else \
+                self.flat.resolve_ref(lang.Ref(ref.parts[:-1], False, line), scope)[1]
             if keys and all(self.combinator(k) for k in keys):
                 want = "out" if role == "driver" else "in"
                 if ref.parts[-1] != want:
@@ -665,7 +689,9 @@ class _Resolver:
     def driver_signals(self, kind, ref):
         if kind == "net":
             return set(self.flat.nets[ref].items)
-        m = self.flat.machines[ref]
+        m = self.flat.machines.get(ref)
+        if m is None:
+            return None                 # a Literal's combinator: what its own circuit makes
         if ref in self.c.emits:
             return set(self.c.emits[ref])
         got = self.c.settings.get(ref, {})
@@ -874,7 +900,9 @@ class _Layer:
         """A wire end's port: a combinator drives from its output side and reads at its input
         side (2.1); anything else has one side."""
         m = self.flat.machines.get(key)
-        if m is None or m.prototype not in COMBINATORS:
+        proto = m.prototype if m is not None else \
+            (self.lay.entities[key].name if key in self.lay.entities else None)   # a Literal's
+        if proto not in SIDED:
             return None
         return "out" if role == "driver" else "in"
 
@@ -907,8 +935,14 @@ class _Layer:
                                if e.attrs.get("net") == net and self.kind(k) in _GATED),
                               key=fkpmod.natural_key)
             if not carriers:
+                # 3.0.2-lab (Rory 11-08: "connect a wire right to a belt and enable or disable
+                # flow"): a belt-only route is switched at one belt, the first every driver's
+                # items pass through
+                belt = self.trunk_belt(net)
+                carriers = [belt] if belt else []
+            if not carriers:
                 self.check("gate-open", f"net {net}", f"gated ({cd.text}), but its route has no "
-                           "inserter or pump to gate: it runs ungated")
+                           "inserter, pump or belt to gate: it runs ungated")
                 continue
             attr, value = cd.attr()
             for k in carriers:
@@ -917,6 +951,31 @@ class _Layer:
             self.lines.append(f"gated net {net}: {len(carriers)} carrier"
                               f"{'s' if len(carriers) != 1 else ''} {attr}={value}"
                               + (f" on {cd.wire}" if cd.wire else ""))
+
+    def trunk_belt(self, net):
+        """The first transport belt of net ``net``'s route that every head of the route reaches
+        (past the joins of all its drivers), or None."""
+        mine = {k for k, e in self.lay.entities.items() if e.attrs.get("net") == net}
+        if not mine:
+            return None
+        heads = [k for k in mine if not any(p in mine for p, _v in self.g.pred.get(k, ()))]
+        reach = None
+        order = {}
+        for h in sorted(heads, key=fkpmod.natural_key):
+            seen, todo = {h: 0}, [h]
+            while todo:
+                nxt = []
+                for k in todo:
+                    for b, _v in self.g.succ.get(k, ()):
+                        if b in mine and b not in seen:
+                            seen[b] = seen[k] + 1
+                            nxt.append(b)
+                todo = nxt
+            reach = set(seen) if reach is None else reach & set(seen)
+            if not order:
+                order = seen
+        belts = [k for k in (reach or ()) if self.kind(k) == "transport-belt"]
+        return min(belts, key=lambda k: (order.get(k, 1 << 30), fkpmod.natural_key(k))) if belts else None
 
     def enables(self):
         for path, cd in sorted(self.c.enables.items()):
@@ -1229,7 +1288,29 @@ class _Layer:
             if other != net and any(k == key for k, _p in ends) and \
                     (self.wires[other].colour if other in self.wires else "red") == colour:
                 return True
-        return False
+        return colour in self._literal_colours().get(key, ())
+
+    def _literal_colours(self):
+        """2.1.31: {entity key: wire colours} of the wires a Literal brought (``wire`` attrs,
+        ``c,k,d``; an odd connector is red, an even one green). A hop over a pole of a captured
+        sorter's green chain joined the new wire's signals to it."""
+        if getattr(self, "_litcol", None) is None:
+            got = {}
+            for e in self.lay.entities.values():
+                text = e.attrs.get("wire")
+                if not text:
+                    continue
+                head = e.key.rsplit("/", 1)[0]
+                for part in str(text).split(";"):
+                    try:
+                        c, k, d = part.split(",")
+                        c, d = int(c), int(d)
+                    except ValueError:
+                        continue
+                    got.setdefault(e.key, set()).add("red" if c % 2 else "green")
+                    got.setdefault(f"{head}/{k}", set()).add("red" if d % 2 else "green")
+            self._litcol = got
+        return self._litcol
 
     def _hop_pole(self):
         """The pole a gap gets: the power cover's, else a medium pole."""
@@ -1416,9 +1497,10 @@ def lay(flat, layout, cat, keep_out=()):
     # 2.1: the copper lines between power domains are the power step's, and stay
     out.wirenets = {n: w for n, w in out.wirenets.items() if w.colour == "copper"}
     out.wires = [w for w in out.wires if w.colour == "copper"]
+    cut_lines, cut_checks = cut_wires(flat, out, cat)
     c = getattr(flat, "circuit", None)
     if c is None or c.empty:
-        return out, [], []
+        return out, cut_lines, cut_checks
     L = _Layer(flat, out, cat, keep_out)
     L.machine_settings()
     L.gates()
@@ -1430,4 +1512,99 @@ def lay(flat, layout, cat, keep_out=()):
     L.wire_up()
     L.unwired()
     L.leaks()
-    return out, c.notes + L.lines, L.checks
+    return out, c.notes + cut_lines + L.lines, cut_checks + L.checks
+
+
+_COMBINATORS = frozenset({"arithmetic-combinator", "decider-combinator", "selector-combinator"})
+
+
+def _literal_fit(lay, keys, rows):
+    """The one rigid move (quarter turns ``r`` clockwise, then an offset) that takes a Literal's
+    capture positions to where its entities stand in ``lay``, or None. ``keys`` {row: key}."""
+    pairs = [(rows[k], lay.entities[key]) for k, key in sorted(keys.items())
+             if key in lay.entities][:24]
+    if not pairs:
+        return None
+    for r in range(4):
+        def turn(x, y, r=r):
+            for _ in range(r):
+                x, y = -y, x
+            return x, y
+        fx, fy = turn(pairs[0][0][1], pairs[0][0][2])
+        off = (pairs[0][1].x - fx, pairs[0][1].y - fy)
+        if all(abs(e.x - (turn(row[1], row[2])[0] + off[0])) < 1e-6 and
+               abs(e.y - (turn(row[1], row[2])[1] + off[1])) < 1e-6 for row, e in pairs):
+            return r, round(off[0], 6), round(off[1], 6)
+    return None
+
+
+def cut_wires(flat, lay, cat):
+    """2.1.33 (lab FRICTION 20): a captured circuit wire whose two ends a box cut put in two
+    Literals of one file, laid again when both stand as the capture did (one rigid move takes
+    both). The demo's green wire from the petroleum chest to the hub sorter's combinator crossed
+    the E1/E2 cut, stage 1 never moved a barrel, and the hub train made 141 visits without
+    unloading. Two Literals that don't line up get a ``wire-cut`` line naming the wire. Appends to
+    ``lay.wires`` and ``lay.wirenets`` (net ``cut/<file>``) -> (lines, checks)."""
+    from . import literal
+    from .elaborate import Check
+    by_file = {}
+    for path, (fpath, keys) in sorted(getattr(flat, "_lit_rows", {}).items()):
+        by_file.setdefault(fpath, []).append((path, keys))
+    lines, checks = [], []
+    for fpath, lits in sorted(by_file.items()):
+        if len(lits) < 2:
+            continue
+        try:
+            rows, wires = literal.read_entities(fpath)
+        except (literal.LiteralError, OSError):
+            continue
+        where = {}
+        for path, keys in lits:
+            for k, key in keys.items():
+                where.setdefault(k, []).append((path, key))
+        fits = {path: _literal_fit(lay, keys, rows) for path, keys in lits}
+        net = f"cut/{os.path.basename(fpath)}"
+        laid, lost, done = 0, [], set()
+
+        def end(key, c):
+            if lay.entities[key].name in _COMBINATORS:
+                return f"{key}.{'out' if c > 2 else 'in'}"
+            return key
+        for i, ci, j, cj in wires:
+            if ci in codec.COPPER or cj in codec.COPPER:
+                continue
+            colour = "red" if ci % 2 else "green"
+            # a twin (the same box placed again) holds the same rows: each end is wired to the
+            # other end's Literal that stands with it, and none other
+            for (pa, ka), others, c_own, c_other in (
+                    (a, where.get(j, ()), ci, cj) for a in where.get(i, ())):
+                if ka not in lay.entities or any(p == pa for p, _k in others):
+                    continue                    # the Literal keeps this wire itself
+                cands = [(pb, kb) for pb, kb in others if kb in lay.entities]
+                if not cands:
+                    continue                    # the other end is in no Literal: cut on purpose
+                ok = [(pb, kb) for pb, kb in cands if fits[pa] is not None and fits[pb] == fits[pa]]
+                if not ok:
+                    lost.append(f"{ka} to {cands[0][1]}")
+                    continue
+                for _pb, kb in ok:
+                    w = fkpmod.Wire(net, colour, end(ka, c_own), end(kb, c_other)).canonical()
+                    if (w.a, w.b, colour) in done:
+                        continue
+                    done.add((w.a, w.b, colour))
+                    lay.wires.append(w)
+                    lay.wirenets.setdefault(net, fkpmod.WireNet(net, colour))
+                    laid += 1
+        if laid:
+            lines.append(f"wire {net}: {laid} captured wire{'s' if laid != 1 else ''} across "
+                         "Literal cuts, laid as the capture had them")
+        if lost:
+            checks.append(Check("wire-cut", f"file {os.path.basename(fpath)}",
+                                f"{len(lost)} captured wire{'s' if len(lost) != 1 else ''} cross "
+                                "between Literals that don't stand as the capture did, so "
+                                f"{'they are' if len(lost) != 1 else 'it is'} not laid: "
+                                + ", ".join(lost[:4]) + (" ..." if len(lost) > 4 else "")
+                                + "; declare a wire, or place the Literals as captured"))
+    if lines or checks:
+        lay.wires = fkpmod.sort_wires(lay.wires)
+    return lines, checks

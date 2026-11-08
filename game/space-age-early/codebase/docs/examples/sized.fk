@@ -1,4 +1,9 @@
-# sized.fk: red science the build counts (n=auto), from plates the robots bring
+# sized.fk: the same red science, counted by the build. Plot 42x32. Shows: `n=auto` on every row,
+# `LabRow<n=auto, rate=6/min>`, and the assert that sizes them.
+# Run:  fk build --to size    (then read out\size.txt)    fk rates sized.fk
+# Expect: `sized: gears n=1 (auto), red n=10 (auto), labs n=10 (auto)`: ten red assemblers make
+# the asserted 1 pack/s, one gear assembler the gears they take, ten labs take the packs. The rows
+# grow east from their head; `does-not-fit` says when one runs past the plot.
 iron   = Chest<requester, item=iron-plate, rate=2/s>    @(2, 2)
 copper = Chest<requester, item=copper-plate, rate=1/s>  @(2, 12)
 gears  = AsmRow<n=auto, recipe=iron-gear-wheel>         @(8, 2)

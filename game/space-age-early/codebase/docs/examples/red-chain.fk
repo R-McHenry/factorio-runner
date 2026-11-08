@@ -1,0 +1,129 @@
+# red-chain.fk: red circuits from ore, one sealed module (the lab's redmod.fk, 11-07).
+# Shows: a sealed module with ports on its edges (ore and coal in on the south edge, petroleum
+# gas on a fluid port, two product belts out on the east edge), built of smaller sealed modules
+# and Stacks of beaconed cells. Its inside routes once and is stored (fk status, fk compile).
+# Run:  fk check red-chain.fk    fk rates red-chain.fk    fk build --to report_checks    fk status
+# Expect: 0 check lines; 8 nets outside the module, the module's own laid inside its 74x56 frame
+# and stored in out\compiled\RedMod\. Measured in the lab (11-07): about 6.9 red circuits/s from
+# the two output belts together.
+import FurnB, GreenB from "beacon-cells.fk"
+
+kind Asm3   = Machine<entity=assembling-machine-3, modules=productivity-module-2>
+kind Chem   = Machine<entity=chemical-plant, modules=productivity-module-2>
+kind Beacon = Entity<name=beacon, modules=speed-module-2>
+
+# plastic: two beaconed chem plants, all ports on the south edge. In the lab a lone unbeaconed
+# plant made 1.8/s; the six red assemblers of a chain eat about 6.5/s
+module Plas2 size 11x8 {
+  port gas_in : in  petroleum-gas @s3
+  port c_in   : in  coal @s9
+  port p_out  : out plastic-bar @s10
+  b1 = Beacon @(0, 0)
+  b2 = Beacon @(0, 4)
+  m1 = Chem<recipe=plastic-bar> @(5, 0, rot 3)
+  m2 = Chem<recipe=plastic-bar> @(5, 4, rot 3)
+  net g: gas_in -> m1, m2
+  net c: c_in -> m1, m2
+  net p: m1, m2 -> p_out
+}
+
+# red circuits: two red assemblers either side of a cable assembler that hands to both;
+# green | plastic up the west belt, copper up the inner east belt, red back down the outer one
+module RedB size 11x11 {
+  port gp_in  : in  electronic-circuit | plastic-bar @s3
+  port gp_out : out electronic-circuit | plastic-bar @n3
+  port cu_in  : in  copper-plate @s9
+  port cu_out : out copper-plate @n9
+  port r_in   : in  advanced-circuit @n10
+  port r_out  : out advanced-circuit @s10
+  stack gp_in -> gp_out, cu_in -> cu_out, r_out -> r_in
+  b1 = Beacon @(0, 0)
+  b2 = Beacon @(0, 3)
+  b3 = Beacon @(0, 6)
+  r1 = Asm3<recipe=advanced-circuit> @(5, 0)
+  c  = Asm3<recipe=copper-cable>     @(5, 4)
+  r2 = Asm3<recipe=advanced-circuit> @(5, 8)
+  net g items electronic-circuit: gp_in -> r1, r2, gp_out
+  net p items plastic-bar:        gp_in -> r1, r2, gp_out
+  lanes g | p
+  net cu: cu_in -> c, cu_out
+  net k: c -> r1, r2
+  net r: r_in, r1, r2 -> r_out
+}
+
+# two Plas2 with their gas and coal feeds, a plastic belt out of each
+module PlasPair size 24x13 {
+  port gas_in    : in  petroleum-gas @s3
+  port coal_in   : in  coal          @s9
+  port plastic_a : out plastic-bar   @n11
+  port plastic_b : out plastic-bar   @n23
+  p1 = Plas2 @(0, 0)
+  p2 = Plas2 @(12, 0)
+  net gas:        gas_in -> p1.gas_in, p2.gas_in
+  net coal_:      coal_in -> p1.c_in, p2.c_in
+  net plastic_a_: p1.p_out -> plastic_a
+  net plastic_b_: p2.p_out -> plastic_b
+}
+
+# two red-circuit stacks with their feeds: green and plastic and copper come in on the west edge,
+# each stack's red circuits leave by its own port (south and east)
+module RedPair size 23x39 {
+  port gp_in : in  electronic-circuit | plastic-bar @w34
+  port cu_in : in  copper-plate                     @w37
+  port r_a   : out advanced-circuit                 @s12
+  port r_b   : out advanced-circuit                 @e35
+  red  = Stack<cell=RedB, n=3> @(0, 0)
+  red2 = Stack<cell=RedB, n=2> @(12, 11)
+  net ra: red.r_out -> r_a
+  net rb: red2.r_out -> r_b
+  net gp: gp_in -> red.gp_in, red2.gp_in
+  net cu: cu_in -> red.cu_in, red2.cu_in
+}
+
+# the chain: copper and iron smelted, green circuits, plastic, red circuits. Six copper furnaces
+# for the cable in two stacks (one stack of six crowded RedPair's west ports in the lab)
+module RedMod size 74x56 {
+  port cu_in   : in  copper-ore | copper-ore @s3
+  port fe_in   : in  iron-ore | iron-ore     @s13
+  port gas_in  : in  petroleum-gas           @s29
+  port coal_in : in  coal                    @s35
+  port r_a     : out advanced-circuit        @e40
+  port r_b     : out advanced-circuit        @e36
+
+  cua = Stack<cell=FurnB, n=5, plate=copper-plate, ore=copper-ore> @(0, 19)
+  fea = Stack<cell=FurnB, n=4, plate=iron-plate, ore=iron-ore>     @(10, 22)
+  ga  = Stack<cell=GreenB, n=2>                                    @(20, 20)
+  cur = Stack<cell=FurnB, n=3, plate=copper-plate, ore=copper-ore> @(40, 25)
+  cu2 = Stack<cell=FurnB, n=3, plate=copper-plate, ore=copper-ore> @(30, 25)
+  rp  = RedPair                                                    @(50, 1)
+  pl  = PlasPair                                                   @(26, 42)
+
+  net cu:      cu_in -> cua.ore_in, cur.ore_in, cu2.ore_in
+  net fe:      fe_in -> fea.ore_in
+  net cu1:     cua.pl_out -> ga.in_in
+  net fe1:     fea.pl_out -> ga.in_in
+  net gas:     gas_in -> pl.gas_in
+  net coal_:   coal_in -> pl.coal_in
+  net green1:  ga.g_out -> rp.gp_in
+  net plastic: pl.plastic_a, pl.plastic_b -> rp.gp_in
+  net cu5:     cur.pl_out, cu2.pl_out -> rp.cu_in
+  net ra:      rp.r_a -> r_a
+  net rb:      rp.r_b -> r_b
+}
+
+# stand-ins for the trunks that feed it in a base: in the lab, `fk lab red-chain` feeds every
+# open port itself, so a lab file needs only the module
+cu_ore = Chest<requester, item=copper-ore, rate=12/s> @(4, 70)
+fe_ore = Chest<requester, item=iron-ore, rate=6/s>    @(16, 70)
+gas    = InfinityPipe<fluid=petroleum-gas, rate=160/s> @(32, 70)
+coal   = Chest<requester, item=coal, rate=8/s>        @(40, 70)
+chain  = RedMod @(2, 4)
+box_a  = Chest<provider, limit=8> @(86, 44)
+box_b  = Chest<provider, limit=8> @(86, 38)
+
+net cu_:   cu_ore -> chain.cu_in
+net fe_:   fe_ore -> chain.fe_in
+net gas_:  gas -> chain.gas_in
+net coal_: coal -> chain.coal_in
+net red_a: chain.r_a -> box_a
+net red_b: chain.r_b -> box_b

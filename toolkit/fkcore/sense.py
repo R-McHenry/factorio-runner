@@ -37,6 +37,16 @@ The toolkit's own entities (``own``, the record of what the applies pasted, ``fk
 no foreign change: one the design has dropped is ``unowned`` (the next apply removes it) whatever
 the policy says, unless a claim or a mark covers it or a player touched it (a ``last_user``).
 
+3.1 (placements, Rory 11-08: "a conflicting design must produce a MISMATCH, never a silently
+adjusted plan or a build over or around"): the registry of what was pasted (``fkcore.placements``)
+explains what the design does not. A world entity inside another placement's area that the
+design does not match is ``placed`` (not a foreign change, no mark). A world entity standing (or
+pending) on a design entity's tiles that the toolkit did not paste there (not in ``own``) is a
+``conflict``, and the design entity is ``other-entity`` with its ``owner`` named: ``placement
+<id>``, ``hand edit by <user>`` or ``unknown``. The apply refuses those design tiles and pastes
+the rest (:func:`conflicts`). Mating is no conflict: an entity standing with the design entity's
+name, position and direction is ``ok``, as before.
+
 Enemies and nature (neutral force) are separate and never judged. Each foreign change gets a
 "changes here" line with who, what and a hint: built by a player; an unkeyed ghost; a carrier next
 to net N, which looks like a fix to it (offer ``adopt``). Expired marks are listed for clearing.
@@ -86,6 +96,10 @@ class Verdict:
     #: DRIFT or GHOST: one of ``TURN_KINDS`` turned or the other underground end, which the next
     #: apply lays fresh (2.0.5)
     turned: bool = False
+    #: 3.1: WRONG (other-entity) whose tile something the toolkit did not paste stands on, and
+    #: ``conflict`` (that thing): who owns it, ``placement <id>`` | ``hand edit by <user>`` |
+    #: ``unknown``. The apply refuses the tile.
+    owner: str | None = None
 
     def __str__(self):
         where = f"{_fmt(self.x)},{_fmt(self.y)}"
@@ -187,7 +201,7 @@ def _policy(text):
 
 
 def sense(surface, live, cat, area, policy, tick=None, net_items=None, own=None,
-          confirm=False) -> SenseReport:
+          confirm=False, placements=None) -> SenseReport:
     """``policy``: a ``surface.SurfaceFile`` (its watch and notify settings) or a dict
     {"plots": "keep", "sanctioned": "mark 2h", "notify": "nearby"}. ``net_items``: {net: items}
     for other-item, with surface net names (``<factory>/<net>``). ``own``: the toolkit's own
@@ -196,7 +210,11 @@ def sense(surface, live, cat, area, policy, tick=None, net_items=None, own=None,
     2.0.63, do not populate: a design entity with ``dnp`` is not built. Not there, it is ``dnp``
     (as designed; counted, not listed). A ghost of it is ``unowned`` (the apply cancels it). Built,
     it is ``dnp-standing``, kept as it stands; with ``confirm`` (``fk build --confirm``) it is
-    ``unowned`` instead, and the apply takes it up."""
+    ``unowned`` instead, and the apply takes it up.
+
+    ``placements`` (3.1): the registry's records that are not this design's own
+    (``placements.explaining``): what stands inside one is ``placed``; on a design tile it is a
+    ``conflict`` owned by that placement."""
     if hasattr(policy, "watch"):
         watch, notify = dict(policy.watch), policy.notify_mode
     else:
@@ -220,6 +238,7 @@ def sense(surface, live, cat, area, policy, tick=None, net_items=None, own=None,
             at_tile.setdefault(tuple(tile), []).append(i)
 
     used, verdicts = set(), []
+    on_design = {}                    # 3.1: live index -> (design key, name) of a MISMATCH
     layout = [e for k, e in sorted(surface.entities.items()) if _in_area(e.tiles, area)]
     for e in layout:
         cands = [i for i in at_pos.get((e.name, round(float(e.x), 3), round(float(e.y), 3)), ())
@@ -283,6 +302,12 @@ def sense(surface, live, cat, area, policy, tick=None, net_items=None, own=None,
                 mine = own.get((t["name"], round(t["x"], 3), round(t["y"], 3))) if own else None
                 v.under.append((t["name"], t["x"], t["y"], t.get("last_user"), bool(t["ghost"]),
                                 mine is not None))
+                # 3.1: what the toolkit did not paste there is a MISMATCH; the apply refuses
+                # the tile (the toolkit's own goes up to the design, or is laid fresh, as before)
+                if mine is None or t.get("last_user"):
+                    on_design.setdefault(i, (e.key, e.name))
+                    if v.owner is None:
+                        v.owner = _owner(t, placements)
             verdicts.append(v)
             continue
         verdicts.append(Verdict("not-placed", e.name, e.x, e.y, e.key,
@@ -317,6 +342,27 @@ def sense(surface, live, cat, area, policy, tick=None, net_items=None, own=None,
         hint = _hint(t, cat, carrier_tiles)
         what = f"{'a ghost of ' if t['ghost'] else ''}{t['name']} at {_fmt(t['x'])},{_fmt(t['y'])}"
         mine = own.get((t["name"], round(t["x"], 3), round(t["y"], 3))) if own else None
+        if i in on_design:
+            # 3.1: it stands on a design tile and the toolkit did not paste it: a MISMATCH, not a
+            # foreign change under the policy (no mark, not ordered out, not pasted over)
+            key, want = on_design[i]
+            owner = _owner(t, placements)
+            owners[i] = "conflict"
+            verdicts.append(Verdict("conflict", t["name"], t["x"], t["y"], key,
+                                    f"on {_local(key)}'s tile ({want}), owner {owner}: MISMATCH, "
+                                    "the apply refuses that tile", t.get("last_user"), "conflict",
+                                    ghost=bool(t["ghost"]), owner=owner))
+            changes.append(f"{what}: on {_local(key)}'s tile, {owner} ({region}): MISMATCH, the "
+                           f"apply refuses that tile; {resolution(owner, t)}")
+            continue
+        placed = _placement_at(placements, t["x"], t["y"])
+        if placed is not None and (mine is None or t.get("last_user")):
+            key = f"{surface.name}:placement/{placed.id}"
+            owners[i] = key
+            verdicts.append(Verdict("placed", t["name"], t["x"], t["y"], key,
+                                    f"inside placement {placed.id} ({placed.module}), not this "
+                                    f"design's: fk look {placed.id}", t.get("last_user")))
+            continue
         if mine is not None and not t.get("last_user"):
             owners[i] = "unowned"
             why = ("ordered out: robots take it up" if t.get("decon") else
@@ -371,6 +417,78 @@ def sense(surface, live, cat, area, policy, tick=None, net_items=None, own=None,
                        push, owners)
 
 
+def _placement_at(placements, x, y):
+    for rec in placements or ():
+        if rec.contains(x, y):
+            return rec
+    return None
+
+
+def _owner(t, placements):
+    """Who owns a world thing the toolkit did not paste: ``placement <id>`` (the registry's
+    record whose area holds it), ``hand edit by <last_user>``, else ``unknown``."""
+    rec = _placement_at(placements, t["x"], t["y"])
+    if rec is not None:
+        return f"placement {rec.id}"
+    if t.get("last_user"):
+        return f"hand edit by {t['last_user']}"
+    return "unknown"
+
+
+def resolution(owner, t):
+    """The command that would resolve a MISMATCH with ``owner`` over thing ``t`` (a dict with
+    name, x, y, tiles): put it in the source, take it as that artifact, or take it out."""
+    x, y = _fmt(t["x"]), _fmt(t["y"])
+    xs, ys = [p[0] for p in t["tiles"]], [p[1] for p in t["tiles"]]
+    area = f"{min(xs)},{min(ys)},{max(xs) + 1},{max(ys) + 1}"
+    if owner.startswith("placement "):
+        pid = owner.split(" ", 1)[1]
+        return (f"fk capture --from {pid} --into captured/{pid}.json puts it in the source as a "
+                f"Literal the design mates with; fk decon {area} takes it out")
+    if owner.startswith("hand edit"):
+        return (f"fk adopt {x},{y} --into FACTORY/NET takes a carrier into its net; fk register "
+                f"{area} MODULE says what stands is that artifact; or take it out by hand")
+    return (f"fk register {area} MODULE says what stands is that artifact; fk capture --from "
+            f"{area} --into FILE makes a Literal of it; fk decon {area} takes it out")
+
+
+@dataclass
+class Conflict:
+    """A design tile the apply refuses (3.1): what the design wants there, what stands, whose."""
+    key: str
+    name: str                         # the design entity
+    x: float
+    y: float
+    stands: str                       # what stands there
+    owner: str
+    resolve: str
+
+    def line(self):
+        return (f"MISMATCH {_local(self.key)} ({self.name} at {_fmt(self.x)},{_fmt(self.y)}): "
+                f"{self.stands} stands there, {self.owner}; refused, not pasted. {self.resolve}")
+
+
+def conflicts(rep):
+    """The MISMATCHes of a diff: one per design entity whose tiles hold something the toolkit
+    did not paste (``other-entity`` with an ``owner``). -> [Conflict], in key order."""
+    standing = {}
+    for v in rep.verdicts:
+        if v.verdict == "conflict" and v.key:
+            standing.setdefault(v.key, v)
+    out = []
+    for v in sorted((v for v in rep.verdicts if v.verdict == "other-entity" and v.owner),
+                    key=lambda v: fkpmod.natural_key(v.key or "")):
+        foreign = [u for u in v.under if not u[5] or u[3]]
+        names = ", ".join(sorted({u[0] for u in foreign})) or v.detail.replace(" stands there", "")
+        t = standing.get(v.key)
+        thing = ({"name": t.name, "x": t.x, "y": t.y,
+                  "tiles": [(math.floor(t.x), math.floor(t.y))]} if t is not None else
+                 {"name": foreign[0][0] if foreign else v.name, "x": v.x, "y": v.y,
+                  "tiles": [(math.floor(v.x), math.floor(v.y))]})
+        out.append(Conflict(v.key, v.name, v.x, v.y, names, v.owner, resolution(v.owner, thing)))
+    return out
+
+
 def hand_edits(rep, held=()):
     """What a build replaces or removes that someone placed by hand: report lines (2.0, Rory
     2026-10-21: the source overrules the world by design, so a build may replace a hand change,
@@ -391,11 +509,9 @@ def hand_edits(rep, held=()):
     out = []
     for v in rep.verdicts:
         if v.verdict == "other-entity":
-            for name, x, y, user, ghost, mine in v.under:
-                if mine:
-                    continue
-                out.append(f"{_who(user)} {'a ghost of ' if ghost else ''}{name} at {_fmt(x)},"
-                           f"{_fmt(y)} on {_local(v.key)}'s tile; this build replaces it")
+            # 3.1: what the toolkit did not paste on a design tile is a MISMATCH (``conflicts``):
+            # the build refuses the tile, so it replaces nothing placed by hand
+            continue
         elif v.verdict == "unowned" and v.action in ("revert", "strict") \
                 and (v.name, v.x, v.y) not in held:
             out.append(f"{_who(v.actor)} {'a ghost of ' if v.ghost else ''}{v.name} at "
@@ -443,6 +559,10 @@ def _wrong(net, t, net_items):
     return sorted(set(t["items"]) - ok)
 
 
+#: 2.1.32: kinds whose piece facing d is the one facing d + 8
+_HALF_TURN_SAME = frozenset({"straight-rail", "half-diagonal-rail", "legacy-straight-rail"})
+
+
 def turn(cat, name, want_dir, want_ug, got_dir, got_ug):
     """How an entity standing on a design entity's position, of its name, is turned against it:
     [``faces 12, designed 4``] and [``underground input, designed output``], or [] when it faces
@@ -450,8 +570,11 @@ def turn(cat, name, want_dir, want_ug, got_dir, got_ug):
     (in, out); ``got_dir`` / ``got_ug``: what the game reports (None: unread, not judged)."""
     out = []
     want = want_dir or 0
+    # 2.1.32: a straight rail facing d is the piece facing d + 8 (the game stores the lower one), so
+    # a Literal turned 180 degrees read every one of its lane rails as turned
+    same = 8 if cat.kind(name) in _HALF_TURN_SAME else 16
     if (cat.kind(name) in _DIRECTIONAL or want_dir is not None) and got_dir is not None \
-            and int(got_dir) != int(want):
+            and int(got_dir) % same != int(want) % same:
         out.append(f"faces {int(got_dir)}, designed {int(want)}")
     ug = {"in": "input", "out": "output"}.get(want_ug)
     if ug and got_ug and got_ug != ug:

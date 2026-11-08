@@ -16,7 +16,7 @@ or pushes, and ``fkcore.alerts.track`` refuses anything but an alert-panel read.
   roboports apart (a robot in a chest is an item, and flies only from a roboport).
 
 ``python -m fkcore stats GAME [--items a,b] [--window 1min|10min|1h]`` and ``chart GAME`` print
-them for the game's surface and its mode's force (lab -> ``lab``, play -> ``player``). The
+them for the game's surface and its force (the surface file's ``force`` line, default ``player``). The
 ``*_lines`` functions are pure; ``stats`` and ``chart`` use the game link (``FK_LINK=on``).
 """
 from __future__ import annotations

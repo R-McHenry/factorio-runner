@@ -1,5 +1,9 @@
-# mall.fk: a small mall of single assemblers, placed by hand and mixed with a row. The router lays
-# the belts between them; a chest one tile from its machine gets one inserter (direct insertion).
+# mall.fk: a small mall of single assemblers, placed by hand and mixed with a row. Plot 34x44.
+# The router lays the belts between them; a chest one tile from its machine gets one inserter.
+# Run:  fk check mall.fk    fk build --to report_checks
+# Expect: `check mall: 12 machines, 8 nets, 0 check lines`; `mall: 8 nets: 8 connected, 0 open, 0
+# unrouted`; `bootstrap net mall/fe: its route needs 68 transport-belt and 5 inserter ...` (the
+# mall's route needs items only the mall makes: stock them first).
 fein  = Chest<requester, item=iron-plate, rate=2/s>   @(0, 11)
 cuin  = Chest<requester, item=copper-plate, rate=1/s> @(0, 26)
 gear  = Assembler<recipe=iron-gear-wheel>             @(6, 2)
