@@ -1,7 +1,7 @@
 """The fk toolkit as an agent tool: `python -m fkcore ...` in the session's game codebase, linked to
 the episode's own server.
 
-The toolkit (toolkit/fkcore, 2.1.30) reaches the game through env vars (fkcore.link): FK_LINK=on,
+The toolkit (toolkit/fkcore, 3.1.2) reaches the game through env vars (fkcore.link): FK_LINK=on,
 FK_RCON_HOST/PORT/PW_FILE and FK_SCRIPT_OUTPUT (the server's script-output, where big replies are
 written). FK_PACK picks the mod pack (toolkit/fkcore/data/packs/<pack>). The codebase is the work
 dir's `game/`, so it is frozen with every node and restored with it.
